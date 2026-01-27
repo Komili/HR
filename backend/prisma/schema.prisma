@@ -1,0 +1,98 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Модели данных на основе ТЗ
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      Role     @relation(fields: [roleId], references: [id])
+  roleId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Role {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // "Кадровик", "Руководитель", "Бухгалтер", "Сотрудник"
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Employee {
+  id              Int                @id @default(autoincrement())
+  firstName       String
+  lastName        String
+  patronymic      String?
+  latinFirstName  String
+  latinLastName   String
+  birthDate       DateTime?
+  passportSerial  String?
+  passportNumber  String?
+  passportIssuedBy String?
+  passportIssueDate DateTime?
+  inn             String?
+  address         String?
+  phone           String?
+  email           String?
+  salary          Float?
+  contractNumber  String?
+  contractDate    DateTime?
+  hireDate        DateTime?
+  status          String             @default("Активен") // "Активен", "Уволен", "В отпуске"
+  notes           String?            @db.Text
+  department      Department?        @relation(fields: [departmentId], references: [id])
+  departmentId    Int?
+  position        Position?          @relation(fields: [positionId], references: [id])
+  positionId      Int?
+  documents       EmployeeDocument[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model Department {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Position {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model EmployeeDocument {
+  id         Int      @id @default(autoincrement())
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  employeeId Int
+  type       String   // "Паспорт", "ИНН", etc.
+  filePath   String
+  fileName   String
+  uploadedBy String   // Можно будет связать с User ID
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   // e.g., "CREATE_EMPLOYEE", "UPLOAD_DOCUMENT"
+  details   String   @db.Text
+  userId    Int      // ID пользователя, совершившего действие
+  createdAt DateTime @default(now())
+}

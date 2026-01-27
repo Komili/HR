@@ -1,0 +1,62 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: hrms_db
+    environment:
+      MYSQL_DATABASE: hrms
+      MYSQL_USER: hrms
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - hrms_mysql:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    networks:
+      - hrms_net
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: hrms_backend
+    env_file: .env
+    depends_on:
+      - db
+    volumes:
+      - hrms_storage:/app/storage
+    networks:
+      - hrms_net
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: hrms_frontend
+    env_file: .env
+    depends_on:
+      - backend
+    networks:
+      - hrms_net
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27
+    container_name: hrms_nginx
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "8088:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - hrms_storage:/var/www/storage:ro
+    networks:
+      - hrms_net
+    restart: unless-stopped
+
+volumes:
+  hrms_mysql:
+  hrms_storage:
+
+networks:
+  hrms_net:
+    name: hrms_net
+    driver: bridge
