@@ -1,0 +1,26 @@
+### root
+.env
+.env.*
+!.env.example
+
+### node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+### next.js
+.next/
+out/
+
+### build outputs
+dist/
+build/
+coverage/
+
+### misc
+.DS_Store
+*.log
+*.tsbuildinfo
+.codex-instructions.md

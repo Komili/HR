@@ -7,28 +7,48 @@ import {
   Param,
   Delete,
   NotFoundException,
+  Query,
+  UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
-import { Prisma } from '@prisma/client';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('employees')
 export class EmployeesController {
   constructor(private readonly employeesService: EmployeesService) {}
 
   @Post()
-  create(@Body() createEmployeeDto: Prisma.EmployeeCreateInput) {
-    // TODO: Добавить DTO и валидацию
-    return this.employeesService.create(createEmployeeDto);
+  @Roles('Кадровик')
+  create(@Body() createEmployeeDto: CreateEmployeeDto) {
+    const { departmentId, positionId, ...employeeData } = createEmployeeDto;
+    const data = {
+      ...employeeData,
+      department: departmentId ? { connect: { id: departmentId } } : undefined,
+      position: positionId ? { connect: { id: positionId } } : undefined,
+    };
+    return this.employeesService.create(data);
   }
 
   @Get()
-  findAll() {
-    return this.employeesService.findAll();
+  @Roles('Кадровик', 'Руководитель')
+  findAll(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('search') search?: string,
+  ) {
+    return this.employeesService.findAll(+page, +limit, search);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    const employee = await this.employeesService.findOne(+id);
+  @Roles('Кадровик', 'Руководитель', 'Бухгалтер')
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const employee = await this.employeesService.findOne(id);
     if (!employee) {
       throw new NotFoundException(`Employee with ID ${id} not found`);
     }
@@ -36,16 +56,23 @@ export class EmployeesController {
   }
 
   @Patch(':id')
+  @Roles('Кадровик')
   update(
-    @Param('id') id: string,
-    @Body() updateEmployeeDto: Prisma.EmployeeUpdateInput,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateEmployeeDto: UpdateEmployeeDto,
   ) {
-    // TODO: Добавить DTO и валидацию
-    return this.employeesService.update(+id, updateEmployeeDto);
+    const { departmentId, positionId, ...employeeData } = updateEmployeeDto;
+    const data = {
+      ...employeeData,
+      department: departmentId ? { connect: { id: departmentId } } : undefined,
+      position: positionId ? { connect: { id: positionId } } : undefined,
+    };
+    return this.employeesService.update(id, data);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.employeesService.remove(+id);
+  @Roles('Кадровик')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.employeesService.remove(id);
   }
 }

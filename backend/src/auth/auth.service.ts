@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -20,9 +21,23 @@ export class AuthService {
   }
 
   async login(user: any) {
-    const payload = { email: user.email, sub: user.id, role: user.roleId };
+    const payload = { email: user.email, sub: user.id, role: user.role.name };
     return {
       access_token: this.jwtService.sign(payload),
     };
+  }
+
+  async register(data: Prisma.UserCreateInput) {
+    const existingUser = await this.usersService.findOne(data.email);
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+    // По умолчанию роль "Сотрудник", если не указано иное.
+    // В реальной системе логика назначения ролей может быть сложнее.
+    if (!data.role) {
+      data.role = { connect: { id: 4 } }; // ID 4 - Сотрудник (предполагается)
+    }
+    
+    return this.usersService.create(data);
   }
 }

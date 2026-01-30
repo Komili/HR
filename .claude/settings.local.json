@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(curl:*)",
+      "Bash(docker compose build:*)",
+      "Bash(docker compose:*)",
+      "Bash(ls -la \"C:\\\\repos\\\\HR\\\\backend\\\\src\"\" && echo \"---\" && find \"C:reposHRbackendsrc\" -type f -name \"*.ts \")",
+      "Bash(echo:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose exec:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(powershell -Command \"$token = \\(Invoke-RestMethod -Uri ''http://localhost:7474/api/auth/login'' -Method Post -Body ''{\"\"email\"\":\"\"hr@example.com\"\",\"\"password\"\":\"\"password\"\"}'' -ContentType ''application/json''\\).access_token; Invoke-RestMethod -Uri ''http://localhost:7474/api/employees/1'' -Headers @{Authorization=\"\"Bearer $token\"\"} | ConvertTo-Json\")",
+      "Bash(git add:*)"
+    ]
+  }
+}

@@ -1,41 +1,34 @@
-# Этап 1: Сборка приложения
-FROM node:20-alpine AS builder
+# Stage 1: build
+FROM node:20-bullseye-slim AS builder
 
 WORKDIR /app
 
-# Копируем package.json и package-lock.json
 COPY package*.json ./
-
-# Устанавливаем зависимости
 RUN npm install
 
-# Копируем исходный код
-COPY . .
+COPY prisma ./prisma
+RUN npx prisma generate
 
-# Собираем приложение
+COPY . .
 RUN npm run build
 
-# Этап 2: Установка production-зависимостей
-FROM node:20-alpine AS production
+# Compile seed script
+RUN npx tsc prisma/seed.ts --outDir dist/prisma --esModuleInterop --skipLibCheck
+
+# Stage 2: runtime
+FROM node:20-bullseye-slim
 
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm install --omit=dev
 
-# Этап 3: Финальный образ
-FROM node:20-alpine
-
-WORKDIR /app
-
-# Копируем собранное приложение из этапа 'builder'
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/prisma ./prisma
 
-# Копируем production-зависимости из этапа 'production'
-COPY --from=production /app/node_modules ./node_modules
-
-# Открываем порт, на котором будет работать приложение
 EXPOSE 7070
 
-# Команда для запуска приложения
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main"]

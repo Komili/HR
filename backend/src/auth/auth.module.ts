@@ -1,18 +1,23 @@
 import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { PrismaModule } from '../prisma/prisma.module';
-import { JwtModule } from '@nestjs/jwt';
 import { UsersModule } from '../users/users.module';
+import { PassportModule } from '@nestjs/passport';
+import { JwtModule } from '@nestjs/jwt';
+import { jwtConstants } from './constants';
+import { LocalStrategy } from './local.strategy';
+import { JwtStrategy } from './jwt.strategy';
+import { AuthController } from './auth.controller';
 
 @Module({
   imports: [
-    PrismaModule,
     UsersModule,
+    PassportModule,
     JwtModule.register({
-      secret: 'SECRET_KEY', // В реальном приложении вынести в .env
-      signOptions: { expiresIn: '60m' },
+      secret: jwtConstants.secret,
+      signOptions: { expiresIn: '60m' }, // Токен живет 1 час
     }),
   ],
-  providers: [AuthService],
+  providers: [AuthService, LocalStrategy, JwtStrategy],
+  controllers: [AuthController],
 })
 export class AuthModule {}

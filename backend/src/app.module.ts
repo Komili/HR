@@ -6,9 +6,19 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { EmployeesModule } from './employees/employees.module';
 import { DocumentsModule } from './documents/documents.module';
+import { DepartmentsModule } from './departments/departments.module';
+import { PositionsModule } from './positions/positions.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule, EmployeesModule, DocumentsModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    EmployeesModule,
+    DocumentsModule,
+    DepartmentsModule,
+    PositionsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

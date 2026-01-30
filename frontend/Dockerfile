@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Копируем package.json и package-lock.json (если есть)
+# Копируем package.json и package-lock.json
 COPY package*.json ./
 
 # Устанавливаем зависимости
@@ -11,6 +11,9 @@ RUN npm install
 
 # Копируем исходный код
 COPY . .
+
+# Для Docker используем /api через nginx proxy
+ENV NEXT_PUBLIC_API_URL=/api
 
 # Собираем приложение
 RUN npm run build
@@ -20,17 +23,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Устанавливаем production-зависимости
-COPY package*.json ./
-RUN npm install --omit=dev
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Копируем собранное приложение из этапа 'builder'
-COPY --from=builder /app/.next ./.next
+# Копируем необходимые файлы
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./
 
 # Открываем порт
 EXPOSE 7070
 
-# Команда для запуска приложения
-CMD ["npm", "start", "--", "-p", "7070"]
+ENV PORT=7070
+ENV HOSTNAME="0.0.0.0"
+
+# Команда для запуска
+CMD ["node", "server.js"]
