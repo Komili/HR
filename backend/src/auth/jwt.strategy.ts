@@ -3,6 +3,24 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { jwtConstants } from './constants';
 
+export interface JwtPayload {
+  sub: number;
+  email: string;
+  role: string;
+  companyId: number | null;
+  companyName: string | null;
+  isHoldingAdmin: boolean;
+}
+
+export interface RequestUser {
+  userId: number;
+  email: string;
+  role: string;
+  companyId: number | null;
+  companyName: string | null;
+  isHoldingAdmin: boolean;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor() {
@@ -13,9 +31,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
-    // В payload будет { email: '...', sub: 1, role: '...' }
-    // Passport добавит этот объект в request.user
-    return { userId: payload.sub, email: payload.email, role: payload.role };
+  async validate(payload: JwtPayload): Promise<RequestUser> {
+    return {
+      userId: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      companyId: payload.companyId,
+      companyName: payload.companyName,
+      isHoldingAdmin: payload.isHoldingAdmin,
+    };
   }
 }

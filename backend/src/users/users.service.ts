@@ -7,7 +7,7 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async findOne(email: string): Promise<(User & { role: { name: string } }) | null> {
+  async findOne(email: string): Promise<(User & { role: { name: string }; company: { id: number; name: string; shortName: string | null } | null }) | null> {
     return this.prisma.user.findUnique({
       where: {
         email,
@@ -18,6 +18,33 @@ export class UsersService {
             name: true,
           },
         },
+        company: {
+          select: {
+            id: true,
+            name: true,
+            shortName: true,
+          },
+        },
+      },
+    });
+  }
+
+  async findById(id: number): Promise<(User & { role: { name: string }; company: { id: number; name: string; shortName: string | null } | null }) | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        role: {
+          select: {
+            name: true,
+          },
+        },
+        company: {
+          select: {
+            id: true,
+            name: true,
+            shortName: true,
+          },
+        },
       },
     });
   }
@@ -25,7 +52,7 @@ export class UsersService {
   async create(data: Prisma.UserCreateInput): Promise<User> {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(data.password, saltRounds);
-    
+
     const userData: Prisma.UserCreateInput = {
       ...data,
       password: hashedPassword,

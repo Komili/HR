@@ -2,18 +2,48 @@ export type AuthUser = {
   email: string;
   sub: number;
   role: string;
+  companyId: number | null;
+  companyName: string | null;
+  isHoldingAdmin: boolean;
   iat?: number;
   exp?: number;
+};
+
+export type Company = {
+  id: number;
+  name: string;
+  shortName: string | null;
+  inn?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  isActive: boolean;
+  _count?: {
+    employees: number;
+    departments: number;
+    positions: number;
+    users: number;
+  };
 };
 
 export type Department = {
   id: number;
   name: string;
+  companyId?: number;
+  company?: {
+    id: number;
+    name: string;
+  };
 };
 
 export type Position = {
   id: number;
   name: string;
+  companyId?: number;
+  company?: {
+    id: number;
+    name: string;
+  };
 };
 
 export type EmployeeProfile = {
@@ -27,6 +57,8 @@ export type EmployeeProfile = {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  companyId: number;
+  company: { id: number; name: string } | null;
   department: { name: string } | null;
   position: { name: string } | null;
 };
@@ -40,6 +72,8 @@ export type Employee = {
   latinLastName: string;
   position: { name: string } | null;
   department: { name: string } | null;
+  company: { id: number; name: string } | null;
+  companyId: number;
   departmentId: number | null;
   positionId: number | null;
   email: string | null;
@@ -65,6 +99,7 @@ export type CreateEmployeeInput = {
   address?: string;
   departmentId?: number;
   positionId?: number;
+  companyId?: number;
   salary?: number;
   hireDate?: string;
   status?: string;
@@ -72,3 +107,17 @@ export type CreateEmployeeInput = {
 };
 
 export type UpdateEmployeeInput = Partial<CreateEmployeeInput>;
+
+export type HoldingStats = {
+  totalCompanies: number;
+  totalEmployees: number;
+  totalDepartments: number;
+  totalPositions: number;
+  companiesStats: Array<{
+    id: number;
+    name: string;
+    shortName: string | null;
+    employeesCount: number;
+    departmentsCount: number;
+  }>;
+};

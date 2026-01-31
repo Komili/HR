@@ -60,6 +60,7 @@ export class DocumentsService {
 
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
+      include: { company: true },
     });
 
     if (!employee || !employee.latinFirstName || !employee.latinLastName) {
@@ -69,10 +70,11 @@ export class DocumentsService {
       );
     }
 
+    const companyDir = this.sanitize(employee.company?.name || 'default');
     const sanitizedFirstName = this.sanitize(employee.latinFirstName);
     const sanitizedLastName = this.sanitize(employee.latinLastName);
     const employeeDir = `${sanitizedFirstName}_${sanitizedLastName}_${employee.id}`;
-    const targetDir = path.join('storage', 'employees', employeeDir, 'docs');
+    const targetDir = path.join('storage', 'companies', companyDir, 'employees', employeeDir, 'docs');
 
     await fsp.mkdir(targetDir, { recursive: true });
 
@@ -87,6 +89,7 @@ export class DocumentsService {
     const documentRecord = await this.prisma.employeeDocument.create({
       data: {
         employeeId: employee.id,
+        companyId: employee.companyId,
         type: documentType,
         filePath: newFilePath,
         fileName: newFileName,

@@ -15,6 +15,12 @@ export class RolesGuard implements CanActivate {
       return true; // Если роли не указаны, доступ разрешен
     }
     const { user } = context.switchToHttp().getRequest();
+
+    // Суперадмин холдинга имеет доступ ко всему
+    if (user.isHoldingAdmin) {
+      return true;
+    }
+
     return requiredRoles.some((role) => user.role?.includes(role));
   }
 }

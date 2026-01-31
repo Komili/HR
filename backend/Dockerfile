@@ -6,10 +6,13 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-COPY prisma ./prisma
+# Copy all source files first
+COPY . .
+
+# Generate Prisma client with the latest schema
 RUN npx prisma generate
 
-COPY . .
+# Build the application
 RUN npm run build
 
 # Compile seed script

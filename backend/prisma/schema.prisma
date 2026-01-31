@@ -10,21 +10,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Модели данных на основе ТЗ
+// Модели данных для мультитенантной HR системы холдинга
+
+// Компания холдинга
+model Company {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  shortName   String?    // Краткое название
+  inn         String?    // ИНН компании
+  address     String?
+  phone       String?
+  email       String?
+  isActive    Boolean    @default(true)
+  users       User[]
+  employees   Employee[]
+  departments Department[]
+  positions   Position[]
+  documents   EmployeeDocument[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  role      Role     @relation(fields: [roleId], references: [id])
-  roleId    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  email          String   @unique
+  password       String
+  firstName      String?  // Имя пользователя
+  lastName       String?  // Фамилия пользователя
+  role           Role     @relation(fields: [roleId], references: [id])
+  roleId         Int
+  company        Company? @relation(fields: [companyId], references: [id])
+  companyId      Int?     // null для суперадминов холдинга
+  isHoldingAdmin Boolean  @default(false) // Суперадмин холдинга
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Role {
   id        Int      @id @default(autoincrement())
-  name      String   @unique // "Кадровик", "Руководитель", "Бухгалтер", "Сотрудник"
+  name      String   @unique // "Суперадмин", "Кадровик", "Руководитель", "Бухгалтер", "Сотрудник"
   users     User[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -52,6 +77,8 @@ model Employee {
   hireDate        DateTime?
   status          String             @default("Активен") // "Активен", "Уволен", "В отпуске"
   notes           String?            @db.Text
+  company         Company            @relation(fields: [companyId], references: [id])
+  companyId       Int
   department      Department?        @relation(fields: [departmentId], references: [id])
   departmentId    Int?
   position        Position?          @relation(fields: [positionId], references: [id])
@@ -59,34 +86,51 @@ model Employee {
   documents       EmployeeDocument[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+
+  @@index([companyId])
 }
 
 model Department {
   id        Int        @id @default(autoincrement())
-  name      String     @unique
+  name      String
+  company   Company    @relation(fields: [companyId], references: [id])
+  companyId Int
   employees Employee[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
+  @@unique([name, companyId]) // Уникальное название в рамках компании
+  @@index([companyId])
 }
 
 model Position {
   id        Int        @id @default(autoincrement())
-  name      String     @unique
+  name      String
+  company   Company    @relation(fields: [companyId], references: [id])
+  companyId Int
   employees Employee[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
+  @@unique([name, companyId]) // Уникальное название в рамках компании
+  @@index([companyId])
 }
 
 model EmployeeDocument {
   id         Int      @id @default(autoincrement())
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   employeeId Int
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  Int
   type       String   // "Паспорт", "ИНН", etc.
   filePath   String
   fileName   String
   uploadedBy String   // Можно будет связать с User ID
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([employeeId])
 }
 
 model AuditLog {
@@ -94,5 +138,9 @@ model AuditLog {
   action    String   // e.g., "CREATE_EMPLOYEE", "UPLOAD_DOCUMENT"
   details   String   @db.Text
   userId    Int      // ID пользователя, совершившего действие
+  companyId Int?     // ID компании (null для действий суперадмина)
   createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([userId])
 }

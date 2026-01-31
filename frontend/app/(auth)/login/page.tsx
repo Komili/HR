@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 export default function LoginPage() {
-  const [email, setEmail] = React.useState("hr@example.com");
+  const [email, setEmail] = React.useState("admin1@holding.tj");
   const [password, setPassword] = React.useState("password");
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);

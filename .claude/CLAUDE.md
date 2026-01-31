@@ -1,7 +1,23 @@
-# КАДРЫ - HR Management System
+# КАДРЫ - HR Management System (Multi-Tenant Holding)
 
 ## Project Overview
-HR management web application for internal company use. Russian language interface.
+Multi-tenant HR management web application for a holding company with 8 companies. Russian language interface.
+
+## Architecture
+```
+                    ┌─────────────────┐
+                    │    ХОЛДИНГ      │
+                    │  (Суперадмин)   │
+                    └────────┬────────┘
+                             │ видит ВСЁ
+    ┌────────┬───────┬───────┼───────┬────────┬────────┬────────┐
+    ▼        ▼       ▼       ▼       ▼        ▼        ▼        ▼
+┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+│Бунёд  │Дезин- │Макон  │Макон  │Роҳҳои │ Фавз  │Фавз   │Фавз   │
+│Интер. │фекция │       │(Маг.) │ Фавз  │       │Кемик. │Климат │
+└───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+        Каждая компания изолирована друг от друга
+```
 
 ## Tech Stack
 - **Backend**: NestJS 11 + TypeScript + Prisma ORM
@@ -17,15 +33,39 @@ HR management web application for internal company use. Russian language interfa
 - Nginx (main): **7474**
 
 ## Test Credentials
-- hr@example.com / password (Кадровик - full access)
-- manager@example.com / password (Руководитель - view employees)
-- accountant@example.com / password (Бухгалтер - view employees)
+
+### Суперадмины холдинга (доступ ко ВСЕМ компаниям)
+- admin1@holding.tj / password
+- admin2@holding.tj / password
+- admin3@holding.tj / password
+- admin4@holding.tj / password
+- admin5@holding.tj / password
+
+### Бунёд Интернешнл
+- hr@bunyod.tj / password (Кадровик)
+- manager@bunyod.tj / password (Руководитель)
+- accountant@bunyod.tj / password (Бухгалтер)
+
+### Фавз
+- hr@favz.tj / password (Кадровик)
+- manager@favz.tj / password (Руководитель)
 
 ## User Roles (RBAC)
-1. **Кадровик** - Full CRUD on employees, departments, positions, documents
-2. **Руководитель** - View employees list and profiles
-3. **Бухгалтер** - View employee profiles only
-4. **Сотрудник** - No access to employee data
+1. **Суперадмин** - Full access to ALL companies, can switch between companies
+2. **Кадровик** - Full CRUD on employees, departments, positions, documents (own company only)
+3. **Руководитель** - View employees list and profiles (own company only)
+4. **Бухгалтер** - View employee profiles only (own company only)
+5. **Сотрудник** - No access to employee data
+
+## Companies (8)
+1. Бунёд Интернешнл
+2. Дезинфекция
+3. Макон
+4. Макон (Магазин)
+5. Роҳҳои Фавз
+6. Фавз
+7. Фавз Кемикал
+8. Фавз Климат
 
 ## Project Structure
 ```
@@ -33,14 +73,15 @@ HR/
 ├── backend/                 # NestJS API
 │   ├── src/
 │   │   ├── auth/           # JWT, Passport, Guards
-│   │   ├── employees/      # CRUD
-│   │   ├── departments/    # CRUD
-│   │   ├── positions/      # CRUD
+│   │   ├── companies/      # Company CRUD (NEW)
+│   │   ├── employees/      # CRUD with companyId filter
+│   │   ├── departments/    # CRUD with companyId filter
+│   │   ├── positions/      # CRUD with companyId filter
 │   │   ├── documents/      # File upload/download
 │   │   ├── users/          # User management
 │   │   └── prisma/         # Prisma service
 │   └── prisma/
-│       ├── schema.prisma   # DB schema
+│       ├── schema.prisma   # DB schema with Company model
 │       ├── seed.ts         # TypeScript seed
 │       └── seed.js         # JavaScript seed (for Docker)
 ├── frontend/                # Next.js app
@@ -53,136 +94,110 @@ HR/
 │   │   │   ├── reports/
 │   │   │   └── settings/
 │   │   ├── (auth)/login/
-│   │   └── contexts/       # Auth context
-│   ├── components/         # UI components
+│   │   └── contexts/       # Auth context with company switching
+│   ├── components/         # UI components with CompanySelector
 │   └── lib/               # API client, types
 └── docker/nginx/          # Nginx config
 ```
 
 ## API Endpoints
 All endpoints prefixed with `/api`:
-- POST /api/auth/login - Login
-- GET/POST /api/employees - List/Create
-- GET/PATCH/DELETE /api/employees/:id
-- GET/POST/PATCH/DELETE /api/departments/:id
-- GET/POST/PATCH/DELETE /api/positions/:id
+
+### Auth
+- POST /api/auth/login - Login (returns companyId, isHoldingAdmin in token)
+
+### Companies (NEW)
+- GET /api/companies - List companies (superadmin sees all, others see own)
+- GET /api/companies/stats - Holding statistics (superadmin only)
+- GET /api/companies/:id - Get company
+- POST /api/companies - Create company (superadmin only)
+- PATCH /api/companies/:id - Update company (superadmin only)
+- DELETE /api/companies/:id - Delete company (superadmin only)
+
+### Employees (with companyId filter)
+- GET /api/employees?companyId=X - List (filtered by user's company or specified)
+- POST /api/employees - Create (companyId from user or body)
+- GET /api/employees/:id - Get (access check)
+- PATCH /api/employees/:id - Update (access check)
+- DELETE /api/employees/:id - Delete (access check)
+
+### Departments & Positions (with companyId filter)
+- GET /api/departments?companyId=X
+- GET /api/positions?companyId=X
+- POST/PATCH/DELETE with access checks
+
+### Documents
 - GET /api/documents/employee/:id
 - POST /api/documents/upload/employee/:id
-- GET /api/documents/:id/download - Download file (Content-Disposition: attachment)
-- GET /api/documents/:id/view - View file inline (Content-Disposition: inline)
+- GET /api/documents/:id/download
+- GET /api/documents/:id/view
 
-## Important Notes
-- Next.js 15 uses Promise-based params - use `React.use(params)` in client components
-- Frontend uses `output: "standalone"` for Docker
-- Backend uses `/api` global prefix
-- CORS configured for localhost ports
-- Seed data: 5 departments, 8 positions, 5 employees, 3 users
+## Multi-Tenancy Implementation
+
+### Database Schema
+- `Company` model with id, name, shortName, inn, address, etc.
+- All entities have `companyId` foreign key
+- `User.isHoldingAdmin` flag for superadmins
+- Unique constraints: `@@unique([name, companyId])` for departments/positions
+
+### Backend
+- `RequestUser` interface includes `companyId`, `isHoldingAdmin`
+- All services have `getCompanyFilter()` method
+- Superadmins can pass `?companyId=X` to filter
+- Regular users always filtered by their `companyId`
+- `ForbiddenException` for cross-company access
+
+### Frontend
+- `AuthContext` manages `currentCompanyId`, `currentCompanyName`
+- `CompanySelector` component in sidebar for superadmins
+- API calls automatically include companyId from localStorage
+- Amber/orange theme for superadmin UI elements
 
 ## Docker Commands
 ```bash
 # Start all services
 docker-compose up -d --build
 
-# Seed database
+# Seed database (IMPORTANT: run after schema migration)
 docker cp backend/prisma/seed.js hrms_backend:/app/prisma/seed.js
-docker-compose exec backend node prisma/seed.js
+docker-compose exec backend npx prisma migrate reset --force
 
 # View logs
 docker-compose logs -f backend
 docker-compose logs -f frontend
 
-# Reset database
+# Reset database with new schema
 docker-compose down -v && docker-compose up -d --build
 
 # Rebuild specific service
 docker-compose up -d --build frontend
 docker-compose up -d --build backend
 
-# Access storage (employee documents)
-ls storage/employees/
+# Access storage (employee documents by company)
+ls storage/companies/
 ```
 
-## Files Modified Recently
-- frontend/app/(app)/dashboard/page.tsx - Quick actions dropdown, report/analytics navigation
-- frontend/app/(app)/employees/page.tsx - Export CSV, auto-open modal via query params
-- frontend/app/(app)/employees/[id]/page.tsx - Edit button navigation, documents management
-- frontend/app/(app)/reports/page.tsx - Report generation and CSV export
-- frontend/app/(app)/departments/page.tsx - Auto-open modal via ?action=create
-- frontend/app/(app)/positions/page.tsx - Auto-open modal via ?action=create
-- frontend/components/dashboard-layout.tsx - Create dropdown menu in header
-- frontend/lib/hrms-api.ts - Added `viewDocument()` function
-- backend/src/employees/employees.service.ts - Auto-creates employee folder on create
-- backend/src/documents/documents.service.ts - Added `getMimeType()` helper
-- backend/src/documents/documents.controller.ts - Added `/view` endpoint
-- docker-compose.yml - Added storage volume mount
-- README.md - Updated with storage documentation
+## Storage Structure (Updated)
+Documents are now stored by company:
+`storage/companies/{CompanyName}/employees/{FirstName}_{LastName}_{id}/docs/`
 
-## Next.js 15 Notes
-- Dynamic route params are now Promises
-- In client components, use `const { id } = use(params)` to unwrap
-- Import `use` from React
+## Important Notes
+- Next.js 15 uses Promise-based params - use `React.use(params)` in client components
+- Frontend uses `output: "standalone"` for Docker
+- Backend uses `/api` global prefix
+- CORS configured for localhost ports
+- Superadmin sees all data when no company selected (dropdown shows "Все компании")
+- Regular users only see their company's data
 
-## Document Management System
-
-### Storage Structure
-Documents are stored in `storage/employees/{FirstName}_{LastName}_{id}/docs/`
-- Storage folder is mounted to host via Docker volume: `./storage:/app/storage`
-- Employee folder is created automatically when a new employee is added (see `employees.service.ts`)
-- Files accessible from host machine at `HR/storage/employees/`
-
-### Document Types (predefined in frontend)
-```typescript
-const DOCUMENT_TYPES = [
-  { id: "passport", name: "Паспорт", required: true },
-  { id: "snils", name: "СНИЛС", required: true },
-  { id: "inn", name: "ИНН", required: true },
-  { id: "employment_contract", name: "Трудовой договор", required: true },
-  { id: "employment_order", name: "Приказ о приёме", required: true },
-  { id: "diploma", name: "Диплом / Аттестат", required: false },
-  { id: "photo", name: "Фотография 3x4", required: false },
-  { id: "medical", name: "Медицинская справка", required: false },
-  { id: "military_id", name: "Военный билет", required: false },
-  { id: "other", name: "Прочие документы", required: false },
-];
-```
-
-### Document Features
-- **Upload**: Multipart form-data, accepts PDF, JPG, PNG, DOC, DOCX
-- **Preview**: Uses `/view` endpoint with `Content-Disposition: inline` for PDF/images
-- **Download**: Uses `/download` endpoint with `Content-Disposition: attachment`
-- **Status indicators**: Checkmark (✓) for uploaded, X for missing
-- **Success notification**: Toast appears after successful upload
-- **No page refresh**: `loadDocuments()` function updates only documents state, keeps current tab active
-
-### Key Implementation Details
-- `documents.service.ts`: `getMimeType()` helper returns correct Content-Type
-- `documents.controller.ts`: Separate `/view` and `/download` endpoints
-- `employees/[id]/page.tsx`: `loadDocuments()` prevents full page re-render on upload
-
-## Button Functionality
-
-### Dashboard (dashboard/page.tsx)
-- **Отчёт** → navigates to `/reports`
-- **Быстрые действия** → dropdown menu with quick create options
-- **Открыть аналитику** → navigates to `/reports`
-
-### Header (dashboard-layout.tsx)
-- **Создать** → dropdown menu with options: Сотрудник, Отдел, Должность, Отчёт
-- Uses `?action=create` query param to auto-open create modal on target page
-
-### Employees (employees/page.tsx)
-- **Экспорт** → downloads CSV file with employee list (UTF-8 BOM for Cyrillic)
-- **Действия dropdown**: Просмотр профиля, Редактировать, Копировать ID, Удалить
-- Handles `?action=create` and `?action=edit&id=X` query params
-
-### Employee Profile (employees/[id]/page.tsx)
-- **Редактировать** → navigates to `/employees?action=edit&id={employeeId}`
-
-### Reports (reports/page.tsx)
-- **Экспортировать всё** → downloads all reports (employees, departments, monthly)
-- **Сформировать** → generates and downloads specific report type as CSV
-- Report types: Отчёт по сотрудникам, Аналитика отделов, Сводка посещаемости, Месячный обзор
-
-### Departments & Positions
-- Handle `?action=create` query param to auto-open create modal
-- Full CRUD with edit/delete in dropdown menus
+## Files Modified for Multi-Tenancy
+- backend/prisma/schema.prisma - Added Company model, companyId to all entities
+- backend/prisma/seed.ts & seed.js - 8 companies, 5 superadmins
+- backend/src/companies/* - New module for company management
+- backend/src/auth/* - Updated JWT payload with companyId, isHoldingAdmin
+- backend/src/employees/* - companyId filtering
+- backend/src/departments/* - companyId filtering
+- backend/src/positions/* - companyId filtering
+- frontend/lib/types.ts - Company type, updated AuthUser
+- frontend/app/contexts/AuthContext.tsx - Company switching
+- frontend/components/dashboard-layout.tsx - CompanySelector component
+- frontend/lib/hrms-api.ts - companyId in API calls

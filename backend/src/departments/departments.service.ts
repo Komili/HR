@@ -1,28 +1,85 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Department, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { RequestUser } from '../auth/jwt.strategy';
+
+type DepartmentWithCompany = Prisma.DepartmentGetPayload<{
+  include: { company: true };
+}>;
 
 @Injectable()
 export class DepartmentsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: Prisma.DepartmentCreateInput): Promise<Department> {
-    return this.prisma.department.create({ data });
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
+    if (user.isHoldingAdmin) {
+      return requestedCompanyId || undefined;
+    }
+    if (!user.companyId) {
+      throw new ForbiddenException('User is not assigned to any company');
+    }
+    return user.companyId;
   }
 
-  async findAll(): Promise<Department[]> {
-    return this.prisma.department.findMany();
+  async create(data: Prisma.DepartmentCreateInput): Promise<DepartmentWithCompany> {
+    return this.prisma.department.create({
+      data,
+      include: { company: true },
+    });
   }
 
-  async findOne(id: number): Promise<Department | null> {
-    return this.prisma.department.findUnique({ where: { id } });
+  async findAll(user?: RequestUser, requestedCompanyId?: number): Promise<DepartmentWithCompany[]> {
+    const where: Prisma.DepartmentWhereInput = {};
+
+    if (user) {
+      const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
+      if (companyFilter) {
+        where.companyId = companyFilter;
+      }
+    }
+
+    return this.prisma.department.findMany({
+      where,
+      include: { company: true },
+      orderBy: { name: 'asc' },
+    });
   }
 
-  async update(id: number, data: Prisma.DepartmentUpdateInput): Promise<Department> {
-    return this.prisma.department.update({ where: { id }, data });
+  async findOne(id: number, user?: RequestUser): Promise<DepartmentWithCompany | null> {
+    const department = await this.prisma.department.findUnique({
+      where: { id },
+      include: { company: true },
+    });
+
+    if (department && user && !user.isHoldingAdmin) {
+      if (department.companyId !== user.companyId) {
+        throw new ForbiddenException('Access denied to this department');
+      }
+    }
+
+    return department;
   }
 
-  async remove(id: number): Promise<Department> {
-    return this.prisma.department.delete({ where: { id } });
+  async update(id: number, data: Prisma.DepartmentUpdateInput, user?: RequestUser): Promise<DepartmentWithCompany> {
+    if (user) {
+      await this.findOne(id, user);
+    }
+
+    return this.prisma.department.update({
+      where: { id },
+      data,
+      include: { company: true },
+    });
+  }
+
+  async remove(id: number, user?: RequestUser): Promise<DepartmentWithCompany> {
+    if (user) {
+      await this.findOne(id, user);
+    }
+
+    return this.prisma.department.delete({
+      where: { id },
+      include: { company: true },
+    });
   }
 }

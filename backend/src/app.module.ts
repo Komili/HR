@@ -8,6 +8,7 @@ import { EmployeesModule } from './employees/employees.module';
 import { DocumentsModule } from './documents/documents.module';
 import { DepartmentsModule } from './departments/departments.module';
 import { PositionsModule } from './positions/positions.module';
+import { CompaniesModule } from './companies/companies.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PositionsModule } from './positions/positions.module';
     DocumentsModule,
     DepartmentsModule,
     PositionsModule,
+    CompaniesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -21,9 +21,26 @@ export class AuthService {
   }
 
   async login(user: any) {
-    const payload = { email: user.email, sub: user.id, role: user.role.name };
+    const payload = {
+      email: user.email,
+      sub: user.id,
+      role: user.role.name,
+      companyId: user.companyId,
+      companyName: user.company?.name || null,
+      isHoldingAdmin: user.isHoldingAdmin || false,
+    };
     return {
       access_token: this.jwtService.sign(payload),
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role.name,
+        companyId: user.companyId,
+        companyName: user.company?.name || null,
+        isHoldingAdmin: user.isHoldingAdmin || false,
+      },
     };
   }
 
@@ -32,12 +49,10 @@ export class AuthService {
     if (existingUser) {
       throw new ConflictException('User with this email already exists');
     }
-    // По умолчанию роль "Сотрудник", если не указано иное.
-    // В реальной системе логика назначения ролей может быть сложнее.
     if (!data.role) {
-      data.role = { connect: { id: 4 } }; // ID 4 - Сотрудник (предполагается)
+      data.role = { connect: { id: 5 } }; // ID 5 - Сотрудник
     }
-    
+
     return this.usersService.create(data);
   }
 }

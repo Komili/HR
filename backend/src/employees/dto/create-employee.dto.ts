@@ -98,4 +98,8 @@ export class CreateEmployeeDto {
   @IsInt()
   @IsOptional()
   positionId?: number;
+
+  @IsInt()
+  @IsOptional()
+  companyId?: number;
 }
