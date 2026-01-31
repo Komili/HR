@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { DataTable } from "@/components/data-table"
 import { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
@@ -32,11 +33,21 @@ import {
 } from "@/lib/hrms-api"
 
 export default function DepartmentsPage() {
+  const searchParams = useSearchParams()
   const [departments, setDepartments] = useState<Department[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [currentDepartment, setCurrentDepartment] = useState<Partial<Department>>({})
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Проверяем параметр action=create для автооткрытия модалки
+  useEffect(() => {
+    if (searchParams.get("action") === "create") {
+      setCurrentDepartment({})
+      setIsModalOpen(true)
+      window.history.replaceState({}, "", "/departments")
+    }
+  }, [searchParams])
 
   const refreshDepartments = () =>
     getDepartments()

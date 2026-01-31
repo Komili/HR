@@ -14,7 +14,7 @@ export class DocumentsService {
     });
   }
 
-  async getDocumentStream(documentId: number): Promise<{ stream: fs.ReadStream; fileName: string }> {
+  async getDocumentStream(documentId: number): Promise<{ stream: fs.ReadStream; fileName: string; mimeType: string }> {
     const document = await this.prisma.employeeDocument.findUnique({
       where: { id: documentId },
     });
@@ -24,14 +24,30 @@ export class DocumentsService {
     }
 
     const filePath = path.resolve(document.filePath);
-    
+
     try {
       await fsp.access(filePath);
       const stream = fs.createReadStream(filePath);
-      return { stream, fileName: document.fileName };
+      const mimeType = this.getMimeType(document.fileName);
+      return { stream, fileName: document.fileName, mimeType };
     } catch (error) {
       throw new NotFoundException(`File not found for document ID ${documentId}`);
     }
+  }
+
+  private getMimeType(fileName: string): string {
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
   }
 
   async handleFileUpload(data: {

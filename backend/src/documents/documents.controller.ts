@@ -44,8 +44,20 @@ export class DocumentsController {
     @Param('documentId', ParseIntPipe) documentId: number,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { stream, fileName } = await this.documentsService.getDocumentStream(documentId);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    const { stream, fileName, mimeType } = await this.documentsService.getDocumentStream(documentId);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    return new StreamableFile(stream);
+  }
+
+  @Get(':documentId/view')
+  async viewFile(
+    @Param('documentId', ParseIntPipe) documentId: number,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { stream, fileName, mimeType } = await this.documentsService.getDocumentStream(documentId);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
     return new StreamableFile(stream);
   }
 

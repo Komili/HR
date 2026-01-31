@@ -200,12 +200,11 @@ HR/
 │   │   ├── documents/         # Загрузка/скачивание файлов
 │   │   ├── users/             # Управление пользователями
 │   │   └── prisma/            # Prisma сервис
-│   ├── prisma/
-│   │   ├── schema.prisma      # Схема базы данных
-│   │   ├── seed.ts            # Тестовые данные (TypeScript)
-│   │   ├── seed.js            # Тестовые данные (JavaScript)
-│   │   └── migrations/        # Миграции БД
-│   └── storage/               # Загруженные файлы
+│   └── prisma/
+│       ├── schema.prisma      # Схема базы данных
+│       ├── seed.ts            # Тестовые данные (TypeScript)
+│       ├── seed.js            # Тестовые данные (JavaScript)
+│       └── migrations/        # Миграции БД
 ├── frontend/                   # Next.js приложение
 │   ├── app/
 │   │   ├── (app)/             # Защищённые страницы
@@ -221,6 +220,11 @@ HR/
 │   ├── components/            # UI компоненты
 │   │   └── ui/                # shadcn/ui компоненты
 │   └── lib/                   # Утилиты и API клиент
+├── storage/                    # Хранилище документов (монтируется в Docker)
+│   ├── employees/             # Папки сотрудников
+│   │   └── {FirstName}_{LastName}_{id}/
+│   │       └── docs/          # Документы сотрудника
+│   └── tmp/                   # Временные файлы при загрузке
 ├── docker/
 │   └── nginx/
 │       └── default.conf       # Конфигурация Nginx
@@ -229,6 +233,24 @@ HR/
 ├── .env.example               # Пример переменных
 └── README.md                  # Документация
 ```
+
+## 📂 Хранилище документов
+
+При создании сотрудника автоматически создаётся персональная папка для документов:
+
+```
+storage/employees/{FirstName}_{LastName}_{id}/docs/
+```
+
+**Пример:**
+```
+storage/employees/Ivan_Petrov_1/docs/
+├── passport_2026-01-30.pdf
+├── snils_2026-01-30.pdf
+└── employment_contract_2026-01-30.pdf
+```
+
+Папка `storage/` примонтирована из Docker-контейнера в корень проекта, поэтому все документы доступны на хост-машине.
 
 ## 🔧 API Endpoints
 

@@ -13,11 +13,20 @@ import {
   ChevronRight,
   Building2,
   LogOut,
+  UserPlus,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/app/contexts/AuthContext";
 
 const menuItems = [
@@ -80,6 +89,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const { user, logout } = useAuth();
 
   return (
@@ -154,10 +164,35 @@ export default function DashboardLayout({
               </div>
 
               <div className="flex items-center gap-3">
-                <Button size="sm" className="h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-105">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Создать
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" className="h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-105">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Создать
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Создать</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push("/employees?action=create")} className="cursor-pointer">
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Нового сотрудника
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push("/departments?action=create")} className="cursor-pointer">
+                      <Building2 className="mr-2 h-4 w-4" />
+                      Новый отдел
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push("/positions?action=create")} className="cursor-pointer">
+                      <Briefcase className="mr-2 h-4 w-4" />
+                      Новую должность
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push("/reports")} className="cursor-pointer">
+                      <FileText className="mr-2 h-4 w-4" />
+                      Новый отчёт
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-emerald-50">
                   <Bell className="h-5 w-5" />
                 </Button>

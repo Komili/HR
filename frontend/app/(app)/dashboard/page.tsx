@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Users,
   UserPlus,
@@ -14,10 +23,14 @@ import {
   Zap,
   Target,
   CheckCircle2,
+  Building2,
+  Briefcase,
+  FileText,
 } from "lucide-react";
 import { getEmployees } from "@/lib/hrms-api";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [totalEmployees, setTotalEmployees] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,14 +119,40 @@ export default function DashboardPage() {
           <Button
             variant="outline"
             className="h-11 px-5 rounded-xl bg-white/80 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 transition-all"
+            onClick={() => router.push("/reports")}
           >
             Отчёт
             <ArrowUpRight className="ml-2 h-4 w-4" />
           </Button>
-          <Button className="h-11 px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-105">
-            <Zap className="mr-2 h-4 w-4" />
-            Быстрые действия
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="h-11 px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-105">
+                <Zap className="mr-2 h-4 w-4" />
+                Быстрые действия
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Быстрые действия</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push("/employees?action=create")} className="cursor-pointer">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Добавить сотрудника
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/departments?action=create")} className="cursor-pointer">
+                <Building2 className="mr-2 h-4 w-4" />
+                Создать отдел
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/positions?action=create")} className="cursor-pointer">
+                <Briefcase className="mr-2 h-4 w-4" />
+                Создать должность
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push("/reports")} className="cursor-pointer">
+                <FileText className="mr-2 h-4 w-4" />
+                Создать отчёт
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -197,7 +236,10 @@ export default function DashboardPage() {
                 />
               </div>
             </div>
-            <Button className="w-full h-11 rounded-xl bg-white/10 text-white hover:bg-white/20 border border-white/10 transition-all">
+            <Button
+              className="w-full h-11 rounded-xl bg-white/10 text-white hover:bg-white/20 border border-white/10 transition-all"
+              onClick={() => router.push("/reports")}
+            >
               <Sparkles className="mr-2 h-4 w-4" />
               Открыть аналитику
             </Button>

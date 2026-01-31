@@ -104,3 +104,12 @@ export async function downloadDocument(documentId: number): Promise<Blob> {
   }
   return response.blob();
 }
+
+export async function viewDocument(documentId: number): Promise<Blob> {
+  const response = await apiFetchRaw(`/documents/${documentId}/view`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Failed to view document");
+  }
+  return response.blob();
+}

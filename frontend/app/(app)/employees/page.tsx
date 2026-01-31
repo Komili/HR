@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useDebounce } from "use-debounce"
+import { useSearchParams } from "next/navigation"
 import { ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import type { Employee, Department, Position, CreateEmployeeInput, UpdateEmployeeInput } from "@/lib/types"
@@ -47,6 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 export default function EmployeesPage() {
+  const searchParams = useSearchParams()
   const [data, setData] = React.useState<Employee[]>([])
   const [page, setPage] = React.useState(0)
   const [total, setTotal] = React.useState(0)
@@ -57,6 +59,28 @@ export default function EmployeesPage() {
 
   // Модальное окно
   const [isModalOpen, setIsModalOpen] = React.useState(false)
+
+  // Проверяем параметры action=create или action=edit для автооткрытия модалки
+  React.useEffect(() => {
+    const action = searchParams.get("action")
+    const editId = searchParams.get("id")
+
+    if (action === "create") {
+      handleOpenCreateModal()
+      window.history.replaceState({}, "", "/employees")
+    } else if (action === "edit" && editId) {
+      // Найдём сотрудника и откроем редактирование
+      getEmployees(1, 1000, "").then((result) => {
+        const emp = result.data.find(e => e.id === Number(editId))
+        if (emp) {
+          handleOpenEditModal(emp)
+        }
+        window.history.replaceState({}, "", "/employees")
+      }).catch(() => {
+        window.history.replaceState({}, "", "/employees")
+      })
+    }
+  }, [searchParams])
   const [isSaving, setIsSaving] = React.useState(false)
   const [departments, setDepartments] = React.useState<Department[]>([])
   const [positions, setPositions] = React.useState<Position[]>([])
@@ -143,6 +167,33 @@ export default function EmployeesPage() {
         setError(err instanceof Error ? err.message : "Ошибка удаления")
       }
     }
+  }
+
+  const handleExport = () => {
+    // Формируем CSV с данными сотрудников
+    const headers = ["ID", "Фамилия", "Имя", "Отчество", "Email", "Телефон", "Отдел", "Должность"]
+    const csvRows = [
+      headers.join(";"),
+      ...data.map(emp => [
+        emp.id,
+        emp.lastName,
+        emp.firstName,
+        emp.patronymic || "",
+        emp.email || "",
+        emp.phone || "",
+        emp.department?.name || "",
+        emp.position?.name || ""
+      ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(";"))
+    ]
+
+    const csvContent = "\uFEFF" + csvRows.join("\n") // BOM для корректного отображения кириллицы
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `employees_${new Date().toISOString().split("T")[0]}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   const handleSave = async () => {
@@ -357,6 +408,7 @@ export default function EmployeesPage() {
           <Button
             variant="outline"
             className="h-10 rounded-xl bg-white/80 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300"
+            onClick={handleExport}
           >
             <Download className="mr-2 h-4 w-4" />
             Экспорт

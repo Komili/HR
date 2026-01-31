@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 type EmployeeWithRelations = Prisma.EmployeeGetPayload<{
   include: { department: true; position: true };
@@ -11,13 +13,33 @@ export class EmployeesService {
   constructor(private prisma: PrismaService) {}
 
   async create(data: Prisma.EmployeeCreateInput): Promise<EmployeeWithRelations> {
-    return this.prisma.employee.create({
+    const employee = await this.prisma.employee.create({
       data,
       include: {
         department: true,
         position: true,
       },
     });
+
+    // Создаём папку для документов сотрудника
+    await this.createEmployeeFolder(employee);
+
+    return employee;
+  }
+
+  private async createEmployeeFolder(employee: EmployeeWithRelations): Promise<string> {
+    const sanitizedFirstName = this.sanitize(employee.latinFirstName || 'unknown');
+    const sanitizedLastName = this.sanitize(employee.latinLastName || 'unknown');
+    const employeeDir = `${sanitizedFirstName}_${sanitizedLastName}_${employee.id}`;
+    const targetDir = path.join('storage', 'employees', employeeDir, 'docs');
+
+    await fs.mkdir(targetDir, { recursive: true });
+
+    return targetDir;
+  }
+
+  private sanitize(value: string): string {
+    return value.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/\s+/g, '_');
   }
 
   async findAll(
