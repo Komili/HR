@@ -113,6 +113,13 @@
   * {
     @apply border-border outline-ring/50;
   }
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(150 10% 40% / 0.3) !important;
+  }
+  select option[value=""] {
+    color: hsl(150 10% 40% / 0.3);
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";

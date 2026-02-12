@@ -23,11 +23,12 @@ model Company {
   email       String?
   isActive    Boolean    @default(true)
   users       User[]
-  employees   Employee[]
-  departments Department[]
-  positions   Position[]
-  documents   EmployeeDocument[]
-  createdAt   DateTime   @default(now())
+  employees      Employee[]
+  departments    Department[]
+  positions      Position[]
+  documents      EmployeeDocument[]
+  inventoryItems InventoryItem[]
+  createdAt      DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }
 
@@ -84,6 +85,7 @@ model Employee {
   position        Position?          @relation(fields: [positionId], references: [id])
   positionId      Int?
   documents       EmployeeDocument[]
+  inventoryItems  InventoryItem[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
@@ -131,6 +133,42 @@ model EmployeeDocument {
 
   @@index([companyId])
   @@index([employeeId])
+}
+
+model InventoryItem {
+  id              Int                @id @default(autoincrement())
+  name            String
+  model           String?
+  category        String?    // Компьютеры, Мебель, Оргтехника, etc.
+  inventoryNumber String?    // Инвентарный номер
+  price           Float?
+  acquisitionDate DateTime?  // Дата приобретения
+  description     String?    @db.Text
+  status          String     @default("В наличии") // В наличии, Выдан, В ремонте, Списан
+  company         Company    @relation(fields: [companyId], references: [id])
+  companyId       Int
+  employee        Employee?  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  employeeId      Int?
+  history         InventoryHistory[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([inventoryNumber, companyId])
+  @@index([companyId])
+  @@index([employeeId])
+}
+
+model InventoryHistory {
+  id              Int           @id @default(autoincrement())
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  inventoryItemId Int
+  action          String        // "Создан", "Изменён", "Выдан", "Возвращён", "Удалён"
+  details         String?       @db.Text
+  employeeName    String?       // ФИО сотрудника (при выдаче/возврате)
+  performedBy     String        // Email пользователя
+  createdAt       DateTime      @default(now())
+
+  @@index([inventoryItemId])
 }
 
 model AuditLog {

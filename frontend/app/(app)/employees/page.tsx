@@ -496,7 +496,7 @@ export default function EmployeesPage() {
                 id="lastName"
                 value={formData.lastName}
                 onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                placeholder="Иванов"
+                placeholder="Введите фамилию"
                 className="h-10 rounded-xl"
               />
             </div>
@@ -506,7 +506,7 @@ export default function EmployeesPage() {
                 id="firstName"
                 value={formData.firstName}
                 onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                placeholder="Иван"
+                placeholder="Введите имя"
                 className="h-10 rounded-xl"
               />
             </div>
@@ -518,7 +518,7 @@ export default function EmployeesPage() {
               id="patronymic"
               value={formData.patronymic || ""}
               onChange={(e) => setFormData({ ...formData, patronymic: e.target.value })}
-              placeholder="Иванович"
+              placeholder="Введите отчество"
               className="h-10 rounded-xl"
             />
           </div>
@@ -530,7 +530,7 @@ export default function EmployeesPage() {
                 id="latinLastName"
                 value={formData.latinLastName}
                 onChange={(e) => setFormData({ ...formData, latinLastName: e.target.value })}
-                placeholder="Ivanov"
+                placeholder="Введите фамилию латиницей"
                 className="h-10 rounded-xl"
               />
             </div>
@@ -540,7 +540,7 @@ export default function EmployeesPage() {
                 id="latinFirstName"
                 value={formData.latinFirstName}
                 onChange={(e) => setFormData({ ...formData, latinFirstName: e.target.value })}
-                placeholder="Ivan"
+                placeholder="Введите имя латиницей"
                 className="h-10 rounded-xl"
               />
             </div>
@@ -554,7 +554,7 @@ export default function EmployeesPage() {
                 type="email"
                 value={formData.email || ""}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="ivanov@company.com"
+                placeholder="Введите email"
                 className="h-10 rounded-xl"
               />
             </div>
@@ -564,7 +564,7 @@ export default function EmployeesPage() {
                 id="phone"
                 value={formData.phone || ""}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="+7 (999) 123-45-67"
+                placeholder="Введите номер телефона"
                 className="h-10 rounded-xl"
               />
             </div>

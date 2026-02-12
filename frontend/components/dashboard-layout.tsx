@@ -4,7 +4,6 @@ import {
   Home,
   Users,
   Briefcase,
-  FileText,
   Settings,
   Bell,
   Plus,
@@ -17,6 +16,7 @@ import {
   ChevronDown,
   Building,
   Check,
+  Package,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -37,7 +37,7 @@ const menuItems = [
   { name: "Сотрудники", path: "/employees", icon: Users, description: "Команда" },
   { name: "Отделы", path: "/departments", icon: Building2, description: "Структура" },
   { name: "Должности", path: "/positions", icon: Briefcase, description: "Роли" },
-  { name: "Отчёты", path: "/reports", icon: FileText, description: "Аналитика" },
+  { name: "Инвентарь", path: "/inventory", icon: Package, description: "Имущество" },
 ];
 
 const settingsNav = { name: "Настройки", path: "/settings", icon: Settings, description: "Конфиг" };
@@ -278,10 +278,9 @@ export default function DashboardLayout({
                       <Briefcase className="mr-2 h-4 w-4" />
                       Новую должность
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => router.push("/reports")} className="cursor-pointer">
-                      <FileText className="mr-2 h-4 w-4" />
-                      Новый отчёт
+                    <DropdownMenuItem onClick={() => router.push("/inventory?action=create")} className="cursor-pointer">
+                      <Package className="mr-2 h-4 w-4" />
+                      Новый инвентарь
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

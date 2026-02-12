@@ -108,6 +108,53 @@ export type CreateEmployeeInput = {
 
 export type UpdateEmployeeInput = Partial<CreateEmployeeInput>;
 
+export type InventoryItem = {
+  id: number;
+  name: string;
+  model: string | null;
+  category: string | null;
+  inventoryNumber: string | null;
+  price: number | null;
+  acquisitionDate: string | null;
+  description: string | null;
+  status: string;
+  companyId: number;
+  employeeId: number | null;
+  company?: { id: number; name: string } | null;
+  employee?: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    patronymic: string | null;
+  } | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CreateInventoryItemInput = {
+  name: string;
+  model?: string;
+  category?: string;
+  inventoryNumber?: string;
+  price?: number;
+  acquisitionDate?: string;
+  description?: string;
+  status?: string;
+  companyId?: number;
+  employeeId?: number;
+};
+
+export type UpdateInventoryItemInput = Partial<CreateInventoryItemInput>;
+
+export type InventoryHistory = {
+  id: number;
+  action: string;
+  details: string | null;
+  employeeName: string | null;
+  performedBy: string;
+  createdAt: string;
+};
+
 export type HoldingStats = {
   totalCompanies: number;
   totalEmployees: number;

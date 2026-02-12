@@ -209,7 +209,7 @@ export default function PositionsPage() {
               id="name"
               value={currentPosition.name || ""}
               onChange={(e) => setCurrentPosition({ ...currentPosition, name: e.target.value })}
-              placeholder="Например: Разработчик, Менеджер продукта..."
+              placeholder="Введите название должности"
               className="h-11 rounded-xl"
             />
           </div>

@@ -9,6 +9,10 @@ import type {
   UpdateEmployeeInput,
   Company,
   HoldingStats,
+  InventoryItem,
+  CreateInventoryItemInput,
+  UpdateInventoryItemInput,
+  InventoryHistory,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -174,4 +178,53 @@ export async function viewDocument(documentId: number): Promise<Blob> {
     throw new Error(text || "Failed to view document");
   }
   return response.blob();
+}
+
+// ============ INVENTORY ============
+
+export async function getInventoryItems(
+  page: number,
+  limit: number,
+  search: string,
+): Promise<{ data: InventoryItem[]; total: number }> {
+  const params = withCompanyId(new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  }));
+  if (search) params.set("search", search);
+  return apiFetch(`/inventory?${params.toString()}`);
+}
+
+export async function getInventoryItem(id: number): Promise<InventoryItem> {
+  return apiFetch(`/inventory/${id}`);
+}
+
+export async function createInventoryItem(data: CreateInventoryItemInput): Promise<InventoryItem> {
+  const companyId = getCurrentCompanyId();
+  const payload = companyId ? { ...data, companyId } : data;
+  return apiFetch("/inventory", { method: "POST", body: payload });
+}
+
+export async function updateInventoryItem(id: number, data: UpdateInventoryItemInput): Promise<InventoryItem> {
+  return apiFetch(`/inventory/${id}`, { method: "PATCH", body: data });
+}
+
+export async function deleteInventoryItem(id: number): Promise<void> {
+  await apiFetch(`/inventory/${id}`, { method: "DELETE" });
+}
+
+export async function getEmployeeInventory(employeeId: number): Promise<InventoryItem[]> {
+  return apiFetch(`/inventory/employee/${employeeId}`);
+}
+
+export async function assignInventoryToEmployee(itemId: number, employeeId: number): Promise<InventoryItem> {
+  return apiFetch(`/inventory/${itemId}/assign/${employeeId}`, { method: "PATCH" });
+}
+
+export async function unassignInventoryFromEmployee(itemId: number): Promise<InventoryItem> {
+  return apiFetch(`/inventory/${itemId}/unassign`, { method: "PATCH" });
+}
+
+export async function getInventoryHistory(itemId: number): Promise<InventoryHistory[]> {
+  return apiFetch(`/inventory/${itemId}/history`);
 }

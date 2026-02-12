@@ -6,49 +6,46 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🚀 Начало заполнения базы данных холдинга...');
 
-  // Создание ролей
-  const roleSuperAdmin = await prisma.role.upsert({
-    where: { name: 'Суперадмин' },
-    update: {},
-    create: { name: 'Суперадмин' },
-  });
+  // Очистка базы данных
+  await prisma.inventoryHistory.deleteMany();
+  await prisma.inventoryItem.deleteMany();
+  await prisma.employeeDocument.deleteMany();
+  await prisma.employee.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.position.deleteMany();
+  await prisma.department.deleteMany();
+  await prisma.company.deleteMany();
+  await prisma.role.deleteMany();
+  console.log('🗑️ База данных очищена');
 
-  const roleHr = await prisma.role.upsert({
-    where: { name: 'Кадровик' },
-    update: {},
-    create: { name: 'Кадровик' },
-  });
+  // 1. Создаём роли
+  const roles = [
+    { name: 'Суперадмин' },
+    { name: 'Кадровик' },
+    { name: 'Руководитель' },
+    { name: 'Бухгалтер' },
+    { name: 'Сотрудник' },
+  ];
 
-  const roleManager = await prisma.role.upsert({
-    where: { name: 'Руководитель' },
-    update: {},
-    create: { name: 'Руководитель' },
-  });
-
-  const roleAccountant = await prisma.role.upsert({
-    where: { name: 'Бухгалтер' },
-    update: {},
-    create: { name: 'Бухгалтер' },
-  });
-
-  const roleEmployee = await prisma.role.upsert({
-    where: { name: 'Сотрудник' },
-    update: {},
-    create: { name: 'Сотрудник' },
-  });
-
+  for (const role of roles) {
+    await prisma.role.upsert({
+      where: { name: role.name },
+      update: {},
+      create: role,
+    });
+  }
   console.log('✅ Роли созданы');
 
-  // Создание компаний холдинга
+  // 2. Создаём компании холдинга
   const companies = [
-    { name: 'Бунёд Интернешнл', shortName: 'Бунёд' },
-    { name: 'Дезинфекция', shortName: 'Дезинфекция' },
-    { name: 'Макон', shortName: 'Макон' },
-    { name: 'Макон (Магазин)', shortName: 'Макон Маг' },
-    { name: 'Роҳҳои Фавз', shortName: 'Роҳҳои Фавз' },
-    { name: 'Фавз', shortName: 'Фавз' },
-    { name: 'Фавз Кемикал', shortName: 'Фавз Кемикал' },
-    { name: 'Фавз Климат', shortName: 'Фавз Климат' },
+    { name: 'Бунёд Интернешнл', shortName: 'Бунёд', inn: '123456789', address: 'г. Душанбе, ул. Рудаки 1', phone: '+992 372 123456', email: 'info@bunyod.tj' },
+    { name: 'Дезинфекция', shortName: 'Дезинф.', inn: '234567890', address: 'г. Душанбе, ул. Сомони 15', phone: '+992 372 234567', email: 'info@dezinfection.tj' },
+    { name: 'Макон', shortName: 'Макон', inn: '345678901', address: 'г. Душанбе, ул. Айни 45', phone: '+992 372 345678', email: 'info@makon.tj' },
+    { name: 'Макон (Магазин)', shortName: 'Макон Маг.', inn: '456789012', address: 'г. Душанбе, пр. Исмоили Сомони 100', phone: '+992 372 456789', email: 'shop@makon.tj' },
+    { name: 'Роҳҳои Фавз', shortName: 'Роҳҳои Ф.', inn: '567890123', address: 'г. Душанбе, ул. Мирзо Турсунзода 5', phone: '+992 372 567890', email: 'info@rohhoi-favz.tj' },
+    { name: 'Фавз', shortName: 'Фавз', inn: '678901234', address: 'г. Душанбе, ул. Бохтар 20', phone: '+992 372 678901', email: 'info@favz.tj' },
+    { name: 'Фавз Кемикал', shortName: 'Фавз Хим.', inn: '789012345', address: 'г. Душанбе, ул. Носири Хусрав 8', phone: '+992 372 789012', email: 'info@favz-chemical.tj' },
+    { name: 'Фавз Климат', shortName: 'Фавз Клим.', inn: '890123456', address: 'г. Душанбе, ул. Фирдавси 30', phone: '+992 372 890123', email: 'info@favz-climat.tj' },
   ];
 
   const createdCompanies = {};
@@ -56,24 +53,27 @@ async function main() {
   for (const company of companies) {
     const created = await prisma.company.upsert({
       where: { name: company.name },
-      update: { shortName: company.shortName },
+      update: {},
       create: company,
     });
     createdCompanies[company.name] = created;
   }
-
   console.log('✅ Компании холдинга созданы (8 компаний)');
 
-  // Создание типовых отделов для каждой компании
+  // 3. Создаём отделы для каждой компании
   const departmentNames = [
     'Администрация',
     'Бухгалтерия',
     'Отдел кадров',
     'Отдел продаж',
-    'Склад',
+    'Производство',
+    'Логистика',
+    'IT отдел',
+    'Маркетинг',
   ];
 
-  for (const company of Object.values(createdCompanies)) {
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
     for (const deptName of departmentNames) {
       await prisma.department.upsert({
         where: {
@@ -86,19 +86,31 @@ async function main() {
   }
   console.log('✅ Отделы созданы для всех компаний');
 
-  // Создание типовых должностей для каждой компании
+  // 4. Создаём должности для каждой компании
   const positionNames = [
-    'Директор',
+    'Генеральный директор',
     'Заместитель директора',
     'Главный бухгалтер',
     'Бухгалтер',
-    'HR-специалист',
+    'Менеджер по кадрам',
+    'Специалист по кадрам',
     'Менеджер по продажам',
-    'Кладовщик',
+    'Старший менеджер',
+    'Инженер',
+    'Техник',
     'Водитель',
+    'Кладовщик',
+    'Программист',
+    'Системный администратор',
+    'Маркетолог',
+    'Дизайнер',
+    'Секретарь',
+    'Охранник',
+    'Уборщик',
   ];
 
-  for (const company of Object.values(createdCompanies)) {
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
     for (const posName of positionNames) {
       await prisma.position.upsert({
         where: {
@@ -111,12 +123,11 @@ async function main() {
   }
   console.log('✅ Должности созданы для всех компаний');
 
-  // Создание пароля
-  const saltRounds = 10;
-  const hashedPassword = await bcrypt.hash('password', saltRounds);
+  // 5. Создаём суперадминов холдинга
+  const hashedPassword = await bcrypt.hash('password', 10);
+  const superadminRole = await prisma.role.findUnique({ where: { name: 'Суперадмин' } });
 
-  // Создание 5 суперадминов холдинга
-  const superAdmins = [
+  const superadmins = [
     { email: 'admin1@holding.tj', firstName: 'Админ', lastName: 'Первый' },
     { email: 'admin2@holding.tj', firstName: 'Админ', lastName: 'Второй' },
     { email: 'admin3@holding.tj', firstName: 'Админ', lastName: 'Третий' },
@@ -124,16 +135,16 @@ async function main() {
     { email: 'admin5@holding.tj', firstName: 'Админ', lastName: 'Пятый' },
   ];
 
-  for (const admin of superAdmins) {
+  for (const admin of superadmins) {
     await prisma.user.upsert({
       where: { email: admin.email },
-      update: { isHoldingAdmin: true },
+      update: {},
       create: {
         email: admin.email,
         password: hashedPassword,
         firstName: admin.firstName,
         lastName: admin.lastName,
-        roleId: roleSuperAdmin.id,
+        roleId: superadminRole.id,
         isHoldingAdmin: true,
         companyId: null,
       },
@@ -141,228 +152,220 @@ async function main() {
   }
   console.log('✅ Суперадмины холдинга созданы (5 пользователей)');
 
-  // Создание тестовых пользователей для первой компании (Бунёд Интернешнл)
-  const bunyodCompany = createdCompanies['Бунёд Интернешнл'];
+  // 6. Создаём пользователей для каждой компании
+  const kadrovikRole = await prisma.role.findUnique({ where: { name: 'Кадровик' } });
+  const rukovoditelRole = await prisma.role.findUnique({ where: { name: 'Руководитель' } });
+  const buhgalterRole = await prisma.role.findUnique({ where: { name: 'Бухгалтер' } });
 
-  await prisma.user.upsert({
-    where: { email: 'hr@bunyod.tj' },
-    update: {},
-    create: {
-      email: 'hr@bunyod.tj',
-      password: hashedPassword,
-      firstName: 'Кадровик',
-      lastName: 'Бунёд',
-      roleId: roleHr.id,
-      companyId: bunyodCompany.id,
-    },
-  });
+  const companyUsers = [
+    // Бунёд Интернешнл
+    { email: 'hr@bunyod.tj', firstName: 'Кадровик', lastName: 'Бунёд', roleId: kadrovikRole.id, companyName: 'Бунёд Интернешнл' },
+    { email: 'manager@bunyod.tj', firstName: 'Руководитель', lastName: 'Бунёд', roleId: rukovoditelRole.id, companyName: 'Бунёд Интернешнл' },
+    { email: 'accountant@bunyod.tj', firstName: 'Бухгалтер', lastName: 'Бунёд', roleId: buhgalterRole.id, companyName: 'Бунёд Интернешнл' },
+    // Фавз
+    { email: 'hr@favz.tj', firstName: 'Кадровик', lastName: 'Фавз', roleId: kadrovikRole.id, companyName: 'Фавз' },
+    { email: 'manager@favz.tj', firstName: 'Руководитель', lastName: 'Фавз', roleId: rukovoditelRole.id, companyName: 'Фавз' },
+    // Дезинфекция
+    { email: 'hr@dezinfection.tj', firstName: 'Кадровик', lastName: 'Дезинфекция', roleId: kadrovikRole.id, companyName: 'Дезинфекция' },
+    // Макон
+    { email: 'hr@makon.tj', firstName: 'Кадровик', lastName: 'Макон', roleId: kadrovikRole.id, companyName: 'Макон' },
+    // Фавз Кемикал
+    { email: 'hr@favz-chemical.tj', firstName: 'Кадровик', lastName: 'Фавз Хим', roleId: kadrovikRole.id, companyName: 'Фавз Кемикал' },
+    // Фавз Климат
+    { email: 'hr@favz-climat.tj', firstName: 'Кадровик', lastName: 'Фавз Клим', roleId: kadrovikRole.id, companyName: 'Фавз Климат' },
+  ];
 
-  await prisma.user.upsert({
-    where: { email: 'manager@bunyod.tj' },
-    update: {},
-    create: {
-      email: 'manager@bunyod.tj',
-      password: hashedPassword,
-      firstName: 'Руководитель',
-      lastName: 'Бунёд',
-      roleId: roleManager.id,
-      companyId: bunyodCompany.id,
-    },
-  });
-
-  await prisma.user.upsert({
-    where: { email: 'accountant@bunyod.tj' },
-    update: {},
-    create: {
-      email: 'accountant@bunyod.tj',
-      password: hashedPassword,
-      firstName: 'Бухгалтер',
-      lastName: 'Бунёд',
-      roleId: roleAccountant.id,
-      companyId: bunyodCompany.id,
-    },
-  });
-
-  // Создание тестовых пользователей для второй компании (Фавз)
-  const favzCompany = createdCompanies['Фавз'];
-
-  await prisma.user.upsert({
-    where: { email: 'hr@favz.tj' },
-    update: {},
-    create: {
-      email: 'hr@favz.tj',
-      password: hashedPassword,
-      firstName: 'Кадровик',
-      lastName: 'Фавз',
-      roleId: roleHr.id,
-      companyId: favzCompany.id,
-    },
-  });
-
-  await prisma.user.upsert({
-    where: { email: 'manager@favz.tj' },
-    update: {},
-    create: {
-      email: 'manager@favz.tj',
-      password: hashedPassword,
-      firstName: 'Руководитель',
-      lastName: 'Фавз',
-      roleId: roleManager.id,
-      companyId: favzCompany.id,
-    },
-  });
-
+  for (const user of companyUsers) {
+    const company = createdCompanies[user.companyName];
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: {},
+      create: {
+        email: user.email,
+        password: hashedPassword,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        roleId: user.roleId,
+        companyId: company.id,
+        isHoldingAdmin: false,
+      },
+    });
+  }
   console.log('✅ Тестовые пользователи компаний созданы');
 
-  // Получаем отделы и должности для Бунёд
-  const bunyodAdmin = await prisma.department.findFirst({
-    where: { name: 'Администрация', companyId: bunyodCompany.id }
-  });
-  const bunyodSales = await prisma.department.findFirst({
-    where: { name: 'Отдел продаж', companyId: bunyodCompany.id }
-  });
-  const bunyodHR = await prisma.department.findFirst({
-    where: { name: 'Отдел кадров', companyId: bunyodCompany.id }
-  });
-
-  const bunyodDirector = await prisma.position.findFirst({
-    where: { name: 'Директор', companyId: bunyodCompany.id }
-  });
-  const bunyodManager = await prisma.position.findFirst({
-    where: { name: 'Менеджер по продажам', companyId: bunyodCompany.id }
-  });
-  const bunyodHRSpec = await prisma.position.findFirst({
-    where: { name: 'HR-специалист', companyId: bunyodCompany.id }
-  });
-
-  // Создание тестовых сотрудников для Бунёд Интернешнл
-  const bunyodEmployees = [
-    {
-      firstName: 'Фаррух',
-      lastName: 'Рахимов',
-      patronymic: 'Сайфуллоевич',
-      latinFirstName: 'Farrukh',
-      latinLastName: 'Rahimov',
-      email: 'farrukh.rahimov@bunyod.tj',
-      phone: '+992 900 123-45-67',
-      departmentId: bunyodAdmin?.id,
-      positionId: bunyodDirector?.id,
-      companyId: bunyodCompany.id,
-    },
-    {
-      firstName: 'Мадина',
-      lastName: 'Каримова',
-      patronymic: 'Ахмедовна',
-      latinFirstName: 'Madina',
-      latinLastName: 'Karimova',
-      email: 'madina.karimova@bunyod.tj',
-      phone: '+992 900 234-56-78',
-      departmentId: bunyodHR?.id,
-      positionId: bunyodHRSpec?.id,
-      companyId: bunyodCompany.id,
-    },
-    {
-      firstName: 'Бехруз',
-      lastName: 'Назаров',
-      patronymic: 'Содикович',
-      latinFirstName: 'Bekhruz',
-      latinLastName: 'Nazarov',
-      email: 'bekhruz.nazarov@bunyod.tj',
-      phone: '+992 900 345-67-89',
-      departmentId: bunyodSales?.id,
-      positionId: bunyodManager?.id,
-      companyId: bunyodCompany.id,
-    },
+  // 7. Создаём сотрудников для каждой компании (12 на компанию)
+  const employeeTemplates = [
+    { firstName: 'Акрам', lastName: 'Рахимов', latinFirst: 'Akram', latinLast: 'Rahimov', patronymic: 'Сафарович' },
+    { firstName: 'Бахром', lastName: 'Каримов', latinFirst: 'Bahrom', latinLast: 'Karimov', patronymic: 'Олимович' },
+    { firstName: 'Восит', lastName: 'Назаров', latinFirst: 'Vosit', latinLast: 'Nazarov', patronymic: 'Шерович' },
+    { firstName: 'Голиб', lastName: 'Сафаров', latinFirst: 'Golib', latinLast: 'Safarov', patronymic: 'Рустамович' },
+    { firstName: 'Далер', lastName: 'Ахмедов', latinFirst: 'Daler', latinLast: 'Ahmedov', patronymic: 'Камолович' },
+    { firstName: 'Ёқуб', lastName: 'Холиков', latinFirst: 'Yoqub', latinLast: 'Holikov', patronymic: 'Файзович' },
+    { firstName: 'Зафар', lastName: 'Мирзоев', latinFirst: 'Zafar', latinLast: 'Mirzoev', patronymic: 'Бахтиёрович' },
+    { firstName: 'Икром', lastName: 'Содиков', latinFirst: 'Ikrom', latinLast: 'Sodikov', patronymic: 'Нурович' },
+    { firstName: 'Камол', lastName: 'Тошев', latinFirst: 'Kamol', latinLast: 'Toshev', patronymic: 'Акбарович' },
+    { firstName: 'Лутфулло', lastName: 'Расулов', latinFirst: 'Lutfullo', latinLast: 'Rasulov', patronymic: 'Саидович' },
+    { firstName: 'Манучехр', lastName: 'Давлатов', latinFirst: 'Manuchehr', latinLast: 'Davlatov', patronymic: 'Джамолович' },
+    { firstName: 'Наврӯз', lastName: 'Ғаниев', latinFirst: 'Navruz', latinLast: 'Ghaniev', patronymic: 'Фарходович' },
+    { firstName: 'Санавбар', lastName: 'Комилова', latinFirst: 'Sanavbar', latinLast: 'Komilova', patronymic: 'Ҳасановна' },
+    { firstName: 'Тахмина', lastName: 'Ризоева', latinFirst: 'Tahmina', latinLast: 'Rizoeva', patronymic: 'Файзуллоевна' },
+    { firstName: 'Умеда', lastName: 'Рахматова', latinFirst: 'Umeda', latinLast: 'Rahmatova', patronymic: 'Муродовна' },
+    { firstName: 'Фарзона', lastName: 'Носирова', latinFirst: 'Farzona', latinLast: 'Nosirova', patronymic: 'Сайфуллоевна' },
   ];
 
-  for (const emp of bunyodEmployees) {
-    const existing = await prisma.employee.findFirst({
-      where: { email: emp.email },
-    });
+  const statuses = ['Активен', 'Активен', 'Активен', 'Активен', 'В отпуске', 'В командировке'];
+  const streets = ['Рудаки', 'Сомони', 'Айни', 'Фирдавси', 'Носири Хусрав', 'Бохтар', 'Мирзо Турсунзода'];
 
-    if (!existing) {
+  let employeeCount = 0;
+
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
+
+    const companyDepts = await prisma.department.findMany({ where: { companyId: company.id } });
+    const companyPositions = await prisma.position.findMany({ where: { companyId: company.id } });
+
+    for (let i = 0; i < 12; i++) {
+      const template = employeeTemplates[i % employeeTemplates.length];
+      const dept = companyDepts[i % companyDepts.length];
+      const position = companyPositions[i % companyPositions.length];
+      const status = statuses[i % statuses.length];
+      const street = streets[i % streets.length];
+
+      const birthYear = 1970 + (i * 3 % 30);
+      const birthMonth = (i % 12) + 1;
+      const birthDay = (i % 28) + 1;
+      const hireYear = 2015 + (i % 10);
+      const hireMonth = (i % 12) + 1;
+
       await prisma.employee.create({
-        data: emp,
+        data: {
+          firstName: template.firstName,
+          lastName: template.lastName,
+          patronymic: template.patronymic,
+          latinFirstName: template.latinFirst,
+          latinLastName: template.latinLast,
+          birthDate: new Date(birthYear, birthMonth - 1, birthDay),
+          passportSerial: 'А',
+          passportNumber: String(1000000 + employeeCount),
+          passportIssuedBy: 'ВКД МВД РТ',
+          passportIssueDate: new Date(2020, 0, 15),
+          inn: String(100000000 + employeeCount),
+          address: `г. Душанбе, ул. ${street} ${10 + i}`,
+          phone: `+992 93 ${String(1000000 + employeeCount).slice(-7)}`,
+          email: `${template.latinFirst.toLowerCase()}.${template.latinLast.toLowerCase()}${employeeCount}@${company.email.split('@')[1]}`,
+          salary: 3000 + (i * 500),
+          contractNumber: `ТД-${company.id}-${String(employeeCount + 1).padStart(4, '0')}`,
+          contractDate: new Date(hireYear, hireMonth - 1, 1),
+          hireDate: new Date(hireYear, hireMonth - 1, 1),
+          status: status,
+          notes: i === 0 ? 'Руководитель подразделения' : null,
+          departmentId: dept.id,
+          positionId: position.id,
+          companyId: company.id,
+        },
       });
+      employeeCount++;
     }
   }
+  console.log(`✅ Тестовые сотрудники созданы (${employeeCount} сотрудников, по 12 на компанию)`);
 
-  // Получаем отделы и должности для Фавз
-  const favzAdmin = await prisma.department.findFirst({
-    where: { name: 'Администрация', companyId: favzCompany.id }
-  });
-  const favzWarehouse = await prisma.department.findFirst({
-    where: { name: 'Склад', companyId: favzCompany.id }
-  });
-
-  const favzDirector = await prisma.position.findFirst({
-    where: { name: 'Директор', companyId: favzCompany.id }
-  });
-  const favzStorekeeper = await prisma.position.findFirst({
-    where: { name: 'Кладовщик', companyId: favzCompany.id }
-  });
-
-  // Создание тестовых сотрудников для Фавз
-  const favzEmployees = [
-    {
-      firstName: 'Ситора',
-      lastName: 'Азизова',
-      patronymic: 'Рустамовна',
-      latinFirstName: 'Sitora',
-      latinLastName: 'Azizova',
-      email: 'sitora.azizova@favz.tj',
-      phone: '+992 900 456-78-90',
-      departmentId: favzAdmin?.id,
-      positionId: favzDirector?.id,
-      companyId: favzCompany.id,
-    },
-    {
-      firstName: 'Комрон',
-      lastName: 'Холиков',
-      patronymic: 'Шарифович',
-      latinFirstName: 'Komron',
-      latinLastName: 'Kholikov',
-      email: 'komron.kholikov@favz.tj',
-      phone: '+992 900 567-89-01',
-      departmentId: favzWarehouse?.id,
-      positionId: favzStorekeeper?.id,
-      companyId: favzCompany.id,
-    },
+  // 8. Создаём инвентарь для каждой компании
+  const inventoryTemplates = [
+    { name: 'Ноутбук Dell', model: 'Latitude 5540', category: 'Компьютеры', price: 5500 },
+    { name: 'Монитор Samsung', model: 'S24R350', category: 'Компьютеры', price: 1800 },
+    { name: 'Принтер HP', model: 'LaserJet Pro M404dn', category: 'Оргтехника', price: 2500 },
+    { name: 'МФУ Canon', model: 'i-SENSYS MF445dw', category: 'Оргтехника', price: 3200 },
+    { name: 'Стол офисный', model: 'Ergo 120x60', category: 'Мебель', price: 800 },
+    { name: 'Кресло офисное', model: 'Chairman 699', category: 'Мебель', price: 1200 },
+    { name: 'Телефон Xiaomi', model: 'Redmi Note 12', category: 'Средства связи', price: 1500 },
+    { name: 'Кондиционер', model: 'Midea MSMA-12HRN1', category: 'Прочее', price: 3500 },
   ];
 
-  for (const emp of favzEmployees) {
-    const existing = await prisma.employee.findFirst({
-      where: { email: emp.email },
+  let inventoryCount = 0;
+
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
+
+    // Получаем сотрудников компании для привязки
+    const companyEmployees = await prisma.employee.findMany({
+      where: { companyId: company.id },
+      take: 4,
     });
 
-    if (!existing) {
-      await prisma.employee.create({
-        data: emp,
+    for (let i = 0; i < inventoryTemplates.length; i++) {
+      const template = inventoryTemplates[i];
+      const invNumber = `ИНВ-${String(company.id).padStart(2, '0')}-${String(i + 1).padStart(3, '0')}`;
+
+      // Первые 3 предмета привязываем к сотрудникам (статус "Выдан")
+      const assignToEmployee = i < 3 && companyEmployees[i];
+
+      const createdItem = await prisma.inventoryItem.create({
+        data: {
+          name: template.name,
+          model: template.model,
+          category: template.category,
+          inventoryNumber: invNumber,
+          price: template.price,
+          acquisitionDate: new Date(2023, i % 12, (i % 28) + 1),
+          description: null,
+          status: assignToEmployee ? 'Выдан' : 'В наличии',
+          companyId: company.id,
+          employeeId: assignToEmployee ? assignToEmployee.id : null,
+        },
       });
+
+      // История: создание
+      await prisma.inventoryHistory.create({
+        data: {
+          inventoryItemId: createdItem.id,
+          action: 'Создан',
+          details: `Название: ${template.name}, Категория: ${template.category}, Модель: ${template.model}, Инв. номер: ${invNumber}, Цена: ${template.price}`,
+          performedBy: 'admin1@holding.tj',
+        },
+      });
+
+      // История: выдача сотруднику
+      if (assignToEmployee) {
+        const empName = `${assignToEmployee.lastName} ${assignToEmployee.firstName}${assignToEmployee.patronymic ? ' ' + assignToEmployee.patronymic : ''}`;
+        await prisma.inventoryHistory.create({
+          data: {
+            inventoryItemId: createdItem.id,
+            action: 'Выдан',
+            details: `Выдан сотруднику ${empName}`,
+            employeeName: empName,
+            performedBy: 'admin1@holding.tj',
+          },
+        });
+      }
+
+      inventoryCount++;
     }
   }
+  console.log(`✅ Инвентарь создан (${inventoryCount} предметов, по ${inventoryTemplates.length} на компанию)`);
 
-  console.log('✅ Тестовые сотрудники созданы');
-  console.log('');
-  console.log('📋 Тестовые учётные записи:');
-  console.log('');
+  // Выводим информацию
+  console.log('\n📋 Тестовые учётные записи:\n');
   console.log('   🔴 СУПЕРАДМИНЫ ХОЛДИНГА (доступ ко всем компаниям):');
-  console.log('   admin1@holding.tj / password');
-  console.log('   admin2@holding.tj / password');
-  console.log('   admin3@holding.tj / password');
-  console.log('   admin4@holding.tj / password');
-  console.log('   admin5@holding.tj / password');
-  console.log('');
-  console.log('   🔵 БУНЁД ИНТЕРНЕШНЛ:');
+  for (const admin of superadmins) {
+    console.log(`   ${admin.email} / password`);
+  }
+  console.log('\n   🔵 БУНЁД ИНТЕРНЕШНЛ:');
   console.log('   hr@bunyod.tj / password (Кадровик)');
   console.log('   manager@bunyod.tj / password (Руководитель)');
   console.log('   accountant@bunyod.tj / password (Бухгалтер)');
-  console.log('');
-  console.log('   🟢 ФАВЗ:');
+  console.log('\n   🟢 ФАВЗ:');
   console.log('   hr@favz.tj / password (Кадровик)');
   console.log('   manager@favz.tj / password (Руководитель)');
-  console.log('');
-  console.log('🎉 Заполнение базы данных холдинга завершено!');
+  console.log('\n   🟡 ДЕЗИНФЕКЦИЯ:');
+  console.log('   hr@dezinfection.tj / password (Кадровик)');
+  console.log('\n   🟠 МАКОН:');
+  console.log('   hr@makon.tj / password (Кадровик)');
+  console.log('\n   🟣 ФАВЗ КЕМИКАЛ:');
+  console.log('   hr@favz-chemical.tj / password (Кадровик)');
+  console.log('\n   🔵 ФАВЗ КЛИМАТ:');
+  console.log('   hr@favz-climat.tj / password (Кадровик)');
+
+  console.log('\n🎉 Заполнение базы данных холдинга завершено!');
 }
 
 main()

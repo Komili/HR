@@ -26,6 +26,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Backend URL для API прокси (внутри Docker-сети)
+ENV BACKEND_URL=http://backend:7070
+
 # Копируем необходимые файлы
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static

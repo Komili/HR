@@ -209,7 +209,7 @@ export default function DepartmentsPage() {
               id="name"
               value={currentDepartment.name || ""}
               onChange={(e) => setCurrentDepartment({ ...currentDepartment, name: e.target.value })}
-              placeholder="Например: Разработка, Маркетинг, HR..."
+              placeholder="Введите название отдела"
               className="h-11 rounded-xl"
             />
           </div>

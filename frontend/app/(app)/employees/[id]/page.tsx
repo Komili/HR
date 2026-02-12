@@ -41,6 +41,10 @@ import {
   FileImage,
   FileType,
   X,
+  Package,
+  Unlink,
+  Plus,
+  Search,
 } from "lucide-react";
 import {
   getEmployee,
@@ -48,8 +52,12 @@ import {
   uploadEmployeeDocument,
   downloadDocument,
   viewDocument,
+  getEmployeeInventory,
+  unassignInventoryFromEmployee,
+  getInventoryItems,
+  assignInventoryToEmployee,
 } from "@/lib/hrms-api";
-import type { EmployeeProfile, EmployeeDocument } from "@/lib/types";
+import type { EmployeeProfile, EmployeeDocument, InventoryItem } from "@/lib/types";
 
 // Предопределённые типы документов для HR
 const DOCUMENT_TYPES = [
@@ -84,6 +92,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const router = useRouter();
   const [employee, setEmployee] = useState<EmployeeProfile | null>(null);
   const [documents, setDocuments] = useState<EmployeeDocument[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -91,6 +100,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [availableItems, setAvailableItems] = useState<InventoryItem[]>([]);
+  const [assignSearch, setAssignSearch] = useState("");
+  const [assigningItemId, setAssigningItemId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const employeeId = Number(id);
@@ -98,12 +111,14 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [employeeData, documentsData] = await Promise.all([
+      const [employeeData, documentsData, inventoryData] = await Promise.all([
         getEmployee(employeeId),
         getEmployeeDocuments(employeeId),
+        getEmployeeInventory(employeeId).catch(() => []),
       ]);
       setEmployee(employeeData);
       setDocuments(documentsData);
+      setInventoryItems(inventoryData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка загрузки данных");
     } finally {
@@ -187,6 +202,58 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
     setPreviewDoc(null);
     setPreviewUrl(null);
+  };
+
+  const handleOpenAssignModal = async () => {
+    setAssignSearch("");
+    setAssignModalOpen(true);
+    try {
+      const result = await getInventoryItems(1, 200, "");
+      // Показываем только свободные предметы (В наличии, без сотрудника)
+      setAvailableItems(result.data.filter(item => !item.employeeId && item.status === "В наличии"));
+    } catch {
+      setAvailableItems([]);
+    }
+  };
+
+  const handleAssign = async (itemId: number) => {
+    setAssigningItemId(itemId);
+    try {
+      await assignInventoryToEmployee(itemId, employeeId);
+      const updatedInventory = await getEmployeeInventory(employeeId).catch(() => []);
+      setInventoryItems(updatedInventory);
+      // Убираем из списка доступных
+      setAvailableItems(prev => prev.filter(i => i.id !== itemId));
+      setSuccessMessage("Имущество успешно закреплено");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка закрепления имущества");
+    } finally {
+      setAssigningItemId(null);
+    }
+  };
+
+  const filteredAvailableItems = availableItems.filter(item => {
+    if (!assignSearch) return true;
+    const q = assignSearch.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(q) ||
+      (item.model && item.model.toLowerCase().includes(q)) ||
+      (item.inventoryNumber && item.inventoryNumber.toLowerCase().includes(q)) ||
+      (item.category && item.category.toLowerCase().includes(q))
+    );
+  });
+
+  const handleUnassign = async (itemId: number) => {
+    try {
+      await unassignInventoryFromEmployee(itemId);
+      const updatedInventory = await getEmployeeInventory(employeeId).catch(() => []);
+      setInventoryItems(updatedInventory);
+      setSuccessMessage("Имущество успешно откреплено");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка открепления имущества");
+    }
   };
 
   // Получить загруженный документ по типу
@@ -330,6 +397,18 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             {documents.length > 0 && (
               <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-xs">
                 {documents.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger
+            value="inventory"
+            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg"
+          >
+            <Package className="mr-2 h-4 w-4" />
+            Имущество
+            {inventoryItems.length > 0 && (
+              <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-xs">
+                {inventoryItems.length}
               </span>
             )}
           </TabsTrigger>
@@ -579,6 +658,101 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="inventory" className="mt-0">
+          <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden">
+            <CardHeader className="border-b border-emerald-100/50 bg-gradient-to-r from-indigo-50/50 to-purple-50/50">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Package className="h-5 w-5 text-indigo-600" />
+                  Закреплённое имущество
+                </CardTitle>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">Всего:</span>
+                    <span className="font-semibold text-gray-700">{inventoryItems.length}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-8 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white"
+                    onClick={handleOpenAssignModal}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Закрепить имущество
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {inventoryItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Package className="h-12 w-12 text-gray-300 mb-3" />
+                  <p className="text-sm">За сотрудником нет закреплённого имущества</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                      <TableHead>Название</TableHead>
+                      <TableHead>Инв. номер</TableHead>
+                      <TableHead>Категория</TableHead>
+                      <TableHead>Статус</TableHead>
+                      <TableHead className="text-right">Действия</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {inventoryItems.map((item) => (
+                      <TableRow key={item.id} className="hover:bg-indigo-50/30">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100">
+                              <Package className="h-4 w-4 text-indigo-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">{item.name}</p>
+                              {item.model && <p className="text-xs text-gray-500">{item.model}</p>}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {item.inventoryNumber ? (
+                            <span className="font-mono text-sm text-gray-600">{item.inventoryNumber}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {item.category ? (
+                            <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+                              {item.category}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center rounded-full bg-blue-100 border border-blue-200 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                            {item.status}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                            onClick={() => handleUnassign(item.id)}
+                          >
+                            <Unlink className="h-4 w-4 mr-1" />
+                            Открепить
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Модальное окно для просмотра документа */}
@@ -652,6 +826,77 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 )}
               </div>
             ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Модальное окно для закрепления имущества */}
+      <Dialog open={assignModalOpen} onOpenChange={setAssignModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-indigo-600" />
+              Закрепить имущество за сотрудником
+            </DialogTitle>
+          </DialogHeader>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Поиск по названию, модели, инв. номеру..."
+              value={assignSearch}
+              onChange={(e) => setAssignSearch(e.target.value)}
+              className="w-full h-10 pl-10 pr-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0 -mx-1 px-1">
+            {filteredAvailableItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                <Package className="h-10 w-10 text-gray-300 mb-2" />
+                <p className="text-sm">Нет доступного имущества</p>
+                <p className="text-xs text-gray-400 mt-1">Все предметы уже закреплены или отсутствуют</p>
+              </div>
+            ) : (
+              <div className="space-y-2 py-2">
+                {filteredAvailableItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between rounded-xl border border-gray-200 p-3 hover:border-indigo-200 hover:bg-indigo-50/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100">
+                        <Package className="h-5 w-5 text-indigo-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{item.name}</p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          {item.model && <span>{item.model}</span>}
+                          {item.model && item.inventoryNumber && <span>·</span>}
+                          {item.inventoryNumber && <span className="font-mono">{item.inventoryNumber}</span>}
+                          {(item.model || item.inventoryNumber) && item.category && <span>·</span>}
+                          {item.category && <span>{item.category}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shrink-0 ml-3"
+                      disabled={assigningItemId === item.id}
+                      onClick={() => handleAssign(item.id)}
+                    >
+                      {assigningItemId === item.id ? (
+                        <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4 mr-1" />
+                          Закрепить
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
