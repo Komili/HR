@@ -446,16 +446,16 @@ export default function InventoryPage() {
   ]
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-6">
-        <div className="space-y-2">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 sm:gap-6">
+        <div className="space-y-1 sm:space-y-2">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg shadow-indigo-500/25">
-              <Package className="h-6 w-6 text-white" />
+            <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg shadow-indigo-500/25">
+              <Package className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Инвентарь</h1>
-              <p className="text-sm text-muted-foreground">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Инвентарь</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground">
                 Учёт имущества и оборудования компании
               </p>
             </div>
@@ -463,56 +463,57 @@ export default function InventoryPage() {
         </div>
         <Button
           onClick={handleOpenCreateModal}
-          className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-105"
+          className="h-9 sm:h-10 px-3 sm:px-5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-105 text-xs sm:text-sm"
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Добавить инвентарь
+          <Plus className="mr-1 sm:mr-2 h-4 w-4" />
+          <span className="hidden sm:inline">Добавить инвентарь</span>
+          <span className="sm:hidden">Добавить</span>
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 grid-cols-3 sm:gap-4">
         {quickStats.map((stat) => (
           <div
             key={stat.label}
-            className="flex items-center gap-4 rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 p-4 shadow-sm hover:shadow-md transition-all"
+            className="flex items-center gap-2 sm:gap-4 rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 p-3 sm:p-4 shadow-sm hover:shadow-md transition-all"
           >
-            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${stat.bg}`}>
-              <stat.icon className={`h-5 w-5 ${stat.color}`} />
+            <div className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl ${stat.bg}`}>
+              <stat.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${stat.color}`} />
             </div>
             <div>
-              <div className="text-2xl font-bold">{stat.value}</div>
-              <div className="text-xs text-muted-foreground">{stat.label}</div>
+              <div className="text-lg sm:text-2xl font-bold">{stat.value}</div>
+              <div className="text-[10px] sm:text-xs text-muted-foreground">{stat.label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 shadow-lg overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-4 p-5 border-b border-emerald-100/50">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 shadow-lg overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:p-5 border-b border-emerald-100/50">
+          <div className="relative flex-1 min-w-[200px] max-w-md">
+            <Search className="absolute left-3 sm:left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Поиск по названию, модели, инв. номеру..."
+              placeholder="Поиск по названию, модели..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-11 h-11 rounded-xl bg-white/80 border-emerald-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20"
+              className="pl-10 sm:pl-11 h-10 sm:h-11 rounded-xl bg-white/80 border-emerald-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20"
             />
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <span className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 px-3 py-1.5 text-indigo-700 font-medium">
-              <Package className="h-3.5 w-3.5" />
+            <span className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 px-2 sm:px-3 py-1 sm:py-1.5 text-indigo-700 font-medium text-xs sm:text-sm">
+              <Package className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               Всего: {total}
             </span>
           </div>
         </div>
 
         {error && (
-          <div className="mx-5 mt-4 rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-600">
+          <div className="mx-3 sm:mx-5 mt-3 sm:mt-4 rounded-xl bg-red-50 border border-red-200 p-3 sm:p-4 text-sm text-red-600">
             {error}
           </div>
         )}
 
-        <div className="p-5">
+        <div className="p-3 sm:p-5">
           <DataTable columns={columns} data={data} pagination={pagination} />
         </div>
       </div>
@@ -525,8 +526,8 @@ export default function InventoryPage() {
         onSave={handleSave}
         isSaving={isSaving}
       >
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 sm:pr-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Название *</Label>
               <Input
@@ -549,7 +550,7 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div className="space-y-2">
               <Label htmlFor="category">Категория</Label>
               <select
@@ -576,7 +577,7 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div className="space-y-2">
               <Label htmlFor="price">Цена</Label>
               <Input
@@ -602,7 +603,7 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div className="space-y-2">
               <Label htmlFor="status">Статус</Label>
               <select

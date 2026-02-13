@@ -27,9 +27,12 @@ model Company {
   departments    Department[]
   positions      Position[]
   documents      EmployeeDocument[]
-  inventoryItems InventoryItem[]
-  createdAt      DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  inventoryItems   InventoryItem[]
+  offices          Office[]
+  attendanceEvents AttendanceEvent[]
+  attendances      Attendance[]
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 }
 
 model User {
@@ -84,10 +87,12 @@ model Employee {
   departmentId    Int?
   position        Position?          @relation(fields: [positionId], references: [id])
   positionId      Int?
-  documents       EmployeeDocument[]
-  inventoryItems  InventoryItem[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  documents        EmployeeDocument[]
+  inventoryItems   InventoryItem[]
+  attendanceEvents AttendanceEvent[]
+  attendances      Attendance[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([companyId])
 }
@@ -169,6 +174,58 @@ model InventoryHistory {
   createdAt       DateTime      @default(now())
 
   @@index([inventoryItemId])
+}
+
+model Office {
+  id               Int               @id @default(autoincrement())
+  name             String
+  address          String?
+  company          Company           @relation(fields: [companyId], references: [id])
+  companyId        Int
+  createdAt        DateTime          @default(now())
+  attendanceEvents AttendanceEvent[]
+
+  @@unique([name, companyId])
+  @@index([companyId])
+}
+
+model AttendanceEvent {
+  id         Int      @id @default(autoincrement())
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId Int
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  Int
+  timestamp  DateTime
+  direction  String   // "IN" | "OUT"
+  deviceName String?
+  office     Office?  @relation(fields: [officeId], references: [id])
+  officeId   Int?
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId, timestamp])
+  @@index([companyId, timestamp])
+}
+
+model Attendance {
+  id                Int      @id @default(autoincrement())
+  employee          Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId        Int
+  company           Company  @relation(fields: [companyId], references: [id])
+  companyId         Int
+  date              DateTime @db.Date
+  firstEntry        DateTime?
+  lastExit          DateTime?
+  status            String   @default("present") // present|left|absent|excused
+  totalMinutes      Int      @default(0)
+  correctionMinutes Int      @default(0)
+  correctedBy       String?
+  correctionNote    String?
+  officeName        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([companyId, date])
 }
 
 model AuditLog {

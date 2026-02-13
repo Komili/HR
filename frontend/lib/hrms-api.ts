@@ -13,6 +13,8 @@ import type {
   CreateInventoryItemInput,
   UpdateInventoryItemInput,
   InventoryHistory,
+  Office,
+  AttendanceSummary,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -227,4 +229,74 @@ export async function unassignInventoryFromEmployee(itemId: number): Promise<Inv
 
 export async function getInventoryHistory(itemId: number): Promise<InventoryHistory[]> {
   return apiFetch(`/inventory/${itemId}/history`);
+}
+
+// ============ OFFICES ============
+
+export async function getOffices(): Promise<Office[]> {
+  const params = withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/offices${query ? `?${query}` : ""}`);
+}
+
+export async function createOffice(name: string, address?: string): Promise<Office> {
+  const companyId = getCurrentCompanyId();
+  const payload: any = { name };
+  if (address) payload.address = address;
+  if (companyId) payload.companyId = companyId;
+  return apiFetch("/offices", { method: "POST", body: payload });
+}
+
+export async function updateOffice(id: number, name: string, address?: string): Promise<Office> {
+  const payload: any = { name };
+  if (address !== undefined) payload.address = address;
+  return apiFetch(`/offices/${id}`, { method: "PATCH", body: payload });
+}
+
+export async function deleteOffice(id: number): Promise<void> {
+  await apiFetch(`/offices/${id}`, { method: "DELETE" });
+}
+
+// ============ ATTENDANCE ============
+
+export async function getAttendance(date: string): Promise<AttendanceSummary[]> {
+  const params = withCompanyId(new URLSearchParams({ date }));
+  return apiFetch(`/attendance?${params.toString()}`);
+}
+
+export async function getAttendanceRange(
+  dateFrom: string,
+  dateTo: string,
+): Promise<AttendanceSummary[]> {
+  const params = withCompanyId(new URLSearchParams({ dateFrom, dateTo }));
+  return apiFetch(`/attendance/range?${params.toString()}`);
+}
+
+export async function getEmployeeAttendance(
+  employeeId: number,
+  month: number,
+  year: number,
+): Promise<AttendanceSummary[]> {
+  return apiFetch(`/attendance/employee/${employeeId}?month=${month}&year=${year}`);
+}
+
+export async function correctAttendance(
+  id: number,
+  correctionMinutes: number,
+  note: string,
+): Promise<AttendanceSummary> {
+  return apiFetch(`/attendance/${id}/correct`, {
+    method: "PATCH",
+    body: { correctionMinutes, note },
+  });
+}
+
+export async function registerAttendanceEvent(
+  employeeId: number,
+  direction: "IN" | "OUT",
+  officeId?: number,
+): Promise<any> {
+  const payload: any = { employeeId, direction };
+  if (officeId) payload.officeId = officeId;
+  return apiFetch("/attendance/event", { method: "POST", body: payload });
 }

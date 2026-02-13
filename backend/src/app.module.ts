@@ -10,6 +10,8 @@ import { DepartmentsModule } from './departments/departments.module';
 import { PositionsModule } from './positions/positions.module';
 import { CompaniesModule } from './companies/companies.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { OfficesModule } from './offices/offices.module';
+import { AttendanceModule } from './attendance/attendance.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { InventoryModule } from './inventory/inventory.module';
     PositionsModule,
     CompaniesModule,
     InventoryModule,
+    OfficesModule,
+    AttendanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

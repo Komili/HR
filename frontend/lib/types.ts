@@ -155,6 +155,41 @@ export type InventoryHistory = {
   createdAt: string;
 };
 
+export type Office = {
+  id: number;
+  name: string;
+  address: string | null;
+  companyId: number;
+  company?: { id: number; name: string };
+};
+
+export type AttendanceEvent = {
+  id: number;
+  employeeId: number;
+  timestamp: string;
+  direction: "IN" | "OUT";
+  deviceName: string | null;
+  officeId: number | null;
+  officeName?: string;
+};
+
+export type AttendanceSummary = {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  departmentName: string | null;
+  positionName: string | null;
+  date: string;
+  firstEntry: string | null;
+  lastExit: string | null;
+  status: "present" | "left" | "absent" | "excused";
+  totalMinutes: number;
+  correctionMinutes: number;
+  correctedBy: string | null;
+  correctionNote: string | null;
+  officeName: string | null;
+};
+
 export type HoldingStats = {
   totalCompanies: number;
   totalEmployees: number;

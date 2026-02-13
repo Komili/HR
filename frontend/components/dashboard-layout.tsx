@@ -1,5 +1,6 @@
 "use client";
 
+import React, { useState } from "react";
 import {
   Home,
   Users,
@@ -17,6 +18,9 @@ import {
   Building,
   Check,
   Package,
+  Clock,
+  Menu,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -30,6 +34,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useAuth } from "@/app/contexts/AuthContext";
 
 const menuItems = [
@@ -38,6 +48,7 @@ const menuItems = [
   { name: "Отделы", path: "/departments", icon: Building2, description: "Структура" },
   { name: "Должности", path: "/positions", icon: Briefcase, description: "Роли" },
   { name: "Инвентарь", path: "/inventory", icon: Package, description: "Имущество" },
+  { name: "Посещаемость", path: "/attendance", icon: Clock, description: "Учёт времени" },
 ];
 
 const settingsNav = { name: "Настройки", path: "/settings", icon: Settings, description: "Конфиг" };
@@ -47,11 +58,13 @@ function NavLink({
   icon: Icon,
   name,
   description,
+  onClick,
 }: {
   path: string;
   icon: React.ElementType;
   name: string;
   description?: string;
+  onClick?: () => void;
 }) {
   const pathname = usePathname();
   const isActive = pathname.startsWith(path);
@@ -59,6 +72,7 @@ function NavLink({
   return (
     <Link
       href={path}
+      onClick={onClick}
       className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
         isActive
           ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25"
@@ -91,7 +105,6 @@ function CompanySelector() {
   const { isHoldingAdmin, companies, currentCompanyId, currentCompanyName, setCurrentCompany } = useAuth();
 
   if (!isHoldingAdmin) {
-    // Обычный пользователь - показываем только название его компании
     if (currentCompanyName) {
       return (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200">
@@ -103,19 +116,18 @@ function CompanySelector() {
     return null;
   }
 
-  // Суперадмин - показываем селектор компаний
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="flex items-center gap-2 px-3 py-2 h-auto rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-gray-700 hover:from-amber-100 hover:to-orange-100 hover:text-gray-900"
+          className="flex items-center gap-2 px-3 py-2 h-auto rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-gray-700 hover:from-amber-100 hover:to-orange-100 hover:text-gray-900 w-full justify-start"
         >
           <Building className="h-4 w-4 text-amber-600" />
           <span className="text-sm truncate max-w-[140px]">
             {currentCompanyName || "Все компании"}
           </span>
-          <ChevronDown className="h-4 w-4 text-amber-600" />
+          <ChevronDown className="h-4 w-4 text-amber-600 ml-auto" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
@@ -164,10 +176,21 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { user, logout, isHoldingAdmin } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+
+  const handleGlobalSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (globalSearch.trim()) {
+      router.push(`/employees?search=${encodeURIComponent(globalSearch.trim())}`);
+      setGlobalSearch("");
+    }
+  };
 
   return (
     <div className="min-h-screen">
       <div className="flex min-h-screen">
+        {/* Desktop Sidebar */}
         <aside className="hidden lg:flex lg:w-72 lg:flex-col bg-white border-r border-gray-200 shadow-sm">
           <div className="flex h-20 items-center gap-3 px-6 border-b border-gray-100">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-lg shadow-emerald-500/30">
@@ -181,7 +204,6 @@ export default function DashboardLayout({
             </div>
           </div>
 
-          {/* Company Selector for sidebar */}
           <div className="px-4 py-3 border-b border-gray-100">
             <CompanySelector />
           </div>
@@ -227,40 +249,110 @@ export default function DashboardLayout({
           </div>
         </aside>
 
+        {/* Mobile Sidebar Sheet */}
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent side="left" className="w-72 p-0">
+            <SheetHeader className="flex h-16 flex-row items-center gap-3 px-6 border-b border-gray-100">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-xl shadow-lg ${
+                isHoldingAdmin
+                  ? "bg-gradient-to-br from-amber-500 to-orange-500"
+                  : "bg-gradient-to-br from-emerald-500 to-teal-500"
+              }`}>
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <SheetTitle className="text-lg font-bold">КАДРЫ</SheetTitle>
+            </SheetHeader>
+
+            <div className="px-4 py-3 border-b border-gray-100">
+              <CompanySelector />
+            </div>
+
+            <nav className="flex-1 space-y-1 px-4 py-4 overflow-y-auto">
+              <div className="mb-3 px-3">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  Меню
+                </span>
+              </div>
+              {menuItems.map((item) => (
+                <NavLink key={item.path} {...item} onClick={() => setMobileMenuOpen(false)} />
+              ))}
+              <div className="my-3 border-t border-gray-100" />
+              <NavLink {...settingsNav} onClick={() => setMobileMenuOpen(false)} />
+            </nav>
+
+            {user && (
+              <div className="border-t border-gray-100 px-4 py-4">
+                <div className="flex items-center gap-3 rounded-xl bg-gray-50 border border-gray-200 px-3 py-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white shadow-lg ${
+                    isHoldingAdmin
+                      ? "bg-gradient-to-br from-amber-400 to-orange-500"
+                      : "bg-gradient-to-br from-emerald-400 to-teal-500"
+                  }`}>
+                    {user.email?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">{user.email}</div>
+                    <div className={`text-[11px] ${isHoldingAdmin ? "text-amber-600" : "text-emerald-600"}`}>
+                      {isHoldingAdmin ? "Суперадмин" : user.role || "Пользователь"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); logout(); }}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all"
+                    title="Выйти"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </SheetContent>
+        </Sheet>
+
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-xl border-b border-emerald-100/50 shadow-sm">
-            <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto flex h-14 sm:h-16 max-w-7xl items-center gap-3 px-3 sm:px-6 lg:px-8">
+              {/* Mobile hamburger */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="flex lg:hidden h-10 w-10 items-center justify-center rounded-xl hover:bg-emerald-50 transition-colors"
+              >
+                <Menu className="h-5 w-5 text-gray-600" />
+              </button>
+
               <div className="flex items-center gap-2 lg:hidden">
-                <div className={`flex h-9 w-9 items-center justify-center rounded-xl shadow-lg ${
+                <div className={`flex h-8 w-8 items-center justify-center rounded-lg shadow-md ${
                   isHoldingAdmin
                     ? "bg-gradient-to-br from-amber-500 to-orange-500"
                     : "bg-gradient-to-br from-emerald-500 to-teal-500"
                 }`}>
-                  <Sparkles className="h-5 w-5 text-white" />
+                  <Sparkles className="h-4 w-4 text-white" />
                 </div>
-                <span className="text-base font-bold">КАДРЫ</span>
+                <span className="text-sm font-bold">КАДРЫ</span>
               </div>
 
               <div className="flex-1">
-                <div className="relative hidden max-w-md items-center sm:flex">
+                <form onSubmit={handleGlobalSearch} className="relative hidden max-w-md items-center sm:flex">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Поиск..."
+                    placeholder="Поиск сотрудников..."
+                    value={globalSearch}
+                    onChange={(e) => setGlobalSearch(e.target.value)}
                     className="pl-10 h-10 w-72 rounded-xl bg-emerald-50/50 border-emerald-100 focus:bg-white focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 transition-all"
                   />
-                </div>
+                </form>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" className={`h-10 px-4 rounded-xl shadow-lg transition-all hover:scale-105 ${
+                    <Button size="sm" className={`h-9 sm:h-10 px-3 sm:px-4 rounded-xl shadow-lg transition-all hover:scale-105 text-xs sm:text-sm ${
                       isHoldingAdmin
                         ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/25 hover:shadow-amber-500/40"
                         : "bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-emerald-500/25 hover:shadow-emerald-500/40"
                     }`}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Создать
+                      <Plus className="mr-1 sm:mr-2 h-4 w-4" />
+                      <span className="hidden sm:inline">Создать</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
@@ -284,14 +376,14 @@ export default function DashboardLayout({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-emerald-50">
+                <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl hover:bg-emerald-50">
                   <Bell className="h-5 w-5" />
                 </Button>
               </div>
             </div>
           </header>
 
-          <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
+          <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 sm:gap-8 px-3 py-4 sm:px-6 sm:py-8 lg:px-8">
             {children}
           </main>
         </div>

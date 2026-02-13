@@ -45,6 +45,7 @@ import {
   Unlink,
   Plus,
   Search,
+  Clock,
 } from "lucide-react";
 import {
   getEmployee,
@@ -56,8 +57,9 @@ import {
   unassignInventoryFromEmployee,
   getInventoryItems,
   assignInventoryToEmployee,
+  getEmployeeAttendance,
 } from "@/lib/hrms-api";
-import type { EmployeeProfile, EmployeeDocument, InventoryItem } from "@/lib/types";
+import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary } from "@/lib/types";
 
 // Предопределённые типы документов для HR
 const DOCUMENT_TYPES = [
@@ -106,6 +108,12 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [assigningItemId, setAssigningItemId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  // Attendance state
+  const [attendanceData, setAttendanceData] = useState<AttendanceSummary[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().getMonth() + 1);
+  const [attendanceYear, setAttendanceYear] = useState(() => new Date().getFullYear());
+
   const employeeId = Number(id);
 
   const loadData = useCallback(async () => {
@@ -136,10 +144,27 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
   }, [employeeId]);
 
+  const loadAttendance = useCallback(async () => {
+    setAttendanceLoading(true);
+    try {
+      const data = await getEmployeeAttendance(employeeId, attendanceMonth, attendanceYear);
+      setAttendanceData(data);
+    } catch {
+      setAttendanceData([]);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }, [employeeId, attendanceMonth, attendanceYear]);
+
   useEffect(() => {
     if (!Number.isFinite(employeeId)) return;
     loadData();
   }, [employeeId, loadData]);
+
+  useEffect(() => {
+    if (!Number.isFinite(employeeId)) return;
+    loadAttendance();
+  }, [employeeId, loadAttendance]);
 
   // Очистка URL при закрытии превью
   useEffect(() => {
@@ -291,7 +316,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const initials = `${employee.firstName?.charAt(0) || ""}${employee.lastName?.charAt(0) || ""}`.toUpperCase();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <Link
         href="/employees"
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-emerald-600 transition-colors"
@@ -300,34 +325,34 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
         Назад к списку
       </Link>
 
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[hsl(155,45%,15%)] via-[hsl(158,40%,12%)] to-[hsl(160,35%,10%)] p-8 shadow-2xl shadow-emerald-900/20">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-[hsl(155,45%,15%)] via-[hsl(158,40%,12%)] to-[hsl(160,35%,10%)] p-4 sm:p-8 shadow-2xl shadow-emerald-900/20">
         <div className="absolute inset-0">
           <div className="absolute -left-20 -top-20 h-60 w-60 rounded-full bg-emerald-500/20 blur-3xl" />
           <div className="absolute right-0 bottom-0 h-40 w-40 rounded-full bg-teal-500/15 blur-2xl" />
         </div>
 
-        <div className="relative flex flex-wrap items-start justify-between gap-6">
-          <div className="flex items-center gap-5">
-            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-2xl font-bold text-white shadow-lg shadow-emerald-500/30">
+        <div className="relative flex flex-wrap items-start justify-between gap-4 sm:gap-6">
+          <div className="flex items-center gap-3 sm:gap-5">
+            <div className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-lg sm:text-2xl font-bold text-white shadow-lg shadow-emerald-500/30 flex-shrink-0">
               {initials}
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-white">{fullName}</h1>
-              <div className="mt-2 flex items-center gap-4 text-white/70">
-                <span className="flex items-center gap-1.5">
-                  <Briefcase className="h-4 w-4" />
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-3xl font-bold text-white truncate">{fullName}</h1>
+              <div className="mt-1 sm:mt-2 flex flex-wrap items-center gap-2 sm:gap-4 text-white/70 text-xs sm:text-sm">
+                <span className="flex items-center gap-1 sm:gap-1.5">
+                  <Briefcase className="h-3 w-3 sm:h-4 sm:w-4" />
                   {employee.position?.name || "—"}
                 </span>
-                <span className="flex items-center gap-1.5">
-                  <Building2 className="h-4 w-4" />
+                <span className="flex items-center gap-1 sm:gap-1.5">
+                  <Building2 className="h-3 w-3 sm:h-4 sm:w-4" />
                   {employee.department?.name || "—"}
                 </span>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300 border border-emerald-500/30">
+              <div className="mt-2 sm:mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full bg-emerald-500/20 px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-medium text-emerald-300 border border-emerald-500/30">
                   Активен
                 </span>
-                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white/70 border border-white/10">
+                <span className="rounded-full bg-white/10 px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-medium text-white/70 border border-white/10">
                   ID: {employeeId}
                 </span>
               </div>
@@ -338,16 +363,17 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             <Button
               variant="outline"
               size="sm"
-              className="h-9 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20"
+              className="h-8 sm:h-9 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs sm:text-sm"
               onClick={() => router.push(`/employees?action=edit&id=${employeeId}`)}
             >
-              <Edit className="mr-2 h-4 w-4" />
-              Редактировать
+              <Edit className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Редактировать</span>
+              <span className="sm:hidden">Ред.</span>
             </Button>
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20"
+              className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20"
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
@@ -363,12 +389,12 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
 
       {/* Уведомление об успешной загрузке */}
       {successMessage && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
-          <div className="flex items-center gap-3 rounded-xl bg-emerald-600 px-5 py-4 text-white shadow-2xl shadow-emerald-500/30">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
-              <CheckCircle2 className="h-5 w-5" />
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
+          <div className="flex items-center gap-2 sm:gap-3 rounded-xl bg-emerald-600 px-3 py-3 sm:px-5 sm:py-4 text-white shadow-2xl shadow-emerald-500/30">
+            <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-white/20">
+              <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
-            <span className="font-medium">{successMessage}</span>
+            <span className="font-medium text-sm sm:text-base">{successMessage}</span>
             <button
               onClick={() => setSuccessMessage(null)}
               className="ml-2 rounded-lg p-1 hover:bg-white/20 transition-colors"
@@ -379,38 +405,49 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      <Tabs defaultValue="main-data" className="space-y-6">
-        <TabsList className="bg-white/80 backdrop-blur-sm border border-emerald-100/50 rounded-xl p-1">
+      <Tabs defaultValue="main-data" className="space-y-4 sm:space-y-6">
+        <TabsList className="bg-white/80 backdrop-blur-sm border border-emerald-100/50 rounded-xl p-1 flex flex-wrap h-auto gap-1">
           <TabsTrigger
             value="main-data"
-            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg"
+            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs sm:text-sm px-2 sm:px-3"
           >
-            <User className="mr-2 h-4 w-4" />
-            Основные данные
+            <User className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Основные данные</span>
+            <span className="sm:hidden">Данные</span>
           </TabsTrigger>
           <TabsTrigger
             value="documents"
-            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg"
+            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs sm:text-sm px-2 sm:px-3"
           >
-            <FileText className="mr-2 h-4 w-4" />
-            Документы
+            <FileText className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Документы</span>
+            <span className="sm:hidden">Док.</span>
             {documents.length > 0 && (
-              <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-xs">
+              <span className="ml-1 sm:ml-2 flex h-4 sm:h-5 min-w-4 sm:min-w-5 items-center justify-center rounded-full bg-white/20 px-1 sm:px-1.5 text-[10px] sm:text-xs">
                 {documents.length}
               </span>
             )}
           </TabsTrigger>
           <TabsTrigger
             value="inventory"
-            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg"
+            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs sm:text-sm px-2 sm:px-3"
           >
-            <Package className="mr-2 h-4 w-4" />
-            Имущество
+            <Package className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Имущество</span>
+            <span className="sm:hidden">Имущ.</span>
             {inventoryItems.length > 0 && (
-              <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-xs">
+              <span className="ml-1 sm:ml-2 flex h-4 sm:h-5 min-w-4 sm:min-w-5 items-center justify-center rounded-full bg-white/20 px-1 sm:px-1.5 text-[10px] sm:text-xs">
                 {inventoryItems.length}
               </span>
             )}
+          </TabsTrigger>
+          <TabsTrigger
+            value="attendance"
+            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs sm:text-sm px-2 sm:px-3"
+          >
+            <Clock className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Посещаемость</span>
+            <span className="sm:hidden">Посещ.</span>
           </TabsTrigger>
         </TabsList>
 
@@ -477,13 +514,13 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
                     <TableHead className="w-12 text-center">Статус</TableHead>
                     <TableHead>Тип документа</TableHead>
-                    <TableHead>Файл</TableHead>
+                    <TableHead className="hidden sm:table-cell">Файл</TableHead>
                     <TableHead className="text-right">Действия</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -682,7 +719,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
               {inventoryItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <Package className="h-12 w-12 text-gray-300 mb-3" />
@@ -749,6 +786,154 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                     ))}
                   </TableBody>
                 </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="attendance" className="mt-0">
+          <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden overflow-x-auto">
+            <CardHeader className="border-b border-emerald-100/50 bg-gradient-to-r from-blue-50/50 to-cyan-50/50">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Clock className="h-5 w-5 text-blue-600" />
+                  Посещаемость за месяц
+                </CardTitle>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={attendanceMonth}
+                    onChange={(e) => setAttendanceMonth(Number(e.target.value))}
+                    className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+                  >
+                    {[
+                      "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+                      "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+                    ].map((name, i) => (
+                      <option key={i} value={i + 1}>{name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={attendanceYear}
+                    onChange={(e) => setAttendanceYear(Number(e.target.value))}
+                    className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+                  >
+                    {[2024, 2025, 2026].map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {attendanceLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="flex items-center gap-3 text-muted-foreground">
+                    <div className="h-5 w-5 rounded-full border-2 border-blue-500/30 border-t-blue-500 animate-spin" />
+                    <span>Загрузка...</span>
+                  </div>
+                </div>
+              ) : attendanceData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Clock className="h-12 w-12 text-gray-300 mb-3" />
+                  <p className="text-sm">Нет данных за выбранный месяц</p>
+                </div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                        <TableHead>Дата</TableHead>
+                        <TableHead>Вход</TableHead>
+                        <TableHead>Выход</TableHead>
+                        <TableHead>Часов</TableHead>
+                        <TableHead>Корректировка</TableHead>
+                        <TableHead>Статус</TableHead>
+                        <TableHead>Офис</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {attendanceData.map((row) => {
+                        const statusStyles: Record<string, string> = {
+                          present: "bg-emerald-50/40",
+                          left: "bg-red-50/40",
+                          absent: "bg-gray-50/40",
+                          excused: "bg-amber-50/40",
+                        };
+                        const statusLabels: Record<string, string> = {
+                          present: "На месте",
+                          left: "Ушёл",
+                          absent: "Отсутствует",
+                          excused: "Уважит.",
+                        };
+                        const statusBadgeStyles: Record<string, string> = {
+                          present: "bg-emerald-100 text-emerald-700 border-emerald-200",
+                          left: "bg-red-100 text-red-700 border-red-200",
+                          absent: "bg-gray-100 text-gray-600 border-gray-200",
+                          excused: "bg-amber-100 text-amber-700 border-amber-200",
+                        };
+                        const formatT = (iso: string | null) => {
+                          if (!iso) return "—";
+                          return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+                        };
+                        const h = Math.floor(row.totalMinutes / 60);
+                        const m = row.totalMinutes % 60;
+                        return (
+                          <TableRow key={row.id} className={statusStyles[row.status] || ""}>
+                            <TableCell className="font-medium">
+                              {new Date(row.date + "T00:00:00").toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", weekday: "short" })}
+                            </TableCell>
+                            <TableCell>{formatT(row.firstEntry)}</TableCell>
+                            <TableCell>{formatT(row.lastExit)}</TableCell>
+                            <TableCell className="font-medium">{h}ч {m}м</TableCell>
+                            <TableCell>
+                              {row.correctionMinutes !== 0 ? (
+                                <span className={`text-sm font-medium ${row.correctionMinutes > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                  {row.correctionMinutes > 0 ? "+" : ""}{row.correctionMinutes}м
+                                  {row.correctionNote && (
+                                    <span className="ml-1 text-xs text-muted-foreground" title={row.correctionNote}>
+                                      ({row.correctionNote})
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusBadgeStyles[row.status] || "bg-gray-100 text-gray-700"}`}>
+                                {statusLabels[row.status] || row.status}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{row.officeName || "—"}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  {/* Итого */}
+                  <div className="border-t border-gray-100 px-3 sm:px-6 py-3 sm:py-4 bg-blue-50/30">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-xs sm:text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Дней присутствия: </span>
+                        <span className="font-bold text-emerald-600">
+                          {attendanceData.filter((d) => d.status === "present" || d.status === "left").length}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Всего часов: </span>
+                        <span className="font-bold text-blue-600">
+                          {Math.floor(attendanceData.reduce((sum, d) => sum + d.totalMinutes, 0) / 60)}ч{" "}
+                          {attendanceData.reduce((sum, d) => sum + d.totalMinutes, 0) % 60}м
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Отсутствий: </span>
+                        <span className="font-bold text-gray-600">
+                          {attendanceData.filter((d) => d.status === "absent").length}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

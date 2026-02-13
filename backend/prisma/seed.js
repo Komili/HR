@@ -7,9 +7,12 @@ async function main() {
   console.log('🚀 Начало заполнения базы данных холдинга...');
 
   // Очистка базы данных
+  await prisma.attendance.deleteMany();
+  await prisma.attendanceEvent.deleteMany();
   await prisma.inventoryHistory.deleteMany();
   await prisma.inventoryItem.deleteMany();
   await prisma.employeeDocument.deleteMany();
+  await prisma.office.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.user.deleteMany();
   await prisma.position.deleteMany();
@@ -342,6 +345,153 @@ async function main() {
     }
   }
   console.log(`✅ Инвентарь создан (${inventoryCount} предметов, по ${inventoryTemplates.length} на компанию)`);
+
+  // 9. Создаём офисы для каждой компании
+  const officeTemplates = [
+    { name: 'Главный офис', address: 'Центральное здание' },
+    { name: 'Склад', address: 'Складская зона' },
+    { name: 'Филиал', address: 'Дополнительный офис' },
+  ];
+
+  const createdOffices = {};
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
+    createdOffices[companyName] = [];
+    for (const tmpl of officeTemplates) {
+      const office = await prisma.office.create({
+        data: {
+          name: tmpl.name,
+          address: `${company.address} — ${tmpl.address}`,
+          companyId: company.id,
+        },
+      });
+      createdOffices[companyName].push(office);
+    }
+  }
+  console.log('✅ Офисы созданы (по 3 на компанию)');
+
+  // 10. Создаём данные посещаемости за последние 30 дней
+  let eventCount = 0;
+  let attendanceCount = 0;
+
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
+    const offices = createdOffices[companyName];
+    const companyEmployees = await prisma.employee.findMany({
+      where: { companyId: company.id },
+    });
+
+    for (let dayOffset = 0; dayOffset < 30; dayOffset++) {
+      const date = new Date();
+      date.setDate(date.getDate() - dayOffset);
+      // Пропускаем выходные
+      const dayOfWeek = date.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+      const dateOnly = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+
+      for (const emp of companyEmployees) {
+        // Случайный статус: 80% present, 10% left early, 5% excused, 5% absent
+        const rand = Math.random();
+        let status, firstEntry, lastExit, totalMinutes;
+        const office = offices[Math.floor(Math.random() * offices.length)];
+
+        if (rand < 0.05) {
+          // absent — нет записей
+          status = 'absent';
+          firstEntry = null;
+          lastExit = null;
+          totalMinutes = 0;
+        } else if (rand < 0.10) {
+          // excused
+          status = 'excused';
+          firstEntry = null;
+          lastExit = null;
+          totalMinutes = 0;
+        } else if (rand < 0.20) {
+          // left early
+          status = 'left';
+          const entryHour = 8 + Math.floor(Math.random() * 2); // 8-9
+          const entryMin = Math.floor(Math.random() * 60);
+          const exitHour = 14 + Math.floor(Math.random() * 2); // 14-15
+          const exitMin = Math.floor(Math.random() * 60);
+          firstEntry = new Date(dateOnly);
+          firstEntry.setUTCHours(entryHour, entryMin, 0, 0);
+          lastExit = new Date(dateOnly);
+          lastExit.setUTCHours(exitHour, exitMin, 0, 0);
+          totalMinutes = Math.round((lastExit.getTime() - firstEntry.getTime()) / 60000);
+        } else {
+          // present — full day
+          status = 'present';
+          const entryHour = 8 + Math.floor(Math.random() * 2); // 8-9
+          const entryMin = Math.floor(Math.random() * 30);
+          const exitHour = 17 + Math.floor(Math.random() * 2); // 17-18
+          const exitMin = Math.floor(Math.random() * 60);
+          firstEntry = new Date(dateOnly);
+          firstEntry.setUTCHours(entryHour, entryMin, 0, 0);
+          lastExit = new Date(dateOnly);
+          lastExit.setUTCHours(exitHour, exitMin, 0, 0);
+          totalMinutes = Math.round((lastExit.getTime() - firstEntry.getTime()) / 60000);
+        }
+
+        // Создаём события (IN/OUT)
+        if (firstEntry) {
+          await prisma.attendanceEvent.create({
+            data: {
+              employeeId: emp.id,
+              companyId: company.id,
+              timestamp: firstEntry,
+              direction: 'IN',
+              officeId: office.id,
+            },
+          });
+          eventCount++;
+        }
+        if (lastExit) {
+          await prisma.attendanceEvent.create({
+            data: {
+              employeeId: emp.id,
+              companyId: company.id,
+              timestamp: lastExit,
+              direction: 'OUT',
+              officeId: office.id,
+            },
+          });
+          eventCount++;
+        }
+
+        // Корректировки для нескольких записей
+        let correctionMinutes = 0;
+        let correctedBy = null;
+        let correctionNote = null;
+        if (dayOffset < 5 && emp.id % 7 === 0 && status === 'present') {
+          correctionMinutes = [30, 60, -30][Math.floor(Math.random() * 3)];
+          correctedBy = 'admin1@holding.tj';
+          correctionNote = correctionMinutes > 0 ? 'Переработка по указанию' : 'Ранний уход согласован';
+          totalMinutes = Math.max(0, totalMinutes + correctionMinutes);
+        }
+
+        // Создаём дневную сводку
+        await prisma.attendance.create({
+          data: {
+            employeeId: emp.id,
+            companyId: company.id,
+            date: dateOnly,
+            firstEntry,
+            lastExit,
+            status,
+            totalMinutes: totalMinutes || 0,
+            correctionMinutes,
+            correctedBy,
+            correctionNote,
+            officeName: office.name,
+          },
+        });
+        attendanceCount++;
+      }
+    }
+  }
+  console.log(`✅ Посещаемость создана (${attendanceCount} записей, ${eventCount} событий)`);
 
   // Выводим информацию
   console.log('\n📋 Тестовые учётные записи:\n');
