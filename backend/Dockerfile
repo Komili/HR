@@ -15,9 +15,6 @@ RUN npx prisma generate
 # Build the application
 RUN npm run build
 
-# Compile seed script
-RUN npx tsc prisma/seed.ts --outDir dist/prisma --esModuleInterop --skipLibCheck
-
 # Stage 2: runtime
 FROM node:20-bullseye-slim
 

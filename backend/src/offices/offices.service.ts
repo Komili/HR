@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestUser } from '../auth/jwt.strategy';
 
@@ -75,6 +75,14 @@ export class OfficesService {
 
   async remove(id: number, user: RequestUser) {
     await this.findOne(id, user);
+
+    const eventsCount = await this.prisma.attendanceEvent.count({ where: { officeId: id } });
+    if (eventsCount > 0) {
+      throw new BadRequestException(
+        `Невозможно удалить офис: к нему привязаны ${eventsCount} записей посещаемости.`,
+      );
+    }
+
     return this.prisma.office.delete({ where: { id } });
   }
 }

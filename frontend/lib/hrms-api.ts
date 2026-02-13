@@ -332,3 +332,33 @@ export async function calculateSalaries(month: number, year: number): Promise<{ 
 export async function updateSalary(id: number, data: { bonus?: number; deduction?: number; note?: string }): Promise<SalaryRecord> {
   return apiFetch(`/salary/${id}`, { method: "PATCH", body: data });
 }
+
+// ============ USERS (Admin) ============
+
+export async function getUsers(): Promise<import("./types").SystemUser[]> {
+  return apiFetch("/users");
+}
+
+export async function getRoles(): Promise<import("./types").Role[]> {
+  return apiFetch("/users/roles");
+}
+
+export async function createUser(data: {
+  email: string; password: string; firstName?: string; lastName?: string; roleId: number; companyId?: number;
+}): Promise<import("./types").SystemUser> {
+  return apiFetch("/users", { method: "POST", body: data });
+}
+
+export async function updateUser(id: number, data: {
+  email?: string; firstName?: string; lastName?: string; roleId?: number; companyId?: number | null; isActive?: boolean;
+}): Promise<import("./types").SystemUser> {
+  return apiFetch(`/users/${id}`, { method: "PATCH", body: data });
+}
+
+export async function changeUserPassword(id: number, newPassword: string): Promise<void> {
+  await apiFetch(`/users/${id}/password`, { method: "PATCH", body: { newPassword } });
+}
+
+export async function deleteUser(id: number): Promise<void> {
+  await apiFetch(`/users/${id}`, { method: "DELETE" });
+}

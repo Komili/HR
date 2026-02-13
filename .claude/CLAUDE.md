@@ -36,12 +36,8 @@ Multi-tenant HR management web application for a holding company with 8 companie
 
 ## Test Credentials
 
-### Суперадмины холдинга (доступ ко ВСЕМ компаниям)
-- admin1@holding.tj / password
-- admin2@holding.tj / password
-- admin3@holding.tj / password
-- admin4@holding.tj / password
-- admin5@holding.tj / password
+### Суперадмин холдинга (единственный, доступ ко ВСЕМ компаниям)
+- admin@holding.tj / password
 
 ### Бунёд Интернешнл
 - hr@bunyod.tj / password (Кадровик)
@@ -51,6 +47,9 @@ Multi-tenant HR management web application for a holding company with 8 companie
 ### Фавз
 - hr@favz.tj / password (Кадровик)
 - manager@favz.tj / password (Руководитель)
+
+### Остальные компании
+- hr@dezinfection.tj, hr@makon.tj, hr@makon-shop.tj, hr@rohhoi.tj, hr@favz-chemical.tj, hr@favz-climat.tj (Кадровик)
 
 ## User Roles (RBAC)
 1. **Суперадмин** - Full access to ALL companies, can switch between companies

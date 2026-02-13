@@ -3,10 +3,172 @@ const bcrypt = require('bcrypt');
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('🚀 Начало заполнения базы данных холдинга...');
+// ============ ДАННЫЕ ДЛЯ ГЕНЕРАЦИИ ============
 
-  // Очистка базы данных
+const TAJIK_MALES = [
+  { firstName: 'Акрам', lastName: 'Рахимов', latin: ['Akram', 'Rahimov'], patronymic: 'Сафарович' },
+  { firstName: 'Бахром', lastName: 'Каримов', latin: ['Bahrom', 'Karimov'], patronymic: 'Олимович' },
+  { firstName: 'Восит', lastName: 'Назаров', latin: ['Vosit', 'Nazarov'], patronymic: 'Шерович' },
+  { firstName: 'Голиб', lastName: 'Сафаров', latin: ['Golib', 'Safarov'], patronymic: 'Рустамович' },
+  { firstName: 'Далер', lastName: 'Ахмедов', latin: ['Daler', 'Ahmedov'], patronymic: 'Камолович' },
+  { firstName: 'Ёқуб', lastName: 'Холиков', latin: ['Yoqub', 'Holikov'], patronymic: 'Файзович' },
+  { firstName: 'Зафар', lastName: 'Мирзоев', latin: ['Zafar', 'Mirzoev'], patronymic: 'Бахтиёрович' },
+  { firstName: 'Икром', lastName: 'Содиков', latin: ['Ikrom', 'Sodikov'], patronymic: 'Нурович' },
+  { firstName: 'Камол', lastName: 'Тошев', latin: ['Kamol', 'Toshev'], patronymic: 'Акбарович' },
+  { firstName: 'Лутфулло', lastName: 'Расулов', latin: ['Lutfullo', 'Rasulov'], patronymic: 'Саидович' },
+  { firstName: 'Манучехр', lastName: 'Давлатов', latin: ['Manuchehr', 'Davlatov'], patronymic: 'Джамолович' },
+  { firstName: 'Наврӯз', lastName: 'Ғаниев', latin: ['Navruz', 'Ghaniev'], patronymic: 'Фарходович' },
+  { firstName: 'Олимджон', lastName: 'Шарипов', latin: ['Olimjon', 'Sharipov'], patronymic: 'Сулаймонович' },
+  { firstName: 'Парвиз', lastName: 'Алиев', latin: ['Parviz', 'Aliev'], patronymic: 'Ҳакимович' },
+  { firstName: 'Рустам', lastName: 'Ибрагимов', latin: ['Rustam', 'Ibragimov'], patronymic: 'Абдуллоевич' },
+  { firstName: 'Саидакбар', lastName: 'Қосимов', latin: ['Saidakbar', 'Qosimov'], patronymic: 'Маъмурович' },
+  { firstName: 'Тимур', lastName: 'Усмонов', latin: ['Timur', 'Usmonov'], patronymic: 'Баходурович' },
+  { firstName: 'Улуғбек', lastName: 'Хакимов', latin: ['Ulugbek', 'Hakimov'], patronymic: 'Шухратович' },
+  { firstName: 'Фирдавс', lastName: 'Махмудов', latin: ['Firdavs', 'Mahmudov'], patronymic: 'Ильёсович' },
+  { firstName: 'Ҳусайн', lastName: 'Зоиров', latin: ['Husayn', 'Zoirov'], patronymic: 'Анварович' },
+  { firstName: 'Шерозджон', lastName: 'Набиев', latin: ['Sherozjon', 'Nabiev'], patronymic: 'Рахматович' },
+  { firstName: 'Аббос', lastName: 'Муродов', latin: ['Abbos', 'Murodov'], patronymic: 'Зиёдуллоевич' },
+  { firstName: 'Бобур', lastName: 'Турсунов', latin: ['Bobur', 'Tursunov'], patronymic: 'Файзалиевич' },
+  { firstName: 'Джамшед', lastName: 'Раджабов', latin: ['Jamshed', 'Rajabov'], patronymic: 'Мирзоевич' },
+  { firstName: 'Исмоил', lastName: 'Бобоев', latin: ['Ismoil', 'Boboev'], patronymic: 'Саидович' },
+  { firstName: 'Комил', lastName: 'Ашуров', latin: ['Komil', 'Ashurov'], patronymic: 'Ғаниевич' },
+  { firstName: 'Музаффар', lastName: 'Норматов', latin: ['Muzaffar', 'Normatov'], patronymic: 'Исломович' },
+  { firstName: 'Нуриддин', lastName: 'Ёров', latin: ['Nuriddin', 'Yorov'], patronymic: 'Сайфиддинович' },
+  { firstName: 'Сорбон', lastName: 'Олимов', latin: ['Sorbon', 'Olimov'], patronymic: 'Шодиевич' },
+  { firstName: 'Фаррух', lastName: 'Шоев', latin: ['Farruh', 'Shoev'], patronymic: 'Толибович' },
+];
+
+const TAJIK_FEMALES = [
+  { firstName: 'Санавбар', lastName: 'Комилова', latin: ['Sanavbar', 'Komilova'], patronymic: 'Ҳасановна' },
+  { firstName: 'Тахмина', lastName: 'Ризоева', latin: ['Tahmina', 'Rizoeva'], patronymic: 'Файзуллоевна' },
+  { firstName: 'Умеда', lastName: 'Рахматова', latin: ['Umeda', 'Rahmatova'], patronymic: 'Муродовна' },
+  { firstName: 'Фарзона', lastName: 'Носирова', latin: ['Farzona', 'Nosirova'], patronymic: 'Сайфуллоевна' },
+  { firstName: 'Шахло', lastName: 'Абдуллоева', latin: ['Shahlo', 'Abdulloeva'], patronymic: 'Равшановна' },
+  { firstName: 'Мадина', lastName: 'Ҳайдарова', latin: ['Madina', 'Haydarova'], patronymic: 'Акрамовна' },
+  { firstName: 'Нигора', lastName: 'Саидова', latin: ['Nigora', 'Saidova'], patronymic: 'Бахтиёровна' },
+  { firstName: 'Зебо', lastName: 'Каримова', latin: ['Zebo', 'Karimova'], patronymic: 'Джамоловна' },
+  { firstName: 'Гулнора', lastName: 'Мирзоева', latin: ['Gulnora', 'Mirzoeva'], patronymic: 'Сафаровна' },
+  { firstName: 'Дилрабо', lastName: 'Турсунова', latin: ['Dilrabo', 'Tursunova'], patronymic: 'Файзовна' },
+  { firstName: 'Манижа', lastName: 'Раджабова', latin: ['Manija', 'Rajabova'], patronymic: 'Наимовна' },
+  { firstName: 'Парвина', lastName: 'Шарипова', latin: ['Parvina', 'Sharipova'], patronymic: 'Азизовна' },
+  { firstName: 'Рухшона', lastName: 'Ибрагимова', latin: ['Ruhshona', 'Ibragimova'], patronymic: 'Олимовна' },
+  { firstName: 'Ситора', lastName: 'Содикова', latin: ['Sitora', 'Sodikova'], patronymic: 'Ҳамидовна' },
+  { firstName: 'Фотима', lastName: 'Назарова', latin: ['Fotima', 'Nazarova'], patronymic: 'Маликовна' },
+];
+
+const COMPANIES = [
+  { name: 'Бунёд Интернешнл', shortName: 'Бунёд', inn: '123456789', address: 'г. Душанбе, ул. Рудаки 1', phone: '+992 372 123456', email: 'info@bunyod.tj' },
+  { name: 'Дезинфекция', shortName: 'Дезинф.', inn: '234567890', address: 'г. Душанбе, ул. Сомони 15', phone: '+992 372 234567', email: 'info@dezinfection.tj' },
+  { name: 'Макон', shortName: 'Макон', inn: '345678901', address: 'г. Душанбе, ул. Айни 45', phone: '+992 372 345678', email: 'info@makon.tj' },
+  { name: 'Макон (Магазин)', shortName: 'Макон Маг.', inn: '456789012', address: 'г. Душанбе, пр. Исмоили Сомони 100', phone: '+992 372 456789', email: 'shop@makon.tj' },
+  { name: 'Роҳҳои Фавз', shortName: 'Роҳҳои Ф.', inn: '567890123', address: 'г. Душанбе, ул. Мирзо Турсунзода 5', phone: '+992 372 567890', email: 'info@rohhoi-favz.tj' },
+  { name: 'Фавз', shortName: 'Фавз', inn: '678901234', address: 'г. Душанбе, ул. Бохтар 20', phone: '+992 372 678901', email: 'info@favz.tj' },
+  { name: 'Фавз Кемикал', shortName: 'Фавз Хим.', inn: '789012345', address: 'г. Душанбе, ул. Носири Хусрав 8', phone: '+992 372 789012', email: 'info@favz-chemical.tj' },
+  { name: 'Фавз Климат', shortName: 'Фавз Клим.', inn: '890123456', address: 'г. Душанбе, ул. Фирдавси 30', phone: '+992 372 890123', email: 'info@favz-climat.tj' },
+];
+
+// Отделы зависят от типа компании
+const COMPANY_DEPARTMENTS = {
+  'Бунёд Интернешнл': ['Администрация', 'Бухгалтерия', 'Отдел кадров', 'Отдел продаж', 'Логистика', 'IT отдел', 'Маркетинг', 'Юридический отдел'],
+  'Дезинфекция': ['Администрация', 'Бухгалтерия', 'Отдел кадров', 'Производство', 'Отдел качества', 'Логистика', 'Склад'],
+  'Макон': ['Администрация', 'Бухгалтерия', 'Отдел кадров', 'Строительный отдел', 'Проектный отдел', 'Отдел снабжения', 'Логистика'],
+  'Макон (Магазин)': ['Администрация', 'Бухгалтерия', 'Торговый зал', 'Склад', 'Отдел закупок', 'Отдел кадров'],
+  'Роҳҳои Фавз': ['Администрация', 'Бухгалтерия', 'Отдел кадров', 'Транспортный отдел', 'Диспетчерская', 'Ремонтная мастерская', 'Логистика'],
+  'Фавз': ['Администрация', 'Бухгалтерия', 'Отдел кадров', 'Отдел продаж', 'Производство', 'Логистика', 'IT отдел', 'Маркетинг', 'Склад'],
+  'Фавз Кемикал': ['Администрация', 'Бухгалтерия', 'Отдел кадров', 'Производство', 'Лаборатория', 'Отдел качества', 'Склад', 'Логистика'],
+  'Фавз Климат': ['Администрация', 'Бухгалтерия', 'Отдел кадров', 'Сервисный отдел', 'Отдел продаж', 'Монтажный отдел', 'Склад'],
+};
+
+const COMPANY_POSITIONS = {
+  'Бунёд Интернешнл': ['Генеральный директор', 'Зам. директора', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Менеджер по продажам', 'Старший менеджер', 'Программист', 'Системный администратор', 'Маркетолог', 'Логист', 'Юрист', 'Секретарь', 'Водитель', 'Охранник'],
+  'Дезинфекция': ['Директор', 'Зам. директора', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Технолог', 'Оператор', 'Дезинфектор', 'Контролёр качества', 'Кладовщик', 'Логист', 'Водитель', 'Охранник'],
+  'Макон': ['Директор', 'Главный инженер', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Прораб', 'Инженер', 'Архитектор', 'Проектировщик', 'Снабженец', 'Логист', 'Водитель', 'Охранник'],
+  'Макон (Магазин)': ['Директор магазина', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Старший продавец', 'Продавец-консультант', 'Кассир', 'Кладовщик', 'Менеджер по закупкам', 'Грузчик', 'Охранник'],
+  'Роҳҳои Фавз': ['Директор', 'Зам. директора', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Диспетчер', 'Водитель', 'Механик', 'Автослесарь', 'Логист', 'Охранник'],
+  'Фавз': ['Генеральный директор', 'Зам. директора', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Менеджер по продажам', 'Начальник производства', 'Инженер', 'Оператор', 'Программист', 'Маркетолог', 'Логист', 'Кладовщик', 'Водитель', 'Охранник', 'Секретарь'],
+  'Фавз Кемикал': ['Директор', 'Главный технолог', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Химик-технолог', 'Лаборант', 'Оператор', 'Контролёр качества', 'Кладовщик', 'Логист', 'Водитель', 'Охранник'],
+  'Фавз Климат': ['Директор', 'Зам. директора', 'Главный бухгалтер', 'Бухгалтер', 'Менеджер по кадрам', 'Менеджер по продажам', 'Монтажник', 'Сервисный инженер', 'Техник', 'Кладовщик', 'Водитель', 'Охранник'],
+};
+
+// Зарплаты зависят от должности
+const SALARY_MAP = {
+  'Генеральный директор': 15000, 'Директор': 12000, 'Директор магазина': 10000,
+  'Зам. директора': 10000, 'Главный инженер': 10000, 'Главный технолог': 10000,
+  'Главный бухгалтер': 8000, 'Юрист': 7000, 'Архитектор': 8000, 'Проектировщик': 7500,
+  'Начальник производства': 8000, 'Прораб': 7500, 'Химик-технолог': 7000,
+  'Бухгалтер': 5000, 'Менеджер по кадрам': 5500, 'Менеджер по продажам': 5500,
+  'Старший менеджер': 6000, 'Менеджер по закупкам': 5500, 'Снабженец': 5000,
+  'Программист': 7000, 'Системный администратор': 6000, 'Маркетолог': 5500,
+  'Инженер': 6000, 'Сервисный инженер': 5500, 'Лаборант': 4000,
+  'Контролёр качества': 4500, 'Технолог': 5500, 'Техник': 4000,
+  'Логист': 5000, 'Диспетчер': 4500, 'Старший продавец': 4500,
+  'Продавец-консультант': 3500, 'Кассир': 3500, 'Оператор': 4000,
+  'Дезинфектор': 4000, 'Монтажник': 5000, 'Автослесарь': 4500, 'Механик': 5000,
+  'Кладовщик': 3500, 'Секретарь': 3500, 'Водитель': 4000, 'Грузчик': 3000,
+  'Охранник': 3000, 'Уборщик': 2500,
+};
+
+const INVENTORY_TEMPLATES = [
+  { name: 'Ноутбук Dell', model: 'Latitude 5540', category: 'Компьютеры', price: 5500 },
+  { name: 'Ноутбук Lenovo', model: 'ThinkPad E14', category: 'Компьютеры', price: 4800 },
+  { name: 'ПК HP', model: 'ProDesk 400 G7', category: 'Компьютеры', price: 4200 },
+  { name: 'Монитор Samsung', model: 'S24R350', category: 'Компьютеры', price: 1800 },
+  { name: 'Монитор LG', model: '24MK430H', category: 'Компьютеры', price: 1600 },
+  { name: 'Принтер HP', model: 'LaserJet Pro M404dn', category: 'Оргтехника', price: 2500 },
+  { name: 'МФУ Canon', model: 'i-SENSYS MF445dw', category: 'Оргтехника', price: 3200 },
+  { name: 'Сканер Epson', model: 'Perfection V39', category: 'Оргтехника', price: 900 },
+  { name: 'Проектор BenQ', model: 'MS560', category: 'Оргтехника', price: 4500 },
+  { name: 'Стол офисный', model: 'Ergo 120x60', category: 'Мебель', price: 800 },
+  { name: 'Стол руководителя', model: 'Boss 180x90', category: 'Мебель', price: 2500 },
+  { name: 'Кресло офисное', model: 'Chairman 699', category: 'Мебель', price: 1200 },
+  { name: 'Кресло руководителя', model: 'Metta LK-11', category: 'Мебель', price: 3500 },
+  { name: 'Шкаф для документов', model: 'AIKO SL-185', category: 'Мебель', price: 1500 },
+  { name: 'Телефон Xiaomi', model: 'Redmi Note 13', category: 'Средства связи', price: 1500 },
+  { name: 'Телефон Samsung', model: 'Galaxy A54', category: 'Средства связи', price: 2200 },
+  { name: 'IP-телефон Grandstream', model: 'GRP2601', category: 'Средства связи', price: 600 },
+  { name: 'Кондиционер Midea', model: 'MSMA-12HRN1', category: 'Климат', price: 3500 },
+  { name: 'Кондиционер LG', model: 'P09SP', category: 'Климат', price: 4200 },
+  { name: 'Источник бесперебойного питания', model: 'APC BR1500GI', category: 'Прочее', price: 2800 },
+];
+
+const OFFICE_TEMPLATES = [
+  { name: 'Главный офис', suffix: 'Центральное здание' },
+  { name: 'Склад', suffix: 'Складская зона' },
+  { name: 'Филиал', suffix: 'Дополнительный офис' },
+];
+
+// ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
+
+function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function getWorkDaysInMonth(month, year) {
+  let count = 0;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const day = new Date(year, month - 1, d).getDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return count;
+}
+
+let globalEmpIndex = 0;
+function getNextName() {
+  // 70% мужские, 30% женские
+  const isFemale = globalEmpIndex % 10 >= 7;
+  const pool = isFemale ? TAJIK_FEMALES : TAJIK_MALES;
+  const name = pool[globalEmpIndex % pool.length];
+  globalEmpIndex++;
+  return name;
+}
+
+// ============ ОСНОВНАЯ ФУНКЦИЯ ============
+
+async function main() {
+  console.log('🚀 Начало заполнения базы данных холдинга...\n');
+
+  // ========== ОЧИСТКА ==========
+  await prisma.salary.deleteMany();
   await prisma.attendance.deleteMany();
   await prisma.attendanceEvent.deleteMany();
   await prisma.inventoryHistory.deleteMany();
@@ -19,510 +181,390 @@ async function main() {
   await prisma.department.deleteMany();
   await prisma.company.deleteMany();
   await prisma.role.deleteMany();
-  console.log('🗑️ База данных очищена');
+  await prisma.auditLog.deleteMany();
+  console.log('🗑️  База данных очищена');
 
-  // 1. Создаём роли
-  const roles = [
-    { name: 'Суперадмин' },
-    { name: 'Кадровик' },
-    { name: 'Руководитель' },
-    { name: 'Бухгалтер' },
-    { name: 'Сотрудник' },
-  ];
-
-  for (const role of roles) {
-    await prisma.role.upsert({
-      where: { name: role.name },
-      update: {},
-      create: role,
-    });
+  // ========== 1. РОЛИ ==========
+  const roleNames = ['Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер', 'Сотрудник'];
+  const roles = {};
+  for (const name of roleNames) {
+    roles[name] = await prisma.role.upsert({ where: { name }, update: {}, create: { name } });
   }
-  console.log('✅ Роли созданы');
+  console.log('✅ Роли созданы (5)');
 
-  // 2. Создаём компании холдинга
-  const companies = [
-    { name: 'Бунёд Интернешнл', shortName: 'Бунёд', inn: '123456789', address: 'г. Душанбе, ул. Рудаки 1', phone: '+992 372 123456', email: 'info@bunyod.tj' },
-    { name: 'Дезинфекция', shortName: 'Дезинф.', inn: '234567890', address: 'г. Душанбе, ул. Сомони 15', phone: '+992 372 234567', email: 'info@dezinfection.tj' },
-    { name: 'Макон', shortName: 'Макон', inn: '345678901', address: 'г. Душанбе, ул. Айни 45', phone: '+992 372 345678', email: 'info@makon.tj' },
-    { name: 'Макон (Магазин)', shortName: 'Макон Маг.', inn: '456789012', address: 'г. Душанбе, пр. Исмоили Сомони 100', phone: '+992 372 456789', email: 'shop@makon.tj' },
-    { name: 'Роҳҳои Фавз', shortName: 'Роҳҳои Ф.', inn: '567890123', address: 'г. Душанбе, ул. Мирзо Турсунзода 5', phone: '+992 372 567890', email: 'info@rohhoi-favz.tj' },
-    { name: 'Фавз', shortName: 'Фавз', inn: '678901234', address: 'г. Душанбе, ул. Бохтар 20', phone: '+992 372 678901', email: 'info@favz.tj' },
-    { name: 'Фавз Кемикал', shortName: 'Фавз Хим.', inn: '789012345', address: 'г. Душанбе, ул. Носири Хусрав 8', phone: '+992 372 789012', email: 'info@favz-chemical.tj' },
-    { name: 'Фавз Климат', shortName: 'Фавз Клим.', inn: '890123456', address: 'г. Душанбе, ул. Фирдавси 30', phone: '+992 372 890123', email: 'info@favz-climat.tj' },
-  ];
-
+  // ========== 2. КОМПАНИИ ==========
   const createdCompanies = {};
-
-  for (const company of companies) {
-    const created = await prisma.company.upsert({
-      where: { name: company.name },
-      update: {},
-      create: company,
+  for (const c of COMPANIES) {
+    createdCompanies[c.name] = await prisma.company.upsert({
+      where: { name: c.name }, update: {}, create: c,
     });
-    createdCompanies[company.name] = created;
   }
-  console.log('✅ Компании холдинга созданы (8 компаний)');
+  console.log('✅ Компании созданы (8)');
 
-  // 3. Создаём отделы для каждой компании
-  const departmentNames = [
-    'Администрация',
-    'Бухгалтерия',
-    'Отдел кадров',
-    'Отдел продаж',
-    'Производство',
-    'Логистика',
-    'IT отдел',
-    'Маркетинг',
-  ];
-
-  for (const companyName of Object.keys(createdCompanies)) {
+  // ========== 3. ОТДЕЛЫ ==========
+  const createdDepts = {};
+  for (const [companyName, depts] of Object.entries(COMPANY_DEPARTMENTS)) {
     const company = createdCompanies[companyName];
-    for (const deptName of departmentNames) {
-      await prisma.department.upsert({
-        where: {
-          name_companyId: { name: deptName, companyId: company.id }
-        },
-        update: {},
-        create: { name: deptName, companyId: company.id },
+    createdDepts[companyName] = [];
+    for (const deptName of depts) {
+      const dept = await prisma.department.upsert({
+        where: { name_companyId: { name: deptName, companyId: company.id } },
+        update: {}, create: { name: deptName, companyId: company.id },
       });
+      createdDepts[companyName].push(dept);
     }
   }
-  console.log('✅ Отделы созданы для всех компаний');
+  console.log('✅ Отделы созданы (специфичные для каждой компании)');
 
-  // 4. Создаём должности для каждой компании
-  const positionNames = [
-    'Генеральный директор',
-    'Заместитель директора',
-    'Главный бухгалтер',
-    'Бухгалтер',
-    'Менеджер по кадрам',
-    'Специалист по кадрам',
-    'Менеджер по продажам',
-    'Старший менеджер',
-    'Инженер',
-    'Техник',
-    'Водитель',
-    'Кладовщик',
-    'Программист',
-    'Системный администратор',
-    'Маркетолог',
-    'Дизайнер',
-    'Секретарь',
-    'Охранник',
-    'Уборщик',
-  ];
-
-  for (const companyName of Object.keys(createdCompanies)) {
+  // ========== 4. ДОЛЖНОСТИ ==========
+  const createdPositions = {};
+  for (const [companyName, positions] of Object.entries(COMPANY_POSITIONS)) {
     const company = createdCompanies[companyName];
-    for (const posName of positionNames) {
-      await prisma.position.upsert({
-        where: {
-          name_companyId: { name: posName, companyId: company.id }
-        },
-        update: {},
-        create: { name: posName, companyId: company.id },
+    createdPositions[companyName] = [];
+    for (const posName of positions) {
+      const pos = await prisma.position.upsert({
+        where: { name_companyId: { name: posName, companyId: company.id } },
+        update: {}, create: { name: posName, companyId: company.id },
       });
+      createdPositions[companyName].push(pos);
     }
   }
-  console.log('✅ Должности созданы для всех компаний');
+  console.log('✅ Должности созданы (специфичные для каждой компании)');
 
-  // 5. Создаём суперадминов холдинга
+  // ========== 5. ЕДИНСТВЕННЫЙ СУПЕРАДМИН ==========
   const hashedPassword = await bcrypt.hash('password', 10);
-  const superadminRole = await prisma.role.findUnique({ where: { name: 'Суперадмин' } });
 
-  const superadmins = [
-    { email: 'admin1@holding.tj', firstName: 'Админ', lastName: 'Первый' },
-    { email: 'admin2@holding.tj', firstName: 'Админ', lastName: 'Второй' },
-    { email: 'admin3@holding.tj', firstName: 'Админ', lastName: 'Третий' },
-    { email: 'admin4@holding.tj', firstName: 'Админ', lastName: 'Четвёртый' },
-    { email: 'admin5@holding.tj', firstName: 'Админ', lastName: 'Пятый' },
-  ];
+  await prisma.user.upsert({
+    where: { email: 'admin@holding.tj' },
+    update: {},
+    create: {
+      email: 'admin@holding.tj',
+      password: hashedPassword,
+      firstName: 'Администратор',
+      lastName: 'Холдинга',
+      roleId: roles['Суперадмин'].id,
+      isHoldingAdmin: true,
+      companyId: null,
+    },
+  });
+  console.log('✅ Суперадмин создан: admin@holding.tj / password');
 
-  for (const admin of superadmins) {
-    await prisma.user.upsert({
-      where: { email: admin.email },
-      update: {},
-      create: {
-        email: admin.email,
-        password: hashedPassword,
-        firstName: admin.firstName,
-        lastName: admin.lastName,
-        roleId: superadminRole.id,
-        isHoldingAdmin: true,
-        companyId: null,
-      },
-    });
-  }
-  console.log('✅ Суперадмины холдинга созданы (5 пользователей)');
-
-  // 6. Создаём пользователей для каждой компании
-  const kadrovikRole = await prisma.role.findUnique({ where: { name: 'Кадровик' } });
-  const rukovoditelRole = await prisma.role.findUnique({ where: { name: 'Руководитель' } });
-  const buhgalterRole = await prisma.role.findUnique({ where: { name: 'Бухгалтер' } });
-
+  // ========== 6. ПОЛЬЗОВАТЕЛИ КОМПАНИЙ ==========
   const companyUsers = [
-    // Бунёд Интернешнл
-    { email: 'hr@bunyod.tj', firstName: 'Кадровик', lastName: 'Бунёд', roleId: kadrovikRole.id, companyName: 'Бунёд Интернешнл' },
-    { email: 'manager@bunyod.tj', firstName: 'Руководитель', lastName: 'Бунёд', roleId: rukovoditelRole.id, companyName: 'Бунёд Интернешнл' },
-    { email: 'accountant@bunyod.tj', firstName: 'Бухгалтер', lastName: 'Бунёд', roleId: buhgalterRole.id, companyName: 'Бунёд Интернешнл' },
-    // Фавз
-    { email: 'hr@favz.tj', firstName: 'Кадровик', lastName: 'Фавз', roleId: kadrovikRole.id, companyName: 'Фавз' },
-    { email: 'manager@favz.tj', firstName: 'Руководитель', lastName: 'Фавз', roleId: rukovoditelRole.id, companyName: 'Фавз' },
-    // Дезинфекция
-    { email: 'hr@dezinfection.tj', firstName: 'Кадровик', lastName: 'Дезинфекция', roleId: kadrovikRole.id, companyName: 'Дезинфекция' },
-    // Макон
-    { email: 'hr@makon.tj', firstName: 'Кадровик', lastName: 'Макон', roleId: kadrovikRole.id, companyName: 'Макон' },
-    // Фавз Кемикал
-    { email: 'hr@favz-chemical.tj', firstName: 'Кадровик', lastName: 'Фавз Хим', roleId: kadrovikRole.id, companyName: 'Фавз Кемикал' },
-    // Фавз Климат
-    { email: 'hr@favz-climat.tj', firstName: 'Кадровик', lastName: 'Фавз Клим', roleId: kadrovikRole.id, companyName: 'Фавз Климат' },
+    { email: 'hr@bunyod.tj', firstName: 'Зарина', lastName: 'Раджабова', role: 'Кадровик', company: 'Бунёд Интернешнл' },
+    { email: 'manager@bunyod.tj', firstName: 'Фаридун', lastName: 'Сафаров', role: 'Руководитель', company: 'Бунёд Интернешнл' },
+    { email: 'accountant@bunyod.tj', firstName: 'Гулноз', lastName: 'Ахмедова', role: 'Бухгалтер', company: 'Бунёд Интернешнл' },
+    { email: 'hr@favz.tj', firstName: 'Ситора', lastName: 'Каримова', role: 'Кадровик', company: 'Фавз' },
+    { email: 'manager@favz.tj', firstName: 'Алишер', lastName: 'Муродов', role: 'Руководитель', company: 'Фавз' },
+    { email: 'hr@dezinfection.tj', firstName: 'Нигина', lastName: 'Содикова', role: 'Кадровик', company: 'Дезинфекция' },
+    { email: 'hr@makon.tj', firstName: 'Мухаммад', lastName: 'Олимов', role: 'Кадровик', company: 'Макон' },
+    { email: 'hr@makon-shop.tj', firstName: 'Дилафрӯз', lastName: 'Ҳакимова', role: 'Кадровик', company: 'Макон (Магазин)' },
+    { email: 'hr@rohhoi.tj', firstName: 'Бахтиёр', lastName: 'Набиев', role: 'Кадровик', company: 'Роҳҳои Фавз' },
+    { email: 'hr@favz-chemical.tj', firstName: 'Рустам', lastName: 'Зоиров', role: 'Кадровик', company: 'Фавз Кемикал' },
+    { email: 'hr@favz-climat.tj', firstName: 'Фируза', lastName: 'Давлатова', role: 'Кадровик', company: 'Фавз Климат' },
   ];
 
-  for (const user of companyUsers) {
-    const company = createdCompanies[user.companyName];
+  for (const u of companyUsers) {
     await prisma.user.upsert({
-      where: { email: user.email },
+      where: { email: u.email },
       update: {},
       create: {
-        email: user.email,
-        password: hashedPassword,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        roleId: user.roleId,
-        companyId: company.id,
+        email: u.email, password: hashedPassword,
+        firstName: u.firstName, lastName: u.lastName,
+        roleId: roles[u.role].id,
+        companyId: createdCompanies[u.company].id,
         isHoldingAdmin: false,
       },
     });
   }
-  console.log('✅ Тестовые пользователи компаний созданы');
+  console.log(`✅ Пользователи компаний созданы (${companyUsers.length})`);
 
-  // 7. Создаём сотрудников для каждой компании (12 на компанию)
-  const employeeTemplates = [
-    { firstName: 'Акрам', lastName: 'Рахимов', latinFirst: 'Akram', latinLast: 'Rahimov', patronymic: 'Сафарович' },
-    { firstName: 'Бахром', lastName: 'Каримов', latinFirst: 'Bahrom', latinLast: 'Karimov', patronymic: 'Олимович' },
-    { firstName: 'Восит', lastName: 'Назаров', latinFirst: 'Vosit', latinLast: 'Nazarov', patronymic: 'Шерович' },
-    { firstName: 'Голиб', lastName: 'Сафаров', latinFirst: 'Golib', latinLast: 'Safarov', patronymic: 'Рустамович' },
-    { firstName: 'Далер', lastName: 'Ахмедов', latinFirst: 'Daler', latinLast: 'Ahmedov', patronymic: 'Камолович' },
-    { firstName: 'Ёқуб', lastName: 'Холиков', latinFirst: 'Yoqub', latinLast: 'Holikov', patronymic: 'Файзович' },
-    { firstName: 'Зафар', lastName: 'Мирзоев', latinFirst: 'Zafar', latinLast: 'Mirzoev', patronymic: 'Бахтиёрович' },
-    { firstName: 'Икром', lastName: 'Содиков', latinFirst: 'Ikrom', latinLast: 'Sodikov', patronymic: 'Нурович' },
-    { firstName: 'Камол', lastName: 'Тошев', latinFirst: 'Kamol', latinLast: 'Toshev', patronymic: 'Акбарович' },
-    { firstName: 'Лутфулло', lastName: 'Расулов', latinFirst: 'Lutfullo', latinLast: 'Rasulov', patronymic: 'Саидович' },
-    { firstName: 'Манучехр', lastName: 'Давлатов', latinFirst: 'Manuchehr', latinLast: 'Davlatov', patronymic: 'Джамолович' },
-    { firstName: 'Наврӯз', lastName: 'Ғаниев', latinFirst: 'Navruz', latinLast: 'Ghaniev', patronymic: 'Фарходович' },
-    { firstName: 'Санавбар', lastName: 'Комилова', latinFirst: 'Sanavbar', latinLast: 'Komilova', patronymic: 'Ҳасановна' },
-    { firstName: 'Тахмина', lastName: 'Ризоева', latinFirst: 'Tahmina', latinLast: 'Rizoeva', patronymic: 'Файзуллоевна' },
-    { firstName: 'Умеда', lastName: 'Рахматова', latinFirst: 'Umeda', latinLast: 'Rahmatova', patronymic: 'Муродовна' },
-    { firstName: 'Фарзона', lastName: 'Носирова', latinFirst: 'Farzona', latinLast: 'Nosirova', patronymic: 'Сайфуллоевна' },
-  ];
-
-  const statuses = ['Активен', 'Активен', 'Активен', 'Активен', 'В отпуске', 'В командировке'];
-  const streets = ['Рудаки', 'Сомони', 'Айни', 'Фирдавси', 'Носири Хусрав', 'Бохтар', 'Мирзо Турсунзода'];
-
+  // ========== 7. СОТРУДНИКИ (15-20 на компанию) ==========
+  const streets = ['Рудаки', 'Сомони', 'Айни', 'Фирдавси', 'Носири Хусрав', 'Бохтар', 'Мирзо Турсунзода', 'Шотемур', 'Лоиқ Шерали', 'Дехоти'];
   let employeeCount = 0;
+  const allEmployeesByCompany = {};
 
   for (const companyName of Object.keys(createdCompanies)) {
     const company = createdCompanies[companyName];
+    const depts = createdDepts[companyName];
+    const positions = createdPositions[companyName];
+    const empCount = rand(15, 20);
+    allEmployeesByCompany[companyName] = [];
 
-    const companyDepts = await prisma.department.findMany({ where: { companyId: company.id } });
-    const companyPositions = await prisma.position.findMany({ where: { companyId: company.id } });
+    for (let i = 0; i < empCount; i++) {
+      const template = getNextName();
+      const dept = depts[i % depts.length];
+      const position = positions[i % positions.length];
+      const salary = SALARY_MAP[position.name] || rand(3000, 6000);
+      const status = i < empCount - 2 ? 'Активен' : (Math.random() > 0.5 ? 'В отпуске' : 'В командировке');
+      const street = pick(streets);
+      const birthYear = rand(1970, 2000);
+      const hireYear = rand(2016, 2025);
 
-    for (let i = 0; i < 12; i++) {
-      const template = employeeTemplates[i % employeeTemplates.length];
-      const dept = companyDepts[i % companyDepts.length];
-      const position = companyPositions[i % companyPositions.length];
-      const status = statuses[i % statuses.length];
-      const street = streets[i % streets.length];
-
-      const birthYear = 1970 + (i * 3 % 30);
-      const birthMonth = (i % 12) + 1;
-      const birthDay = (i % 28) + 1;
-      const hireYear = 2015 + (i % 10);
-      const hireMonth = (i % 12) + 1;
-
-      await prisma.employee.create({
+      const emp = await prisma.employee.create({
         data: {
           firstName: template.firstName,
           lastName: template.lastName,
           patronymic: template.patronymic,
-          latinFirstName: template.latinFirst,
-          latinLastName: template.latinLast,
-          birthDate: new Date(birthYear, birthMonth - 1, birthDay),
-          passportSerial: 'А',
-          passportNumber: String(1000000 + employeeCount),
+          latinFirstName: template.latin[0],
+          latinLastName: template.latin[1],
+          birthDate: new Date(birthYear, rand(0, 11), rand(1, 28)),
+          passportSerial: pick(['А', 'Б', 'В']),
+          passportNumber: String(rand(1000000, 9999999)),
           passportIssuedBy: 'ВКД МВД РТ',
-          passportIssueDate: new Date(2020, 0, 15),
-          inn: String(100000000 + employeeCount),
-          address: `г. Душанбе, ул. ${street} ${10 + i}`,
-          phone: `+992 93 ${String(1000000 + employeeCount).slice(-7)}`,
-          email: `${template.latinFirst.toLowerCase()}.${template.latinLast.toLowerCase()}${employeeCount}@${company.email.split('@')[1]}`,
-          salary: 3000 + (i * 500),
+          passportIssueDate: new Date(rand(2015, 2024), rand(0, 11), rand(1, 28)),
+          inn: String(rand(100000000, 999999999)),
+          address: `г. Душанбе, ул. ${street} ${rand(1, 150)}`,
+          phone: `+992 ${pick(['90', '91', '92', '93', '98', '99'])} ${String(rand(1000000, 9999999))}`,
+          email: `${template.latin[0].toLowerCase()}.${template.latin[1].toLowerCase()}${employeeCount}@${company.email?.split('@')[1] || 'company.tj'}`,
+          salary,
           contractNumber: `ТД-${company.id}-${String(employeeCount + 1).padStart(4, '0')}`,
-          contractDate: new Date(hireYear, hireMonth - 1, 1),
-          hireDate: new Date(hireYear, hireMonth - 1, 1),
-          status: status,
-          notes: i === 0 ? 'Руководитель подразделения' : null,
+          contractDate: new Date(hireYear, rand(0, 11), rand(1, 28)),
+          hireDate: new Date(hireYear, rand(0, 11), rand(1, 28)),
+          status,
           departmentId: dept.id,
           positionId: position.id,
           companyId: company.id,
         },
       });
+      allEmployeesByCompany[companyName].push(emp);
       employeeCount++;
     }
   }
-  console.log(`✅ Тестовые сотрудники созданы (${employeeCount} сотрудников, по 12 на компанию)`);
+  console.log(`✅ Сотрудники созданы (${employeeCount}, по 15-20 на компанию)`);
 
-  // 8. Создаём инвентарь для каждой компании
-  const inventoryTemplates = [
-    { name: 'Ноутбук Dell', model: 'Latitude 5540', category: 'Компьютеры', price: 5500 },
-    { name: 'Монитор Samsung', model: 'S24R350', category: 'Компьютеры', price: 1800 },
-    { name: 'Принтер HP', model: 'LaserJet Pro M404dn', category: 'Оргтехника', price: 2500 },
-    { name: 'МФУ Canon', model: 'i-SENSYS MF445dw', category: 'Оргтехника', price: 3200 },
-    { name: 'Стол офисный', model: 'Ergo 120x60', category: 'Мебель', price: 800 },
-    { name: 'Кресло офисное', model: 'Chairman 699', category: 'Мебель', price: 1200 },
-    { name: 'Телефон Xiaomi', model: 'Redmi Note 12', category: 'Средства связи', price: 1500 },
-    { name: 'Кондиционер', model: 'Midea MSMA-12HRN1', category: 'Прочее', price: 3500 },
-  ];
-
-  let inventoryCount = 0;
-
-  for (const companyName of Object.keys(createdCompanies)) {
-    const company = createdCompanies[companyName];
-
-    // Получаем сотрудников компании для привязки
-    const companyEmployees = await prisma.employee.findMany({
-      where: { companyId: company.id },
-      take: 4,
-    });
-
-    for (let i = 0; i < inventoryTemplates.length; i++) {
-      const template = inventoryTemplates[i];
-      const invNumber = `ИНВ-${String(company.id).padStart(2, '0')}-${String(i + 1).padStart(3, '0')}`;
-
-      // Первые 3 предмета привязываем к сотрудникам (статус "Выдан")
-      const assignToEmployee = i < 3 && companyEmployees[i];
-
-      const createdItem = await prisma.inventoryItem.create({
-        data: {
-          name: template.name,
-          model: template.model,
-          category: template.category,
-          inventoryNumber: invNumber,
-          price: template.price,
-          acquisitionDate: new Date(2023, i % 12, (i % 28) + 1),
-          description: null,
-          status: assignToEmployee ? 'Выдан' : 'В наличии',
-          companyId: company.id,
-          employeeId: assignToEmployee ? assignToEmployee.id : null,
-        },
-      });
-
-      // История: создание
-      await prisma.inventoryHistory.create({
-        data: {
-          inventoryItemId: createdItem.id,
-          action: 'Создан',
-          details: `Название: ${template.name}, Категория: ${template.category}, Модель: ${template.model}, Инв. номер: ${invNumber}, Цена: ${template.price}`,
-          performedBy: 'admin1@holding.tj',
-        },
-      });
-
-      // История: выдача сотруднику
-      if (assignToEmployee) {
-        const empName = `${assignToEmployee.lastName} ${assignToEmployee.firstName}${assignToEmployee.patronymic ? ' ' + assignToEmployee.patronymic : ''}`;
-        await prisma.inventoryHistory.create({
-          data: {
-            inventoryItemId: createdItem.id,
-            action: 'Выдан',
-            details: `Выдан сотруднику ${empName}`,
-            employeeName: empName,
-            performedBy: 'admin1@holding.tj',
-          },
-        });
-      }
-
-      inventoryCount++;
-    }
-  }
-  console.log(`✅ Инвентарь создан (${inventoryCount} предметов, по ${inventoryTemplates.length} на компанию)`);
-
-  // 9. Создаём офисы для каждой компании
-  const officeTemplates = [
-    { name: 'Главный офис', address: 'Центральное здание' },
-    { name: 'Склад', address: 'Складская зона' },
-    { name: 'Филиал', address: 'Дополнительный офис' },
-  ];
-
+  // ========== 8. ОФИСЫ ==========
   const createdOffices = {};
   for (const companyName of Object.keys(createdCompanies)) {
     const company = createdCompanies[companyName];
     createdOffices[companyName] = [];
-    for (const tmpl of officeTemplates) {
+    for (const tmpl of OFFICE_TEMPLATES) {
       const office = await prisma.office.create({
-        data: {
-          name: tmpl.name,
-          address: `${company.address} — ${tmpl.address}`,
-          companyId: company.id,
-        },
+        data: { name: tmpl.name, address: `${company.address} — ${tmpl.suffix}`, companyId: company.id },
       });
       createdOffices[companyName].push(office);
     }
   }
   console.log('✅ Офисы созданы (по 3 на компанию)');
 
-  // 10. Создаём данные посещаемости за последние 30 дней
+  // ========== 9. ИНВЕНТАРЬ ==========
+  let inventoryCount = 0;
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
+    const emps = allEmployeesByCompany[companyName];
+    const itemCount = rand(10, 15);
+
+    for (let i = 0; i < itemCount; i++) {
+      const template = INVENTORY_TEMPLATES[i % INVENTORY_TEMPLATES.length];
+      const invNumber = `ИНВ-${String(company.id).padStart(2, '0')}-${String(inventoryCount + 1).padStart(4, '0')}`;
+      const assignToEmp = i < 4 ? emps[i] : null;
+
+      const item = await prisma.inventoryItem.create({
+        data: {
+          name: template.name, model: template.model, category: template.category,
+          inventoryNumber: invNumber, price: template.price,
+          acquisitionDate: new Date(rand(2022, 2025), rand(0, 11), rand(1, 28)),
+          status: assignToEmp ? 'Выдан' : 'В наличии',
+          companyId: company.id,
+          employeeId: assignToEmp ? assignToEmp.id : null,
+        },
+      });
+
+      await prisma.inventoryHistory.create({
+        data: {
+          inventoryItemId: item.id, action: 'Создан',
+          details: `${template.name}, ${template.model}, ${invNumber}`,
+          performedBy: 'admin@holding.tj',
+        },
+      });
+
+      if (assignToEmp) {
+        const empName = `${assignToEmp.lastName} ${assignToEmp.firstName}`;
+        await prisma.inventoryHistory.create({
+          data: {
+            inventoryItemId: item.id, action: 'Выдан',
+            details: `Выдан сотруднику ${empName}`,
+            employeeName: empName, performedBy: 'admin@holding.tj',
+          },
+        });
+      }
+      inventoryCount++;
+    }
+  }
+  console.log(`✅ Инвентарь создан (${inventoryCount} предметов)`);
+
+  // ========== 10. ПОСЕЩАЕМОСТЬ (3 месяца) ==========
   let eventCount = 0;
   let attendanceCount = 0;
+
+  // Генерируем за 3 последних месяца
+  const now = new Date();
+  const monthsToGenerate = [];
+  for (let m = 0; m < 3; m++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    monthsToGenerate.push({ month: d.getMonth() + 1, year: d.getFullYear() });
+  }
 
   for (const companyName of Object.keys(createdCompanies)) {
     const company = createdCompanies[companyName];
     const offices = createdOffices[companyName];
-    const companyEmployees = await prisma.employee.findMany({
-      where: { companyId: company.id },
-    });
+    const emps = allEmployeesByCompany[companyName].filter(e => e.status === 'Активен');
 
-    for (let dayOffset = 0; dayOffset < 30; dayOffset++) {
-      const date = new Date();
-      date.setDate(date.getDate() - dayOffset);
-      // Пропускаем выходные
-      const dayOfWeek = date.getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+    for (const { month, year } of monthsToGenerate) {
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear();
 
-      const dateOnly = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      for (let day = 1; day <= daysInMonth; day++) {
+        // В текущем месяце — только до сегодня
+        if (isCurrentMonth && day > now.getDate()) break;
 
-      for (const emp of companyEmployees) {
-        // Случайный статус: 80% present, 10% left early, 5% excused, 5% absent
-        const rand = Math.random();
-        let status, firstEntry, lastExit, totalMinutes;
-        const office = offices[Math.floor(Math.random() * offices.length)];
+        const date = new Date(year, month - 1, day);
+        const dow = date.getDay();
+        if (dow === 0 || dow === 6) continue; // выходные
 
-        if (rand < 0.05) {
-          // absent — нет записей
-          status = 'absent';
-          firstEntry = null;
-          lastExit = null;
-          totalMinutes = 0;
-        } else if (rand < 0.10) {
-          // excused
-          status = 'excused';
-          firstEntry = null;
-          lastExit = null;
-          totalMinutes = 0;
-        } else if (rand < 0.20) {
-          // left early
-          status = 'left';
-          const entryHour = 8 + Math.floor(Math.random() * 2); // 8-9
-          const entryMin = Math.floor(Math.random() * 60);
-          const exitHour = 14 + Math.floor(Math.random() * 2); // 14-15
-          const exitMin = Math.floor(Math.random() * 60);
-          firstEntry = new Date(dateOnly);
-          firstEntry.setUTCHours(entryHour, entryMin, 0, 0);
-          lastExit = new Date(dateOnly);
-          lastExit.setUTCHours(exitHour, exitMin, 0, 0);
-          totalMinutes = Math.round((lastExit.getTime() - firstEntry.getTime()) / 60000);
-        } else {
-          // present — full day
-          status = 'present';
-          const entryHour = 8 + Math.floor(Math.random() * 2); // 8-9
-          const entryMin = Math.floor(Math.random() * 30);
-          const exitHour = 17 + Math.floor(Math.random() * 2); // 17-18
-          const exitMin = Math.floor(Math.random() * 60);
-          firstEntry = new Date(dateOnly);
-          firstEntry.setUTCHours(entryHour, entryMin, 0, 0);
-          lastExit = new Date(dateOnly);
-          lastExit.setUTCHours(exitHour, exitMin, 0, 0);
-          totalMinutes = Math.round((lastExit.getTime() - firstEntry.getTime()) / 60000);
-        }
+        const dateOnly = new Date(Date.UTC(year, month - 1, day));
 
-        // Создаём события (IN/OUT)
-        if (firstEntry) {
-          await prisma.attendanceEvent.create({
+        for (const emp of emps) {
+          const r = Math.random();
+          let status, firstEntry, lastExit, totalMinutes;
+          const office = pick(offices);
+
+          if (r < 0.04) {
+            status = 'absent'; firstEntry = null; lastExit = null; totalMinutes = 0;
+          } else if (r < 0.08) {
+            status = 'excused'; firstEntry = null; lastExit = null; totalMinutes = 0;
+          } else if (r < 0.18) {
+            status = 'left';
+            const eH = rand(8, 9), eM = rand(0, 59), xH = rand(14, 15), xM = rand(0, 59);
+            firstEntry = new Date(dateOnly); firstEntry.setUTCHours(eH, eM);
+            lastExit = new Date(dateOnly); lastExit.setUTCHours(xH, xM);
+            totalMinutes = Math.round((lastExit - firstEntry) / 60000);
+          } else {
+            status = 'present';
+            const eH = rand(8, 9), eM = rand(0, 29), xH = rand(17, 18), xM = rand(0, 59);
+            firstEntry = new Date(dateOnly); firstEntry.setUTCHours(eH, eM);
+            lastExit = new Date(dateOnly); lastExit.setUTCHours(xH, xM);
+            totalMinutes = Math.round((lastExit - firstEntry) / 60000);
+          }
+
+          if (firstEntry) {
+            await prisma.attendanceEvent.create({
+              data: { employeeId: emp.id, companyId: company.id, timestamp: firstEntry, direction: 'IN', officeId: office.id },
+            });
+            eventCount++;
+          }
+          if (lastExit) {
+            await prisma.attendanceEvent.create({
+              data: { employeeId: emp.id, companyId: company.id, timestamp: lastExit, direction: 'OUT', officeId: office.id },
+            });
+            eventCount++;
+          }
+
+          // Корректировки (~ 3%)
+          let correctionMinutes = 0, correctedBy = null, correctionNote = null;
+          if (Math.random() < 0.03 && status === 'present') {
+            correctionMinutes = pick([30, 60, -30, -60]);
+            correctedBy = 'admin@holding.tj';
+            correctionNote = correctionMinutes > 0 ? 'Переработка по указанию руководства' : 'Ранний уход по согласованию';
+            totalMinutes = Math.max(0, totalMinutes + correctionMinutes);
+          }
+
+          await prisma.attendance.create({
             data: {
-              employeeId: emp.id,
-              companyId: company.id,
-              timestamp: firstEntry,
-              direction: 'IN',
-              officeId: office.id,
+              employeeId: emp.id, companyId: company.id, date: dateOnly,
+              firstEntry, lastExit, status,
+              totalMinutes: totalMinutes || 0,
+              correctionMinutes, correctedBy, correctionNote,
+              officeName: office.name,
             },
           });
-          eventCount++;
+          attendanceCount++;
         }
-        if (lastExit) {
-          await prisma.attendanceEvent.create({
-            data: {
-              employeeId: emp.id,
-              companyId: company.id,
-              timestamp: lastExit,
-              direction: 'OUT',
-              officeId: office.id,
-            },
-          });
-          eventCount++;
-        }
-
-        // Корректировки для нескольких записей
-        let correctionMinutes = 0;
-        let correctedBy = null;
-        let correctionNote = null;
-        if (dayOffset < 5 && emp.id % 7 === 0 && status === 'present') {
-          correctionMinutes = [30, 60, -30][Math.floor(Math.random() * 3)];
-          correctedBy = 'admin1@holding.tj';
-          correctionNote = correctionMinutes > 0 ? 'Переработка по указанию' : 'Ранний уход согласован';
-          totalMinutes = Math.max(0, totalMinutes + correctionMinutes);
-        }
-
-        // Создаём дневную сводку
-        await prisma.attendance.create({
-          data: {
-            employeeId: emp.id,
-            companyId: company.id,
-            date: dateOnly,
-            firstEntry,
-            lastExit,
-            status,
-            totalMinutes: totalMinutes || 0,
-            correctionMinutes,
-            correctedBy,
-            correctionNote,
-            officeName: office.name,
-          },
-        });
-        attendanceCount++;
       }
     }
   }
-  console.log(`✅ Посещаемость создана (${attendanceCount} записей, ${eventCount} событий)`);
+  console.log(`✅ Посещаемость за 3 месяца (${attendanceCount} записей, ${eventCount} событий)`);
 
-  // Выводим информацию
-  console.log('\n📋 Тестовые учётные записи:\n');
-  console.log('   🔴 СУПЕРАДМИНЫ ХОЛДИНГА (доступ ко всем компаниям):');
-  for (const admin of superadmins) {
-    console.log(`   ${admin.email} / password`);
+  // ========== 11. ЗАРПЛАТЫ (за прошлые месяцы) ==========
+  let salaryCount = 0;
+
+  // Зарплаты за завершённые месяцы (не текущий)
+  const salaryMonths = monthsToGenerate.filter(
+    m => !(m.month === now.getMonth() + 1 && m.year === now.getFullYear())
+  );
+
+  for (const companyName of Object.keys(createdCompanies)) {
+    const company = createdCompanies[companyName];
+    const emps = allEmployeesByCompany[companyName].filter(e => e.status === 'Активен');
+
+    for (const { month, year } of salaryMonths) {
+      const totalWorkDays = getWorkDaysInMonth(month, year);
+      const startDate = new Date(Date.UTC(year, month - 1, 1));
+      const endDate = new Date(Date.UTC(year, month, 0));
+
+      for (const emp of emps) {
+        // Считаем дни присутствия из attendance
+        const attendances = await prisma.attendance.findMany({
+          where: {
+            employeeId: emp.id,
+            date: { gte: startDate, lte: endDate },
+            status: { in: ['present', 'left'] },
+          },
+        });
+
+        const workedDays = attendances.length;
+        const workedMinutes = attendances.reduce((s, a) => s + a.totalMinutes, 0);
+        const baseSalary = emp.salary || 3000;
+
+        // Пропорциональный расчёт
+        const calculated = totalWorkDays > 0
+          ? Math.round((baseSalary / totalWorkDays) * workedDays * 100) / 100
+          : 0;
+
+        // Случайные премии и удержания (~20% получают премию, ~5% удержание)
+        const bonus = Math.random() < 0.2 ? pick([500, 1000, 1500, 2000, 3000]) : 0;
+        const deduction = Math.random() < 0.05 ? pick([200, 500, 1000]) : 0;
+        const totalAmount = Math.round((calculated + bonus - deduction) * 100) / 100;
+
+        const note = bonus > 0 ? pick(['За перевыполнение плана', 'Квартальная премия', 'За отличную работу', 'Премия по результатам']) : null;
+
+        await prisma.salary.create({
+          data: {
+            employeeId: emp.id, companyId: company.id,
+            month, year, baseSalary, workedDays,
+            totalDays: totalWorkDays, workedHours: workedMinutes,
+            bonus, deduction,
+            note, totalAmount,
+            calculatedBy: 'admin@holding.tj',
+          },
+        });
+        salaryCount++;
+      }
+    }
   }
-  console.log('\n   🔵 БУНЁД ИНТЕРНЕШНЛ:');
+  console.log(`✅ Зарплаты рассчитаны (${salaryCount} записей за ${salaryMonths.length} месяцев)`);
+
+  // ========== ИТОГ ==========
+  console.log('\n══════════════════════════════════════════════');
+  console.log('📋 ТЕСТОВЫЕ УЧЁТНЫЕ ЗАПИСИ:');
+  console.log('══════════════════════════════════════════════\n');
+  console.log('🔴 СУПЕРАДМИН ХОЛДИНГА:');
+  console.log('   admin@holding.tj / password\n');
+  console.log('🔵 БУНЁД ИНТЕРНЕШНЛ:');
   console.log('   hr@bunyod.tj / password (Кадровик)');
   console.log('   manager@bunyod.tj / password (Руководитель)');
   console.log('   accountant@bunyod.tj / password (Бухгалтер)');
-  console.log('\n   🟢 ФАВЗ:');
+  console.log('\n🟢 ФАВЗ:');
   console.log('   hr@favz.tj / password (Кадровик)');
   console.log('   manager@favz.tj / password (Руководитель)');
-  console.log('\n   🟡 ДЕЗИНФЕКЦИЯ:');
-  console.log('   hr@dezinfection.tj / password (Кадровик)');
-  console.log('\n   🟠 МАКОН:');
-  console.log('   hr@makon.tj / password (Кадровик)');
-  console.log('\n   🟣 ФАВЗ КЕМИКАЛ:');
-  console.log('   hr@favz-chemical.tj / password (Кадровик)');
-  console.log('\n   🔵 ФАВЗ КЛИМАТ:');
-  console.log('   hr@favz-climat.tj / password (Кадровик)');
-
-  console.log('\n🎉 Заполнение базы данных холдинга завершено!');
+  console.log('\n🟡 Остальные компании: hr@{домен} / password\n');
+  console.log('══════════════════════════════════════════════');
+  console.log(`📊 ИТОГО: ${employeeCount} сотрудников, ${inventoryCount} инвентарь,`);
+  console.log(`   ${attendanceCount} посещаемость, ${salaryCount} зарплатных записей`);
+  console.log('══════════════════════════════════════════════\n');
+  console.log('🎉 Заполнение базы данных завершено!');
 }
 
 main()
-  .catch((e) => {
-    console.error('❌ Ошибка:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .catch((e) => { console.error('❌ Ошибка:', e); process.exit(1); })
+  .finally(() => prisma.$disconnect());

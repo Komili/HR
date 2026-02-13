@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../auth/jwt.strategy';
@@ -75,6 +75,18 @@ export class PositionsService {
   async remove(id: number, user?: RequestUser): Promise<PositionWithCompany> {
     if (user) {
       await this.findOne(id, user);
+    }
+
+    const pos = await this.prisma.position.findUnique({
+      where: { id },
+      include: { _count: { select: { employees: true } } },
+    });
+    if (!pos) throw new NotFoundException('Должность не найдена');
+
+    if ((pos as any)._count.employees > 0) {
+      throw new BadRequestException(
+        `Невозможно удалить должность "${pos.name}": на ней ${(pos as any)._count.employees} сотрудников. Сначала переведите их на другую должность.`,
+      );
     }
 
     return this.prisma.position.delete({

@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Company, Prisma } from '@prisma/client';
 import { RequestUser } from '../auth/jwt.strategy';
@@ -98,7 +98,21 @@ export class CompaniesService {
   async remove(id: number, user?: RequestUser): Promise<Company> {
     // Только суперадмин может удалять компании
     if (user && !user.isHoldingAdmin) {
-      throw new ForbiddenException('Only holding admins can delete companies');
+      throw new ForbiddenException('Только суперадмин может удалять компании');
+    }
+
+    const company = await this.prisma.company.findUnique({
+      where: { id },
+      include: { _count: { select: { employees: true, users: true, departments: true } } },
+    });
+    if (!company) throw new NotFoundException('Компания не найдена');
+
+    // Проверяем, есть ли связанные данные
+    const counts = (company as any)._count;
+    if (counts.employees > 0 || counts.users > 0 || counts.departments > 0) {
+      throw new BadRequestException(
+        `Невозможно удалить компанию "${company.name}": есть связанные данные (сотрудников: ${counts.employees}, пользователей: ${counts.users}, отделов: ${counts.departments}). Сначала удалите или перенесите все данные.`,
+      );
     }
 
     return this.prisma.company.delete({

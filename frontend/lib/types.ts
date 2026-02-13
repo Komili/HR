@@ -9,6 +9,25 @@ export type AuthUser = {
   exp?: number;
 };
 
+export type SystemUser = {
+  id: number;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  roleId: number;
+  role: { name: string };
+  companyId: number | null;
+  company: { id: number; name: string; shortName: string | null } | null;
+  isHoldingAdmin: boolean;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type Role = {
+  id: number;
+  name: string;
+};
+
 export type Company = {
   id: number;
   name: string;

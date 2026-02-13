@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   Banknote,
   Network,
+  Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -223,6 +224,17 @@ export default function DashboardLayout({
             {menuItems.map((item) => (
               <NavLink key={item.path} {...item} />
             ))}
+            {isHoldingAdmin && (
+              <>
+                <div className="my-3 border-t border-gray-100" />
+                <div className="mb-2 px-3">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">
+                    Администрирование
+                  </span>
+                </div>
+                <NavLink path="/admin" icon={Shield} name="Админ-панель" description="Управление" />
+              </>
+            )}
           </nav>
 
           <div className="border-t border-gray-100 px-4 py-4 space-y-3">
@@ -282,6 +294,17 @@ export default function DashboardLayout({
               {menuItems.map((item) => (
                 <NavLink key={item.path} {...item} onClick={() => setMobileMenuOpen(false)} />
               ))}
+              {isHoldingAdmin && (
+                <>
+                  <div className="my-3 border-t border-gray-100" />
+                  <div className="mb-2 px-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">
+                      Администрирование
+                    </span>
+                  </div>
+                  <NavLink path="/admin" icon={Shield} name="Админ-панель" description="Управление" onClick={() => setMobileMenuOpen(false)} />
+                </>
+              )}
               <div className="my-3 border-t border-gray-100" />
               <NavLink {...settingsNav} onClick={() => setMobileMenuOpen(false)} />
             </nav>

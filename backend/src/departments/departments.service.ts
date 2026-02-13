@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../auth/jwt.strategy';
@@ -75,6 +75,18 @@ export class DepartmentsService {
   async remove(id: number, user?: RequestUser): Promise<DepartmentWithCompany> {
     if (user) {
       await this.findOne(id, user);
+    }
+
+    const dept = await this.prisma.department.findUnique({
+      where: { id },
+      include: { _count: { select: { employees: true } } },
+    });
+    if (!dept) throw new NotFoundException('Отдел не найден');
+
+    if ((dept as any)._count.employees > 0) {
+      throw new BadRequestException(
+        `Невозможно удалить отдел "${dept.name}": в нём ${(dept as any)._count.employees} сотрудников. Сначала переведите их в другой отдел.`,
+      );
     }
 
     return this.prisma.department.delete({
