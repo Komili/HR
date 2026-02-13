@@ -15,6 +15,7 @@ import type {
   InventoryHistory,
   Office,
   AttendanceSummary,
+  SalaryRecord,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -90,6 +91,17 @@ export async function updateEmployee(id: number, data: UpdateEmployeeInput): Pro
 
 export async function deleteEmployee(id: number): Promise<void> {
   await apiFetch(`/employees/${id}`, { method: "DELETE" });
+}
+
+export async function uploadEmployeePhoto(employeeId: number, file: File): Promise<Employee> {
+  const formData = new FormData();
+  formData.append("photo", file);
+  return apiFetch(`/employees/${employeeId}/photo`, { method: "POST", body: formData });
+}
+
+export function getEmployeePhotoUrl(employeeId: number): string {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+  return `${API_URL}/employees/${employeeId}/photo`;
 }
 
 // ============ DEPARTMENTS ============
@@ -299,4 +311,24 @@ export async function registerAttendanceEvent(
   const payload: any = { employeeId, direction };
   if (officeId) payload.officeId = officeId;
   return apiFetch("/attendance/event", { method: "POST", body: payload });
+}
+
+// ============ SALARY ============
+
+export async function getSalaries(month: number, year: number): Promise<SalaryRecord[]> {
+  const params = withCompanyId(new URLSearchParams({ month: String(month), year: String(year) }));
+  return apiFetch(`/salary?${params.toString()}`);
+}
+
+export async function getEmployeeSalaries(employeeId: number, year: number): Promise<SalaryRecord[]> {
+  return apiFetch(`/salary/employee/${employeeId}?year=${year}`);
+}
+
+export async function calculateSalaries(month: number, year: number): Promise<{ calculated: number }> {
+  const params = withCompanyId(new URLSearchParams({ month: String(month), year: String(year) }));
+  return apiFetch(`/salary/calculate?${params.toString()}`, { method: "POST" });
+}
+
+export async function updateSalary(id: number, data: { bonus?: number; deduction?: number; note?: string }): Promise<SalaryRecord> {
+  return apiFetch(`/salary/${id}`, { method: "PATCH", body: data });
 }

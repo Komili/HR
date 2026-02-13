@@ -46,6 +46,7 @@ import {
   Plus,
   Search,
   Clock,
+  Camera,
 } from "lucide-react";
 import {
   getEmployee,
@@ -58,6 +59,8 @@ import {
   getInventoryItems,
   assignInventoryToEmployee,
   getEmployeeAttendance,
+  uploadEmployeePhoto,
+  getEmployeePhotoUrl,
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary } from "@/lib/types";
 
@@ -107,6 +110,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [assignSearch, setAssignSearch] = useState("");
   const [assigningItemId, setAssigningItemId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoVersion, setPhotoVersion] = useState(0);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoBlobUrl, setPhotoBlobUrl] = useState<string | null>(null);
 
   // Attendance state
   const [attendanceData, setAttendanceData] = useState<AttendanceSummary[]>([]);
@@ -165,6 +172,28 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     if (!Number.isFinite(employeeId)) return;
     loadAttendance();
   }, [employeeId, loadAttendance]);
+
+  // Загрузка фото сотрудника через авторизованный fetch
+  useEffect(() => {
+    if (!employee?.photoPath) {
+      setPhotoBlobUrl(null);
+      return;
+    }
+    let revoked = false;
+    const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
+    fetch(getEmployeePhotoUrl(employeeId), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(res => res.ok ? res.blob() : null)
+      .then(blob => {
+        if (blob && !revoked) setPhotoBlobUrl(URL.createObjectURL(blob));
+      })
+      .catch(() => {});
+    return () => {
+      revoked = true;
+      setPhotoBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+    };
+  }, [employee?.photoPath, employeeId, photoVersion]);
 
   // Очистка URL при закрытии превью
   useEffect(() => {
@@ -227,6 +256,22 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
     setPreviewDoc(null);
     setPreviewUrl(null);
+  };
+
+  const handlePhotoUpload = async (file: File) => {
+    setUploadingPhoto(true);
+    setError(null);
+    try {
+      const updated = await uploadEmployeePhoto(employeeId, file);
+      setPhotoVersion(v => v + 1);
+      setEmployee(prev => prev ? { ...prev, photoPath: (updated as any).photoPath } : prev);
+      setSuccessMessage("Фото успешно загружено");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка загрузки фото");
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   const handleOpenAssignModal = async () => {
@@ -333,8 +378,41 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
 
         <div className="relative flex flex-wrap items-start justify-between gap-4 sm:gap-6">
           <div className="flex items-center gap-3 sm:gap-5">
-            <div className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-lg sm:text-2xl font-bold text-white shadow-lg shadow-emerald-500/30 flex-shrink-0">
-              {initials}
+            <div className="relative group flex-shrink-0">
+              {photoBlobUrl ? (
+                <img
+                  src={photoBlobUrl}
+                  alt={fullName}
+                  className="h-14 w-14 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl object-cover shadow-lg shadow-emerald-500/30"
+                />
+              ) : (
+                <div className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-lg sm:text-2xl font-bold text-white shadow-lg shadow-emerald-500/30">
+                  {initials}
+                </div>
+              )}
+              <button
+                onClick={() => photoInputRef.current?.click()}
+                disabled={uploadingPhoto}
+                className="absolute inset-0 flex items-center justify-center rounded-xl sm:rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                {uploadingPhoto ? (
+                  <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                ) : (
+                  <Camera className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                )}
+              </button>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    handlePhotoUpload(e.target.files[0]);
+                    e.target.value = "";
+                  }
+                }}
+              />
             </div>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-3xl font-bold text-white truncate">{fullName}</h1>

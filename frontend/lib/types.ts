@@ -57,6 +57,7 @@ export type EmployeeProfile = {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  photoPath?: string | null;
   companyId: number;
   company: { id: number; name: string } | null;
   department: { name: string } | null;
@@ -188,6 +189,32 @@ export type AttendanceSummary = {
   correctedBy: string | null;
   correctionNote: string | null;
   officeName: string | null;
+};
+
+export type SalaryRecord = {
+  id: number;
+  employeeId: number;
+  companyId: number;
+  month: number;
+  year: number;
+  baseSalary: number;
+  workedDays: number;
+  totalDays: number;
+  workedHours: number;
+  bonus: number;
+  deduction: number;
+  note: string | null;
+  totalAmount: number;
+  calculatedBy: string | null;
+  employee?: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    patronymic: string | null;
+    salary: number | null;
+    department: { name: string } | null;
+    position: { name: string } | null;
+  };
 };
 
 export type HoldingStats = {

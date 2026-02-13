@@ -1,7 +1,8 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import * as fs from 'fs/promises';
+import { createReadStream, existsSync } from 'fs';
 import * as path from 'path';
 import { RequestUser } from '../auth/jwt.strategy';
 
@@ -158,6 +159,48 @@ export class EmployeesService {
         company: true,
       },
     });
+  }
+
+  async uploadPhoto(id: number, file: Express.Multer.File, user: RequestUser) {
+    const employee = await this.findOne(id, user);
+    if (!employee) throw new NotFoundException('Сотрудник не найден');
+
+    // Создаём целевую папку
+    const companyFolder = this.sanitize(employee.company?.name || 'unknown');
+    const employeeDir = `${this.sanitize(employee.latinFirstName || 'unknown')}_${this.sanitize(employee.latinLastName || 'unknown')}_${employee.id}`;
+    const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir);
+    await fs.mkdir(targetDir, { recursive: true });
+
+    // Удаляем старое фото если есть
+    if (employee.photoPath) {
+      try { await fs.unlink(employee.photoPath); } catch {}
+    }
+
+    // Перемещаем файл из tmp
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    const photoFileName = `photo${ext}`;
+    const targetPath = path.join(targetDir, photoFileName);
+    await fs.rename(file.path, targetPath);
+
+    // Обновляем запись
+    return this.prisma.employee.update({
+      where: { id },
+      data: { photoPath: targetPath },
+      include: { department: true, position: true, company: true },
+    });
+  }
+
+  async getPhotoStream(id: number): Promise<{ stream: import('fs').ReadStream; mimeType: string }> {
+    const employee = await this.prisma.employee.findUnique({ where: { id }, select: { photoPath: true } });
+    if (!employee?.photoPath || !existsSync(employee.photoPath)) {
+      throw new NotFoundException('Фото не найдено');
+    }
+
+    const ext = path.extname(employee.photoPath).toLowerCase();
+    const mimeMap: Record<string, string> = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+    const mimeType = mimeMap[ext] || 'image/jpeg';
+
+    return { stream: createReadStream(employee.photoPath), mimeType };
   }
 
   // Метод для получения всех сотрудников всех компаний (только для суперадминов)

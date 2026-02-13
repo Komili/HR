@@ -26,6 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import * as XLSX from "xlsx";
 import { getEmployees, getDepartments, getPositions, getInventoryItems, getAttendance } from "@/lib/hrms-api";
 import type { Employee, Department, Position, AttendanceSummary } from "@/lib/types";
 
@@ -74,43 +75,34 @@ export default function DashboardPage() {
 
   const getDate = () => new Date().toISOString().split("T")[0];
 
-  const downloadFile = (content: string, filename: string, type: string) => {
-    const blob = new Blob([content], { type });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
+  const writeXlsx = (wsData: (string | number)[][], filename: string, sheetName: string, cols?: { wch: number }[]) => {
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    if (cols) ws["!cols"] = cols;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, filename);
   };
 
   const generateEmployeeReport = () => {
     const headers = ["ID", "Фамилия", "Имя", "Отчество", "Email", "Телефон", "Отдел", "Должность"];
-    const csvRows = [
-      headers.join(";"),
-      ...employees.map(emp => [
-        emp.id, emp.lastName, emp.firstName, emp.patronymic || "",
-        emp.email || "", emp.phone || "", emp.department?.name || "", emp.position?.name || ""
-      ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(";"))
-    ];
-    const csvContent = "\uFEFF" + csvRows.join("\n");
-    downloadFile(csvContent, `employees_report_${getDate()}.csv`, "text/csv;charset=utf-8;");
+    const rows = employees.map(emp => [
+      emp.id, emp.lastName, emp.firstName, emp.patronymic || "",
+      emp.email || "", emp.phone || "", emp.department?.name || "", emp.position?.name || ""
+    ]);
+    writeXlsx([headers, ...rows], `Сотрудники_${getDate()}.xlsx`, "Сотрудники", [
+      { wch: 5 }, { wch: 20 }, { wch: 18 }, { wch: 20 }, { wch: 25 }, { wch: 16 }, { wch: 22 }, { wch: 22 },
+    ]);
     showSuccess("Отчёт по сотрудникам сформирован");
   };
 
   const generateDepartmentReport = () => {
     const headers = ["ID", "Название отдела", "Кол-во сотрудников"];
-    const deptWithCounts = departments.map(dep => ({
-      ...dep,
-      count: employees.filter(e => e.departmentId === dep.id).length
-    }));
-    const csvRows = [
-      headers.join(";"),
-      ...deptWithCounts.map(dep => [dep.id, dep.name, dep.count]
-        .map(val => `"${String(val).replace(/"/g, '""')}"`).join(";"))
-    ];
-    const csvContent = "\uFEFF" + csvRows.join("\n");
-    downloadFile(csvContent, `departments_report_${getDate()}.csv`, "text/csv;charset=utf-8;");
+    const rows = departments.map(dep => [
+      dep.id, dep.name, employees.filter(e => e.departmentId === dep.id).length
+    ]);
+    writeXlsx([headers, ...rows], `Отделы_${getDate()}.xlsx`, "Отделы", [
+      { wch: 5 }, { wch: 30 }, { wch: 20 },
+    ]);
     showSuccess("Аналитика отделов сформирована");
   };
 
@@ -119,48 +111,60 @@ export default function DashboardPage() {
     const statusLabels: Record<string, string> = {
       present: "На месте", left: "Ушёл", absent: "Отсутствует", excused: "Уважит.",
     };
-    const csvRows = [
-      headers.join(";"),
-      ...todayAttendance.map(att => {
-        const totalH = Math.floor(att.totalMinutes / 60);
-        const totalM = att.totalMinutes % 60;
-        return [
-          att.employeeName,
-          att.departmentName || "—",
-          att.positionName || "—",
-          att.firstEntry ? new Date(att.firstEntry).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—",
-          att.lastExit ? new Date(att.lastExit).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—",
-          att.totalMinutes > 0 ? `${totalH}ч ${totalM}м` : "—",
-          statusLabels[att.status] || att.status,
-        ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(";");
-      })
-    ];
-    const csvContent = "\uFEFF" + csvRows.join("\n");
-    downloadFile(csvContent, `attendance_report_${getDate()}.csv`, "text/csv;charset=utf-8;");
+    const rows = todayAttendance.map(att => {
+      const h = Math.floor(att.totalMinutes / 60), m = att.totalMinutes % 60;
+      return [
+        att.employeeName, att.departmentName || "—", att.positionName || "—",
+        att.firstEntry ? new Date(att.firstEntry).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—",
+        att.lastExit ? new Date(att.lastExit).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—",
+        att.totalMinutes > 0 ? `${h}ч ${m}м` : "—", statusLabels[att.status] || att.status,
+      ];
+    });
+    writeXlsx([headers, ...rows], `Посещаемость_${getDate()}.xlsx`, "Посещаемость", [
+      { wch: 30 }, { wch: 20 }, { wch: 22 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 14 },
+    ]);
     showSuccess("Сводка посещаемости сформирована");
   };
 
   const generateMonthlyReport = () => {
-    const headers = ["Показатель", "Значение"];
-    const data = [
+    const presentCount = todayAttendance.filter(a => a.status === "present").length;
+    const rows: (string | number)[][] = [
+      ["Показатель", "Значение"],
       ["Всего сотрудников", employees.length],
       ["Всего отделов", departments.length],
       ["Всего должностей", positions.length],
+      ["На месте сегодня", presentCount],
       ["Дата отчёта", new Date().toLocaleDateString("ru-RU")],
     ];
-    const csvRows = [
-      headers.join(";"),
-      ...data.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(";"))
-    ];
-    const csvContent = "\uFEFF" + csvRows.join("\n");
-    downloadFile(csvContent, `monthly_report_${getDate()}.csv`, "text/csv;charset=utf-8;");
+    writeXlsx(rows, `Месячный_обзор_${getDate()}.xlsx`, "Обзор", [
+      { wch: 25 }, { wch: 20 },
+    ]);
     showSuccess("Месячный обзор сформирован");
   };
 
   const exportAll = () => {
-    generateEmployeeReport();
-    setTimeout(() => generateDepartmentReport(), 500);
-    setTimeout(() => generateMonthlyReport(), 1000);
+    const wb = XLSX.utils.book_new();
+
+    const empH = ["ID", "Фамилия", "Имя", "Отчество", "Email", "Телефон", "Отдел", "Должность"];
+    const empR = employees.map(emp => [emp.id, emp.lastName, emp.firstName, emp.patronymic || "", emp.email || "", emp.phone || "", emp.department?.name || "", emp.position?.name || ""]);
+    const ws1 = XLSX.utils.aoa_to_sheet([empH, ...empR]);
+    ws1["!cols"] = [{ wch: 5 }, { wch: 20 }, { wch: 18 }, { wch: 20 }, { wch: 25 }, { wch: 16 }, { wch: 22 }, { wch: 22 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Сотрудники");
+
+    const depH = ["ID", "Название отдела", "Кол-во сотрудников"];
+    const depR = departments.map(dep => [dep.id, dep.name, employees.filter(e => e.departmentId === dep.id).length]);
+    const ws2 = XLSX.utils.aoa_to_sheet([depH, ...depR]);
+    ws2["!cols"] = [{ wch: 5 }, { wch: 30 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Отделы");
+
+    const presentCount = todayAttendance.filter(a => a.status === "present").length;
+    const overviewData = [["Показатель", "Значение"], ["Всего сотрудников", employees.length], ["Всего отделов", departments.length], ["Всего должностей", positions.length], ["На месте сегодня", presentCount], ["Дата отчёта", new Date().toLocaleDateString("ru-RU")]];
+    const ws3 = XLSX.utils.aoa_to_sheet(overviewData);
+    ws3["!cols"] = [{ wch: 25 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws3, "Обзор");
+
+    XLSX.writeFile(wb, `HR_Отчёты_${getDate()}.xlsx`);
+    showSuccess("Все отчёты экспортированы");
   };
 
   // --- Data ---
@@ -343,7 +347,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <CardTitle className="text-base sm:text-lg font-bold">Отчёты</CardTitle>
-              <p className="text-xs sm:text-sm text-muted-foreground">Экспорт HR-аналитики в CSV</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">Экспорт HR-аналитики в Excel</p>
             </div>
           </div>
           <Button

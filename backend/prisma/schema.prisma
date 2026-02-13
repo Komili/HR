@@ -31,6 +31,7 @@ model Company {
   offices          Office[]
   attendanceEvents AttendanceEvent[]
   attendances      Attendance[]
+  salaries         Salary[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 }
@@ -81,6 +82,7 @@ model Employee {
   hireDate        DateTime?
   status          String             @default("Активен") // "Активен", "Уволен", "В отпуске"
   notes           String?            @db.Text
+  photoPath       String?            // Путь к фото сотрудника
   company         Company            @relation(fields: [companyId], references: [id])
   companyId       Int
   department      Department?        @relation(fields: [departmentId], references: [id])
@@ -91,6 +93,7 @@ model Employee {
   inventoryItems   InventoryItem[]
   attendanceEvents AttendanceEvent[]
   attendances      Attendance[]
+  salaries         Salary[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -226,6 +229,30 @@ model Attendance {
 
   @@unique([employeeId, date])
   @@index([companyId, date])
+}
+
+model Salary {
+  id              Int      @id @default(autoincrement())
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId      Int
+  company         Company  @relation(fields: [companyId], references: [id])
+  companyId       Int
+  month           Int      // 1-12
+  year            Int
+  baseSalary      Float    @default(0) // Оклад
+  workedDays      Int      @default(0) // Рабочих дней
+  totalDays       Int      @default(0) // Всего рабочих дней в месяце
+  workedHours     Int      @default(0) // Отработано минут
+  bonus           Float    @default(0) // Премия
+  deduction       Float    @default(0) // Удержание
+  note            String?  @db.Text
+  totalAmount     Float    @default(0) // Итого к выплате
+  calculatedBy    String?  // Email кто рассчитал
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([employeeId, month, year])
+  @@index([companyId, month, year])
 }
 
 model AuditLog {

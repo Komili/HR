@@ -12,6 +12,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { OfficesModule } from './offices/offices.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { SalaryModule } from './salary/salary.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AttendanceModule } from './attendance/attendance.module';
     InventoryModule,
     OfficesModule,
     AttendanceModule,
+    SalaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -21,6 +21,9 @@ import {
   Clock,
   Menu,
   X,
+  AlertTriangle,
+  Banknote,
+  Network,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -49,6 +52,8 @@ const menuItems = [
   { name: "Должности", path: "/positions", icon: Briefcase, description: "Роли" },
   { name: "Инвентарь", path: "/inventory", icon: Package, description: "Имущество" },
   { name: "Посещаемость", path: "/attendance", icon: Clock, description: "Учёт времени" },
+  { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },
+  { name: "Оргструктура", path: "/org-structure", icon: Network, description: "Иерархия" },
 ];
 
 const settingsNav = { name: "Настройки", path: "/settings", icon: Settings, description: "Конфиг" };
@@ -175,9 +180,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { user, logout, isHoldingAdmin } = useAuth();
+  const { user, logout, isHoldingAdmin, currentCompanyId } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
+  const needsCompanySelection = isHoldingAdmin && !currentCompanyId;
 
   const handleGlobalSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -358,22 +364,31 @@ export default function DashboardLayout({
                   <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuLabel>Создать</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => router.push("/employees?action=create")} className="cursor-pointer">
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Нового сотрудника
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push("/departments?action=create")} className="cursor-pointer">
-                      <Building2 className="mr-2 h-4 w-4" />
-                      Новый отдел
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push("/positions?action=create")} className="cursor-pointer">
-                      <Briefcase className="mr-2 h-4 w-4" />
-                      Новую должность
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push("/inventory?action=create")} className="cursor-pointer">
-                      <Package className="mr-2 h-4 w-4" />
-                      Новый инвентарь
-                    </DropdownMenuItem>
+                    {needsCompanySelection ? (
+                      <div className="px-3 py-2 text-xs text-amber-700 bg-amber-50 rounded-md mx-1">
+                        <AlertTriangle className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                        Сначала выберите компанию в боковой панели
+                      </div>
+                    ) : (
+                      <>
+                        <DropdownMenuItem onClick={() => router.push("/employees?action=create")} className="cursor-pointer">
+                          <UserPlus className="mr-2 h-4 w-4" />
+                          Нового сотрудника
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push("/departments?action=create")} className="cursor-pointer">
+                          <Building2 className="mr-2 h-4 w-4" />
+                          Новый отдел
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push("/positions?action=create")} className="cursor-pointer">
+                          <Briefcase className="mr-2 h-4 w-4" />
+                          Новую должность
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push("/inventory?action=create")} className="cursor-pointer">
+                          <Package className="mr-2 h-4 w-4" />
+                          Новый инвентарь
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl hover:bg-emerald-50">
@@ -384,6 +399,14 @@ export default function DashboardLayout({
           </header>
 
           <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 sm:gap-8 px-3 py-4 sm:px-6 sm:py-8 lg:px-8">
+            {needsCompanySelection && (
+              <div className="flex items-center gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3 sm:p-4">
+                <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <div className="text-sm text-amber-800">
+                  <span className="font-medium">Выберите компанию</span> в боковой панели для создания и редактирования записей. В режиме «Все компании» доступен только просмотр.
+                </div>
+              </div>
+            )}
             {children}
           </main>
         </div>
