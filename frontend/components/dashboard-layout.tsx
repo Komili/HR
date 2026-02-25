@@ -25,6 +25,7 @@ import {
   Banknote,
   Network,
   Shield,
+  UserPlus2,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -55,6 +56,7 @@ const menuItems = [
   { name: "Посещаемость", path: "/attendance", icon: Clock, description: "Учёт времени" },
   { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },
   { name: "Оргструктура", path: "/org-structure", icon: Network, description: "Иерархия" },
+  { name: "Регистрации", path: "/registrations", icon: UserPlus2, description: "Заявки" },
 ];
 
 const settingsNav = { name: "Настройки", path: "/settings", icon: Settings, description: "Конфиг" };

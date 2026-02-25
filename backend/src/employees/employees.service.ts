@@ -2,8 +2,9 @@ import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import * as fs from 'fs/promises';
-import { createReadStream, existsSync } from 'fs';
+import { createReadStream, existsSync, readFileSync } from 'fs';
 import * as path from 'path';
+import sharp = require('sharp');
 import { RequestUser } from '../auth/jwt.strategy';
 
 type EmployeeWithRelations = Prisma.EmployeeGetPayload<{
@@ -81,6 +82,9 @@ export class EmployeesService {
         where.companyId = companyFilter;
       }
     }
+
+    // По умолчанию исключаем заявки (Ожидает/Отклонён) из общего списка
+    where.status = { notIn: ['Ожидает', 'Отклонён'] };
 
     if (search) {
       where.OR = [
@@ -190,17 +194,101 @@ export class EmployeesService {
     });
   }
 
-  async getPhotoStream(id: number): Promise<{ stream: import('fs').ReadStream; mimeType: string }> {
+  async getPhotoStream(id: number): Promise<{ buffer: Buffer; mimeType: string }> {
     const employee = await this.prisma.employee.findUnique({ where: { id }, select: { photoPath: true } });
     if (!employee?.photoPath || !existsSync(employee.photoPath)) {
       throw new NotFoundException('Фото не найдено');
     }
 
-    const ext = path.extname(employee.photoPath).toLowerCase();
-    const mimeMap: Record<string, string> = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
-    const mimeType = mimeMap[ext] || 'image/jpeg';
+    // Проверяем кэш нормализованного фото
+    const normalizedPath = employee.photoPath.replace(/(\.[^.]+)$/, '_norm.jpg');
+    if (existsSync(normalizedPath)) {
+      return { buffer: readFileSync(normalizedPath), mimeType: 'image/jpeg' };
+    }
 
-    return { stream: createReadStream(employee.photoPath), mimeType };
+    // Применяем EXIF-ротацию и сжимаем до разумного размера
+    const buffer = await sharp(employee.photoPath)
+      .rotate()
+      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    // Кэшируем
+    try { await fs.writeFile(normalizedPath, buffer); } catch (_) {}
+
+    return { buffer, mimeType: 'image/jpeg' };
+  }
+
+  async getPhotoThumbnail(id: number): Promise<Buffer> {
+    const employee = await this.prisma.employee.findUnique({ where: { id }, select: { photoPath: true } });
+    if (!employee?.photoPath || !existsSync(employee.photoPath)) {
+      throw new NotFoundException('Фото не найдено');
+    }
+
+    // Проверяем кэш миниатюры
+    const thumbPath = employee.photoPath.replace(/(\.[^.]+)$/, '_thumb.jpg');
+    if (existsSync(thumbPath)) {
+      return readFileSync(thumbPath);
+    }
+
+    // Генерируем миниатюру: 80x80, JPEG качество 70, с авто-поворотом по EXIF
+    const buffer = await sharp(employee.photoPath)
+      .rotate()
+      .resize(80, 80, { fit: 'cover' })
+      .jpeg({ quality: 70 })
+      .toBuffer();
+
+    // Сохраняем в кэш
+    try {
+      await fs.writeFile(thumbPath, buffer);
+    } catch (_) {}
+
+    return buffer;
+  }
+
+  async findPending(user?: RequestUser, requestedCompanyId?: number) {
+    const where: Prisma.EmployeeWhereInput = { status: 'Ожидает' };
+
+    if (user) {
+      const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
+      if (companyFilter) {
+        where.companyId = companyFilter;
+      }
+    }
+
+    return this.prisma.employee.findMany({
+      where,
+      include: { department: true, position: true, company: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async approveRegistration(id: number, updates: { departmentId?: number; positionId?: number }, user: RequestUser) {
+    const employee = await this.findOne(id, user);
+    if (!employee) throw new NotFoundException('Сотрудник не найден');
+    if (employee.status !== 'Ожидает') throw new ForbiddenException('Сотрудник не в статусе ожидания');
+
+    const data: Prisma.EmployeeUpdateInput = { status: 'Активен' };
+    if (updates.departmentId) data.department = { connect: { id: updates.departmentId } };
+    if (updates.positionId) data.position = { connect: { id: updates.positionId } };
+
+    return this.prisma.employee.update({
+      where: { id },
+      data,
+      include: { department: true, position: true, company: true },
+    });
+  }
+
+  async rejectRegistration(id: number, user: RequestUser) {
+    const employee = await this.findOne(id, user);
+    if (!employee) throw new NotFoundException('Сотрудник не найден');
+    if (employee.status !== 'Ожидает') throw new ForbiddenException('Сотрудник не в статусе ожидания');
+
+    return this.prisma.employee.update({
+      where: { id },
+      data: { status: 'Отклонён' },
+      include: { department: true, position: true, company: true },
+    });
   }
 
   // Метод для получения всех сотрудников всех компаний (только для суперадминов)

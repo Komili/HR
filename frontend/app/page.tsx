@@ -9,5 +9,9 @@ export default function HomePage() {
     router.replace('/dashboard');
   }, [router]);
 
-  return null; // Render nothing, just redirect
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="h-8 w-8 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
+    </div>
+  );
 }

@@ -76,6 +76,35 @@ export class EmployeesController {
     return this.employeesService.findAll(+page, +limit, search, req?.user, requestedCompanyId);
   }
 
+  @Get('pending')
+  @Roles('Суперадмин', 'Кадровик')
+  findPending(
+    @Query('companyId') companyId?: string,
+    @Request() req?: { user: RequestUser },
+  ) {
+    const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
+    return this.employeesService.findPending(req?.user, requestedCompanyId);
+  }
+
+  @Patch(':id/approve')
+  @Roles('Суперадмин', 'Кадровик')
+  approveRegistration(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { departmentId?: number; positionId?: number },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.employeesService.approveRegistration(id, body, req.user);
+  }
+
+  @Patch(':id/reject')
+  @Roles('Суперадмин', 'Кадровик')
+  rejectRegistration(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.employeesService.rejectRegistration(id, req.user);
+  }
+
   @Post(':id/photo')
   @Roles('Суперадмин', 'Кадровик')
   @UseInterceptors(
@@ -114,12 +143,19 @@ export class EmployeesController {
   @Roles('Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер')
   async getPhoto(
     @Param('id', ParseIntPipe) id: number,
+    @Query('thumb') thumb: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { stream, mimeType } = await this.employeesService.getPhotoStream(id);
+    if (thumb === '1') {
+      const buffer = await this.employeesService.getPhotoThumbnail(id);
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return new StreamableFile(buffer);
+    }
+    const { buffer, mimeType } = await this.employeesService.getPhotoStream(id);
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    return new StreamableFile(stream);
+    return new StreamableFile(buffer);
   }
 
   @Get(':id')

@@ -271,6 +271,7 @@ const COMPANY_EXTRA = {
   'Фавз Климат': { shortName: 'Фавз Клим.', inn: '890123456', address: 'г. Душанбе, ул. Фирдавси 30', phone: '+992 372 890123', email: 'info@favz-climat.tj' },
   'Макон': { shortName: 'Макон', inn: '345678901', address: 'г. Душанбе, ул. Айни 45', phone: '+992 372 345678', email: 'info@makon.tj' },
   'Макон (Магазин)': { shortName: 'Макон Маг.', inn: '456789012', address: 'г. Душанбе, пр. Исмоили Сомони 100', phone: '+992 372 456789', email: 'shop@makon.tj' },
+  'QIS. Калам': { shortName: 'QIS Калам', inn: '901234567', address: 'г. Душанбе', phone: '+992 372 901234', email: 'info@qalam.tj' },
 };
 
 /**
@@ -286,6 +287,7 @@ function getUsersForCompany(companyName) {
     'Фавз Климат': 'favz-climat',
     'Макон': 'makon',
     'Макон (Магазин)': 'makon-shop',
+    'QIS. Калам': 'qalam',
   };
   const key = keyMap[companyName] || companyName.toLowerCase().replace(/\s+/g, '-');
   return [
@@ -332,10 +334,20 @@ async function main() {
   console.log(`   Записи посещаемости: ${skudLogs.length}`);
   console.log(`   Корректировки: ${skudCorrections.length}`);
 
-  // Фильтруем сотрудников: только с назначенной компанией
-  const validEmployees = skudEmployees.filter(e => e.companyId !== null && e.companyId !== undefined);
-  const skippedEmployees = skudEmployees.length - validEmployees.length;
-  console.log(`   Сотрудники с компанией: ${validEmployees.length} (пропущено без компании: ${skippedEmployees})`);
+  // Находим ID компании QIS. Калам в СКУД для назначения сотрудников без компании
+  const qisCompany = skudCompanies.find(c => c.name === 'QIS. Калам');
+  const qisCompanyId = qisCompany ? qisCompany.id : null;
+
+  // Все сотрудники: если companyId=NULL — назначаем в QIS. Калам
+  let pendingCount = 0;
+  const validEmployees = skudEmployees.map(e => {
+    if (e.companyId === null || e.companyId === undefined) {
+      pendingCount++;
+      return { ...e, companyId: qisCompanyId };
+    }
+    return e;
+  }).filter(e => e.companyId !== null && e.companyId !== undefined);
+  console.log(`   Сотрудники с компанией: ${validEmployees.length} (из них pending → QIS. Калам: ${pendingCount})`);
 
   // --- ШАГ 2: Очистка базы данных ---
   console.log('\n🧹 Шаг 2: Очистка базы данных...');
@@ -347,6 +359,7 @@ async function main() {
   await prisma.employeeDocument.deleteMany();
   await prisma.office.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.registrationToken.deleteMany();
   await prisma.user.deleteMany();
   await prisma.position.deleteMany();
   await prisma.department.deleteMany();
@@ -478,8 +491,12 @@ async function main() {
     if (!hrCompany) continue;
 
     for (const posName of posNames) {
-      const pos = await prisma.position.create({
-        data: {
+      const pos = await prisma.position.upsert({
+        where: {
+          name_companyId: { name: posName, companyId: hrCompany.id },
+        },
+        update: {},
+        create: {
           name: posName,
           companyId: hrCompany.id,
         },
@@ -549,7 +566,7 @@ async function main() {
           hireDate: hireDate && !isNaN(hireDate.getTime()) ? hireDate : null,
           phone,
           email,
-          salary: getSalaryByPosition(emp.position),
+          salary: 1000,
           status: emp.status || 'Активен',
           photoPath: emp.photoUrl || null,
           companyId: hrCompany.id,
@@ -586,6 +603,8 @@ async function main() {
       eventSkipped++;
       continue;
     }
+    // СКУД хранит время в UTC+5 (Душанбе), корректируем на -5 часов для хранения в UTC
+    timestamp.setHours(timestamp.getHours() - 5);
 
     const direction = log.eventType === 'entry' ? 'IN' : 'OUT';
     const deviceName = [log.door, log.terminalIp].filter(Boolean).join(' / ') || null;
@@ -626,6 +645,8 @@ async function main() {
 
     const timestamp = new Date(log.timestamp);
     if (isNaN(timestamp.getTime())) continue;
+    // Корректируем на -5 часов (СКУД хранит в UTC+5)
+    timestamp.setHours(timestamp.getHours() - 5);
 
     const dateStr = timestamp.toISOString().split('T')[0]; // YYYY-MM-DD
     const key = `${hrEmployee.id}_${dateStr}`;

@@ -19,6 +19,7 @@ import {
   getDepartments,
   getPositions,
 } from "@/lib/hrms-api"
+import { EmployeeAvatar } from "@/components/employee-avatar"
 import {
   Users,
   Search,
@@ -52,7 +53,7 @@ export default function EmployeesPage() {
   const [data, setData] = React.useState<Employee[]>([])
   const [page, setPage] = React.useState(0)
   const [total, setTotal] = React.useState(0)
-  const limit = 10
+  const [limit, setLimit] = React.useState(10)
   const [search, setSearch] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [debouncedSearch] = useDebounce(search, 500)
@@ -223,15 +224,18 @@ export default function EmployeesPage() {
       accessorKey: "lastName",
       header: "Сотрудник",
       cell: ({ row }) => {
-        const { lastName, firstName, patronymic, id } = row.original
+        const { lastName, firstName, patronymic, id, photoPath } = row.original
         const fullName = `${lastName} ${firstName} ${patronymic || ""}`.trim()
-        const initials = `${firstName?.charAt(0) || ""}${lastName?.charAt(0) || ""}`.toUpperCase()
 
         return (
           <Link href={`/employees/${id}`} className="group flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-sm font-bold text-white shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all">
-              {initials}
-            </div>
+            <EmployeeAvatar
+              employeeId={id}
+              firstName={firstName}
+              lastName={lastName}
+              photoPath={photoPath}
+              className="shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all"
+            />
             <div>
               <div className="font-medium text-foreground group-hover:text-emerald-600 transition-colors">
                 {fullName}
@@ -362,6 +366,7 @@ export default function EmployeesPage() {
     previousPage: () => setPage((p) => p - 1),
     nextPage: () => setPage((p) => p + 1),
     setPageIndex: setPage,
+    onPageSizeChange: (size: number) => { setLimit(size); setPage(0) },
   }
 
   const quickStats = [

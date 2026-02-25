@@ -27,7 +27,8 @@ interface DataTablePaginationProps {
   canNextPage: boolean
   previousPage: () => void
   nextPage: () => void
-  setPageIndex: (index: number) => void;
+  setPageIndex: (index: number) => void
+  onPageSizeChange?: (size: number) => void
 }
 
 interface DataTableProps<TData, TValue> {
@@ -118,9 +119,25 @@ export function DataTable<TData, TValue>({
       </div>
       {pagination && pagination.pageCount > 0 && (
         <div className="flex items-center justify-between px-2">
-          <div className="text-sm text-muted-foreground">
-            Страница <span className="font-medium text-foreground">{pagination.pageIndex + 1}</span> из{" "}
-            <span className="font-medium text-foreground">{pagination.pageCount}</span>
+          <div className="flex items-center gap-4">
+            {pagination.onPageSizeChange && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Показывать</span>
+                <select
+                  value={pagination.pageSize}
+                  onChange={(e) => pagination.onPageSizeChange!(Number(e.target.value))}
+                  className="h-8 rounded-lg border border-emerald-200 bg-background px-2 text-sm font-medium text-foreground hover:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  {[10, 25, 50, 100].map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="text-sm text-muted-foreground">
+              Страница <span className="font-medium text-foreground">{pagination.pageIndex + 1}</span> из{" "}
+              <span className="font-medium text-foreground">{pagination.pageCount}</span>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <Button

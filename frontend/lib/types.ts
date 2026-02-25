@@ -98,6 +98,7 @@ export type Employee = {
   positionId: number | null;
   email: string | null;
   phone: string | null;
+  photoPath: string | null;
 };
 
 export type EmployeeDocument = {
@@ -234,6 +235,29 @@ export type SalaryRecord = {
     department: { name: string } | null;
     position: { name: string } | null;
   };
+};
+
+export type RegistrationToken = {
+  id: number;
+  token: string;
+  companyId: number;
+  isActive: boolean;
+  createdBy: string;
+  usageCount: number;
+  createdAt: string;
+  company?: { id: number; name: string; shortName: string | null };
+};
+
+export type PendingEmployee = Employee & {
+  status: string;
+  birthDate: string | null;
+  address: string | null;
+  passportSerial: string | null;
+  passportNumber: string | null;
+  passportIssuedBy: string | null;
+  passportIssueDate: string | null;
+  inn: string | null;
+  createdAt: string;
 };
 
 export type HoldingStats = {

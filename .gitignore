@@ -24,3 +24,8 @@ coverage/
 *.log
 *.tsbuildinfo
 .codex-instructions.md
+
+### project specific
+skud.sql
+storage/
+*.tmp_token.json

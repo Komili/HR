@@ -46,7 +46,6 @@ import {
   Plus,
   Search,
   Clock,
-  Camera,
 } from "lucide-react";
 import {
   getEmployee,
@@ -63,6 +62,7 @@ import {
   getEmployeePhotoUrl,
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary } from "@/lib/types";
+import PhotoLightbox from "@/components/photo-lightbox";
 
 // Предопределённые типы документов для HR
 const DOCUMENT_TYPES = [
@@ -110,10 +110,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [assignSearch, setAssignSearch] = useState("");
   const [assigningItemId, setAssigningItemId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [photoVersion, setPhotoVersion] = useState(0);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoBlobUrl, setPhotoBlobUrl] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Attendance state
   const [attendanceData, setAttendanceData] = useState<AttendanceSummary[]>([]);
@@ -379,40 +379,29 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
         <div className="relative flex flex-wrap items-start justify-between gap-4 sm:gap-6">
           <div className="flex items-center gap-3 sm:gap-5">
             <div className="relative group flex-shrink-0">
-              {photoBlobUrl ? (
-                <img
-                  src={photoBlobUrl}
-                  alt={fullName}
-                  className="h-14 w-14 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl object-cover shadow-lg shadow-emerald-500/30"
-                />
-              ) : (
-                <div className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-lg sm:text-2xl font-bold text-white shadow-lg shadow-emerald-500/30">
-                  {initials}
-                </div>
-              )}
               <button
-                onClick={() => photoInputRef.current?.click()}
-                disabled={uploadingPhoto}
-                className="absolute inset-0 flex items-center justify-center rounded-xl sm:rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                onClick={() => photoBlobUrl && setLightboxOpen(true)}
+                disabled={uploadingPhoto || !photoBlobUrl}
+                className="block focus:outline-none"
+                title={photoBlobUrl ? "Нажмите для просмотра фото" : undefined}
               >
-                {uploadingPhoto ? (
-                  <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                {photoBlobUrl ? (
+                  <img
+                    src={photoBlobUrl}
+                    alt={fullName}
+                    className="h-14 w-14 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl object-cover shadow-lg shadow-emerald-500/30 group-hover:brightness-75 transition-all cursor-pointer"
+                  />
                 ) : (
-                  <Camera className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                  <div className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-lg sm:text-2xl font-bold text-white shadow-lg shadow-emerald-500/30">
+                    {initials}
+                  </div>
                 )}
               </button>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files?.[0]) {
-                    handlePhotoUpload(e.target.files[0]);
-                    e.target.value = "";
-                  }
-                }}
-              />
+              {uploadingPhoto && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-xl sm:rounded-2xl bg-black/50">
+                  <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                </div>
+              )}
             </div>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-3xl font-bold text-white truncate">{fullName}</h1>
@@ -1163,6 +1152,18 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
           </div>
         </DialogContent>
       </Dialog>
+
+      {lightboxOpen && photoBlobUrl && (
+        <PhotoLightbox
+          src={photoBlobUrl}
+          fullName={fullName}
+          onUpload={async (file) => {
+            await handlePhotoUpload(file);
+            setLightboxOpen(false);
+          }}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </div>
   );
 }

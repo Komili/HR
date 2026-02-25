@@ -16,6 +16,8 @@ import type {
   Office,
   AttendanceSummary,
   SalaryRecord,
+  RegistrationToken,
+  PendingEmployee,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -99,9 +101,9 @@ export async function uploadEmployeePhoto(employeeId: number, file: File): Promi
   return apiFetch(`/employees/${employeeId}/photo`, { method: "POST", body: formData });
 }
 
-export function getEmployeePhotoUrl(employeeId: number): string {
+export function getEmployeePhotoUrl(employeeId: number, thumb?: boolean): string {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
-  return `${API_URL}/employees/${employeeId}/photo`;
+  return `${API_URL}/employees/${employeeId}/photo${thumb ? '?thumb=1' : ''}`;
 }
 
 // ============ DEPARTMENTS ============
@@ -331,6 +333,43 @@ export async function calculateSalaries(month: number, year: number): Promise<{ 
 
 export async function updateSalary(id: number, data: { bonus?: number; deduction?: number; note?: string }): Promise<SalaryRecord> {
   return apiFetch(`/salary/${id}`, { method: "PATCH", body: data });
+}
+
+// ============ REGISTRATION ============
+
+export async function getPendingRegistrations(companyId?: number): Promise<PendingEmployee[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/employees/pending${query ? `?${query}` : ""}`);
+}
+
+export async function approveRegistration(
+  id: number,
+  updates?: { departmentId?: number; positionId?: number },
+): Promise<Employee> {
+  return apiFetch(`/employees/${id}/approve`, { method: "PATCH", body: updates || {} });
+}
+
+export async function rejectRegistration(id: number): Promise<Employee> {
+  return apiFetch(`/employees/${id}/reject`, { method: "PATCH" });
+}
+
+export async function getRegistrationTokens(companyId?: number): Promise<RegistrationToken[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/registration/tokens${query ? `?${query}` : ""}`);
+}
+
+export async function createRegistrationToken(companyId: number): Promise<RegistrationToken> {
+  return apiFetch("/registration/tokens", { method: "POST", body: { companyId } });
+}
+
+export async function deleteRegistrationToken(id: number): Promise<void> {
+  await apiFetch(`/registration/tokens/${id}`, { method: "DELETE" });
 }
 
 // ============ USERS (Admin) ============
