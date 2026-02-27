@@ -16,6 +16,8 @@ import { OfficesModule } from './offices/offices.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { SalaryModule } from './salary/salary.module';
 import { RegistrationModule } from './registration/registration.module';
+import { TelegramModule } from './telegram/telegram.module';
+import { HikvisionModule } from './hikvision/hikvision.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { RegistrationModule } from './registration/registration.module';
     AttendanceModule,
     SalaryModule,
     RegistrationModule,
+    TelegramModule,
+    HikvisionModule,
   ],
   controllers: [AppController],
   providers: [

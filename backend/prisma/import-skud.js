@@ -569,6 +569,7 @@ async function main() {
           salary: 1000,
           status: emp.status || 'Активен',
           photoPath: emp.photoUrl || null,
+          skudId: emp.id ? String(emp.id) : null,
           companyId: hrCompany.id,
           departmentId: hrDept ? hrDept.id : null,
           positionId: hrPos ? hrPos.id : null,

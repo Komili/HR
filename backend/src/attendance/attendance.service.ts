@@ -196,7 +196,7 @@ export class AttendanceService {
     return event;
   }
 
-  private async recalculateDay(employeeId: number, dateTime: Date) {
+  async recalculateDay(employeeId: number, dateTime: Date) {
     const employee = await this.prisma.employee.findUnique({ where: { id: employeeId } });
     if (!employee) return;
 
