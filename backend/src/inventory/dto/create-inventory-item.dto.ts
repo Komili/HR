@@ -7,6 +7,7 @@ import {
   IsInt,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateInventoryItemDto {
   @IsString()
@@ -15,14 +16,17 @@ export class CreateInventoryItemDto {
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   model?: string;
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   category?: string;
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   inventoryNumber?: string;
 
   @IsNumber()
@@ -32,6 +36,7 @@ export class CreateInventoryItemDto {
 
   @IsDateString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   acquisitionDate?: string;
 
   @IsString()

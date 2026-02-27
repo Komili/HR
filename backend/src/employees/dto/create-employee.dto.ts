@@ -8,6 +8,7 @@ import {
   Min,
   IsInt,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateEmployeeDto {
   @IsString()
@@ -32,6 +33,7 @@ export class CreateEmployeeDto {
 
   @IsDateString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   birthDate?: string;
 
   @IsString()
@@ -48,6 +50,7 @@ export class CreateEmployeeDto {
 
   @IsDateString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   passportIssueDate?: string;
 
   @IsString()
@@ -77,10 +80,12 @@ export class CreateEmployeeDto {
 
   @IsDateString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   contractDate?: string;
 
   @IsDateString()
   @IsOptional()
+  @Transform(({ value }) => value || undefined)
   hireDate?: string;
 
   @IsString()
