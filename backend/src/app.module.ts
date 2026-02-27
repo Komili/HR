@@ -21,7 +21,7 @@ import { HikvisionModule } from './hikvision/hikvision.module';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 30 }]),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 300 }]),
     PrismaModule,
     AuthModule,
     UsersModule,
