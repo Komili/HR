@@ -48,11 +48,15 @@ export async function apiFetch<T>(
     }
   }
 
-  // 204 No Content или пустое тело — не пытаемся парсить JSON
+  // 204 No Content — пустое тело
   if (response.status === 204) return undefined as T;
   const text = await response.text();
-  if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  if (!text || text === "undefined") return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return undefined as T;
+  }
 }
 
 export async function apiFetchRaw(

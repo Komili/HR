@@ -63,7 +63,13 @@ function UsersTab() {
   const [roles, setRoles] = React.useState<Role[]>([])
   const [companies, setCompanies] = React.useState<Company[]>([])
   const [error, setError] = React.useState<string | null>(null)
+  const [success, setSuccess] = React.useState<string | null>(null)
   const [search, setSearch] = React.useState("")
+
+  const showSuccess = (msg: string) => {
+    setSuccess(msg)
+    setTimeout(() => setSuccess(null), 3000)
+  }
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = React.useState(false)
@@ -176,6 +182,7 @@ function UsersTab() {
           companyId: formData.companyId || null,
           isActive: formData.isActive,
         })
+        showSuccess("Пользователь обновлён")
       } else {
         await createUser({
           email: formData.email,
@@ -185,6 +192,7 @@ function UsersTab() {
           roleId: formData.roleId,
           companyId: formData.companyId,
         })
+        showSuccess("Пользователь создан")
       }
       setIsModalOpen(false)
       loadData()
@@ -210,6 +218,7 @@ function UsersTab() {
       await changeUserPassword(passwordUserId, newPassword)
       setIsPasswordModalOpen(false)
       setNewPassword("")
+      showSuccess("Пароль успешно изменён")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка смены пароля")
     } finally {
@@ -219,8 +228,10 @@ function UsersTab() {
 
   const handleDelete = async (user: SystemUser) => {
     if (!confirm(`Удалить пользователя ${user.email}?`)) return
+    setError(null)
     try {
       await deleteUser(user.id)
+      showSuccess(`Пользователь ${user.email} удалён`)
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка удаления")
@@ -411,6 +422,13 @@ function UsersTab() {
           </Button>
         </div>
 
+        {success && (
+          <div className="mx-3 sm:mx-5 mt-3 sm:mt-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 sm:p-4 text-sm text-emerald-700 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            {success}
+          </div>
+        )}
+
         {error && (
           <div className="mx-3 sm:mx-5 mt-3 sm:mt-4 rounded-xl bg-red-50 border border-red-200 p-3 sm:p-4 text-sm text-red-600">
             {error}
@@ -589,7 +607,13 @@ function UsersTab() {
 function CompaniesTab() {
   const [companies, setCompanies] = React.useState<Company[]>([])
   const [error, setError] = React.useState<string | null>(null)
+  const [success, setSuccess] = React.useState<string | null>(null)
   const [search, setSearch] = React.useState("")
+
+  const showSuccess = (msg: string) => {
+    setSuccess(msg)
+    setTimeout(() => setSuccess(null), 3000)
+  }
   const [isModalOpen, setIsModalOpen] = React.useState(false)
   const [isSaving, setIsSaving] = React.useState(false)
   const [editingCompany, setEditingCompany] = React.useState<Company | null>(null)
@@ -664,8 +688,10 @@ function CompaniesTab() {
       }
       if (editingCompany) {
         await updateCompany(editingCompany.id, payload)
+        showSuccess("Компания обновлена")
       } else {
         await createCompany(payload)
+        showSuccess("Компания создана")
       }
       setIsModalOpen(false)
       loadData()
@@ -678,8 +704,10 @@ function CompaniesTab() {
 
   const handleDelete = async (company: Company) => {
     if (!confirm(`Удалить компанию "${company.name}"? Все данные компании будут потеряны.`)) return
+    setError(null)
     try {
       await deleteCompany(company.id)
+      showSuccess(`Компания "${company.name}" удалена`)
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка удаления")
@@ -838,6 +866,13 @@ function CompaniesTab() {
             <span className="sm:hidden">Добавить</span>
           </Button>
         </div>
+
+        {success && (
+          <div className="mx-3 sm:mx-5 mt-3 sm:mt-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 sm:p-4 text-sm text-emerald-700 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            {success}
+          </div>
+        )}
 
         {error && (
           <div className="mx-3 sm:mx-5 mt-3 sm:mt-4 rounded-xl bg-red-50 border border-red-200 p-3 sm:p-4 text-sm text-red-600">

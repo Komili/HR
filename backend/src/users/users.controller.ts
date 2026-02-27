@@ -56,10 +56,11 @@ export class UsersController {
 
   @Delete(':id')
   @Roles('Суперадмин')
-  remove(
+  async remove(
     @Param('id', ParseIntPipe) id: number,
     @Request() req: { user: RequestUser },
   ) {
-    return this.usersService.deleteUser(id, req.user);
+    await this.usersService.deleteUser(id, req.user);
+    return { message: 'Пользователь удалён' };
   }
 }
