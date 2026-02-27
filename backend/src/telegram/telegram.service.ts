@@ -1,7 +1,7 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 
 @Injectable()
-export class TelegramService implements OnModuleInit {
+export class TelegramService implements OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(TelegramService.name);
   private bot: any = null;
   private chatIds: string[] = [];
@@ -24,6 +24,16 @@ export class TelegramService implements OnModuleInit {
     this.logger.log(`✅ Telegram бот запущен. Chat ID: ${this.chatIds.join(', ')}`);
   }
 
+  async onApplicationBootstrap() {
+    const now = this.formatTime(new Date());
+    await this.sendMessage(`✅ Сервер КАДРЫ запущен\n⏰ ${now}`);
+  }
+
+  async onApplicationShutdown() {
+    const now = this.formatTime(new Date());
+    await this.sendMessage(`🛑 Сервер КАДРЫ остановлен\n⏰ ${now}`);
+  }
+
   async sendMessage(text: string): Promise<void> {
     if (!this.bot || this.chatIds.length === 0) return;
 
@@ -34,5 +44,16 @@ export class TelegramService implements OnModuleInit {
         this.logger.error(`Ошибка Telegram (chatId=${chatId}): ${err.message}`);
       }
     }
+  }
+
+  private formatTime(date: Date): string {
+    return date.toLocaleString('ru-RU', {
+      timeZone: 'Asia/Dushanbe',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 }

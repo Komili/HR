@@ -136,6 +136,35 @@ export class HikvisionService implements OnModuleInit {
     this.logger.log(`${directionText}: ${fullName} — ${device.officeName} (${timeStr})`);
   }
 
+  async sendTestMessage(): Promise<string> {
+    const now = new Date().toLocaleString('ru-RU', {
+      timeZone: 'Asia/Dushanbe',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const devicesInfo = this.devices.length > 0
+      ? this.devices.map((d) => `  • ${d.ip} → ${d.officeName} (${d.direction === 'IN' ? 'Вход' : 'Выход'})`).join('\n')
+      : '  ⚠️ Устройства не настроены';
+
+    const message = [
+      `🔔 Тестовое сообщение`,
+      `⏰ ${now}`,
+      ``,
+      `📡 Подключённые устройства:`,
+      devicesInfo,
+      ``,
+      `✅ Система КАДРЫ работает нормально`,
+    ].join('\n');
+
+    await this.telegramService.sendMessage(message);
+    return message;
+  }
+
   // Извлекаем JSON из multipart тела (Hikvision вкладывает JSON внутрь MIME)
   private extractJson(body: string): string | null {
     const start = body.indexOf('{');

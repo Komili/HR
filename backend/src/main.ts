@@ -32,6 +32,9 @@ async function bootstrap() {
     },
   }));
 
+  // Включаем graceful shutdown (для уведомления Telegram при остановке)
+  app.enableShutdownHooks();
+
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(`🚀 HRMS Backend запущен на порту ${port}`);
