@@ -150,18 +150,25 @@ export class EmployeesService {
   }
 
   async remove(id: number, user?: RequestUser): Promise<EmployeeWithRelations> {
-    // Проверяем, что пользователь имеет доступ к этому сотруднику
     if (user) {
-      await this.findOne(id, user); // Это выбросит ошибку если нет доступа
+      await this.findOne(id, user);
     }
 
-    return this.prisma.employee.delete({
-      where: { id },
-      include: {
-        department: true,
-        position: true,
-        company: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // Открепляем весь инвентарь сотрудника перед удалением
+      await tx.inventoryItem.updateMany({
+        where: { employeeId: id },
+        data: { employeeId: null, status: 'В наличии' },
+      });
+
+      return tx.employee.delete({
+        where: { id },
+        include: {
+          department: true,
+          position: true,
+          company: true,
+        },
+      });
     });
   }
 

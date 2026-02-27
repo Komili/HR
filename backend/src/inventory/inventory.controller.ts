@@ -31,7 +31,7 @@ export class InventoryController {
     @Body() dto: CreateInventoryItemDto,
     @Request() req: { user: RequestUser },
   ) {
-    const { companyId, employeeId, ...itemData } = dto;
+    const { companyId, employeeId, acquisitionDate, ...itemData } = dto;
 
     const targetCompanyId = req.user.isHoldingAdmin && companyId
       ? companyId
@@ -43,6 +43,7 @@ export class InventoryController {
 
     const data = {
       ...itemData,
+      ...(acquisitionDate ? { acquisitionDate: new Date(acquisitionDate) } : {}),
       company: { connect: { id: targetCompanyId } },
       employee: employeeId ? { connect: { id: employeeId } } : undefined,
     };
@@ -97,9 +98,10 @@ export class InventoryController {
     @Body() dto: UpdateInventoryItemDto,
     @Request() req: { user: RequestUser },
   ) {
-    const { companyId, employeeId, ...itemData } = dto;
+    const { companyId, employeeId, acquisitionDate, ...itemData } = dto;
     const data = {
       ...itemData,
+      ...(acquisitionDate ? { acquisitionDate: new Date(acquisitionDate) } : {}),
       employee: employeeId !== undefined
         ? (employeeId ? { connect: { id: employeeId } } : { disconnect: true })
         : undefined,

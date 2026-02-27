@@ -43,9 +43,8 @@ export class EmployeesController {
     @Body() createEmployeeDto: CreateEmployeeDto,
     @Request() req: { user: RequestUser },
   ) {
-    const { departmentId, positionId, companyId, ...employeeData } = createEmployeeDto;
+    const { departmentId, positionId, companyId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = createEmployeeDto;
 
-    // Определяем companyId: суперадмин может указать любой, обычный пользователь использует свой
     const targetCompanyId = req.user.isHoldingAdmin && companyId
       ? companyId
       : req.user.companyId;
@@ -56,6 +55,10 @@ export class EmployeesController {
 
     const data = {
       ...employeeData,
+      ...(birthDate ? { birthDate: new Date(birthDate) } : {}),
+      ...(passportIssueDate ? { passportIssueDate: new Date(passportIssueDate) } : {}),
+      ...(contractDate ? { contractDate: new Date(contractDate) } : {}),
+      ...(hireDate ? { hireDate: new Date(hireDate) } : {}),
       company: { connect: { id: targetCompanyId } },
       department: departmentId ? { connect: { id: departmentId } } : undefined,
       position: positionId ? { connect: { id: positionId } } : undefined,
@@ -178,9 +181,13 @@ export class EmployeesController {
     @Body() updateEmployeeDto: UpdateEmployeeDto,
     @Request() req: { user: RequestUser },
   ) {
-    const { departmentId, positionId, companyId, ...employeeData } = updateEmployeeDto;
+    const { departmentId, positionId, companyId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = updateEmployeeDto;
     const data = {
       ...employeeData,
+      ...(birthDate ? { birthDate: new Date(birthDate) } : {}),
+      ...(passportIssueDate ? { passportIssueDate: new Date(passportIssueDate) } : {}),
+      ...(contractDate ? { contractDate: new Date(contractDate) } : {}),
+      ...(hireDate ? { hireDate: new Date(hireDate) } : {}),
       department: departmentId ? { connect: { id: departmentId } } : undefined,
       position: positionId ? { connect: { id: positionId } } : undefined,
     };

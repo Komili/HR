@@ -18,7 +18,17 @@ import {
   deleteEmployee,
   getDepartments,
   getPositions,
+  getEmployeeInventory,
 } from "@/lib/hrms-api"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Package } from "lucide-react"
 import { EmployeeAvatar } from "@/components/employee-avatar"
 import {
   Users,
@@ -86,6 +96,10 @@ export default function EmployeesPage() {
   const [departments, setDepartments] = React.useState<Department[]>([])
   const [positions, setPositions] = React.useState<Position[]>([])
   const [editingEmployee, setEditingEmployee] = React.useState<Employee | null>(null)
+
+  // Диалог подтверждения удаления
+  const [deleteDialog, setDeleteDialog] = React.useState<{ id: number; name: string; inventoryCount: number } | null>(null)
+  const [isDeleting, setIsDeleting] = React.useState(false)
   const [formData, setFormData] = React.useState<CreateEmployeeInput>({
     firstName: "",
     lastName: "",
@@ -159,14 +173,31 @@ export default function EmployeesPage() {
     setIsModalOpen(true)
   }
 
-  const handleDelete = async (id: number) => {
-    if (confirm("Вы уверены, что хотите удалить этого сотрудника?")) {
-      try {
-        await deleteEmployee(id)
-        loadEmployees()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Ошибка удаления")
-      }
+  const handleDelete = async (employee: Employee) => {
+    try {
+      const inventory = await getEmployeeInventory(employee.id)
+      setDeleteDialog({
+        id: employee.id,
+        name: `${employee.lastName} ${employee.firstName}`,
+        inventoryCount: inventory.length,
+      })
+    } catch {
+      setDeleteDialog({ id: employee.id, name: `${employee.lastName} ${employee.firstName}`, inventoryCount: 0 })
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteDialog) return
+    setIsDeleting(true)
+    try {
+      await deleteEmployee(deleteDialog.id)
+      setDeleteDialog(null)
+      loadEmployees()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка удаления")
+      setDeleteDialog(null)
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -344,7 +375,7 @@ export default function EmployeesPage() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-red-600 cursor-pointer focus:text-red-600"
-                  onClick={() => handleDelete(employee.id)}
+                  onClick={() => handleDelete(employee)}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Удалить
@@ -601,6 +632,42 @@ export default function EmployeesPage() {
           </div>
         </div>
       </CrudModal>
+
+      {/* Диалог подтверждения удаления */}
+      <Dialog open={!!deleteDialog} onOpenChange={(open) => !open && setDeleteDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Удалить сотрудника
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-2">
+              <span className="block">
+                Вы уверены, что хотите удалить <span className="font-semibold text-foreground">{deleteDialog?.name}</span>?
+              </span>
+              {deleteDialog && deleteDialog.inventoryCount > 0 && (
+                <span className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-amber-800 text-sm">
+                  <Package className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+                  <span>
+                    У сотрудника <span className="font-semibold">{deleteDialog.inventoryCount}</span> {
+                      deleteDialog.inventoryCount === 1 ? "предмет инвентаря" :
+                      deleteDialog.inventoryCount < 5 ? "предмета инвентаря" : "предметов инвентаря"
+                    }. Весь инвентарь будет автоматически откреплён и переведён в статус «В наличии».
+                  </span>
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeleteDialog(null)} disabled={isDeleting}>
+              Отмена
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
+              {isDeleting ? "Удаление..." : "Удалить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
