@@ -10,6 +10,7 @@ import {
   UseGuards,
   ParseIntPipe,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
@@ -37,7 +38,7 @@ export class InventoryController {
       : req.user.companyId;
 
     if (!targetCompanyId) {
-      throw new Error('Company ID is required');
+      throw new BadRequestException('Выберите компанию перед добавлением инвентаря');
     }
 
     const data = {

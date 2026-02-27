@@ -83,8 +83,10 @@ export async function getEmployee(id: number): Promise<EmployeeProfile> {
 
 export async function createEmployee(data: CreateEmployeeInput): Promise<Employee> {
   const companyId = getCurrentCompanyId();
-  const payload = companyId ? { ...data, companyId } : data;
-  return apiFetch("/employees", { method: "POST", body: payload });
+  if (!companyId) {
+    throw new Error("Пожалуйста, выберите компанию в боковом меню");
+  }
+  return apiFetch("/employees", { method: "POST", body: { ...data, companyId } });
 }
 
 export async function updateEmployee(id: number, data: UpdateEmployeeInput): Promise<Employee> {
@@ -116,8 +118,10 @@ export async function getDepartments(): Promise<Department[]> {
 
 export async function createDepartment(name: string): Promise<Department> {
   const companyId = getCurrentCompanyId();
-  const payload = companyId ? { name, companyId } : { name };
-  return apiFetch("/departments", { method: "POST", body: payload });
+  if (!companyId) {
+    throw new Error("Пожалуйста, выберите компанию в боковом меню");
+  }
+  return apiFetch("/departments", { method: "POST", body: { name, companyId } });
 }
 
 export async function updateDepartment(id: number, name: string): Promise<Department> {
@@ -138,8 +142,10 @@ export async function getPositions(): Promise<Position[]> {
 
 export async function createPosition(name: string): Promise<Position> {
   const companyId = getCurrentCompanyId();
-  const payload = companyId ? { name, companyId } : { name };
-  return apiFetch("/positions", { method: "POST", body: payload });
+  if (!companyId) {
+    throw new Error("Пожалуйста, выберите компанию в боковом меню");
+  }
+  return apiFetch("/positions", { method: "POST", body: { name, companyId } });
 }
 
 export async function updatePosition(id: number, name: string): Promise<Position> {
@@ -217,8 +223,10 @@ export async function getInventoryItem(id: number): Promise<InventoryItem> {
 
 export async function createInventoryItem(data: CreateInventoryItemInput): Promise<InventoryItem> {
   const companyId = getCurrentCompanyId();
-  const payload = companyId ? { ...data, companyId } : data;
-  return apiFetch("/inventory", { method: "POST", body: payload });
+  if (!companyId) {
+    throw new Error("Пожалуйста, выберите компанию в боковом меню");
+  }
+  return apiFetch("/inventory", { method: "POST", body: { ...data, companyId } });
 }
 
 export async function updateInventoryItem(id: number, data: UpdateInventoryItemInput): Promise<InventoryItem> {
