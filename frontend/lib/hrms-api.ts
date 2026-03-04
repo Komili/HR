@@ -409,3 +409,45 @@ export async function changeUserPassword(id: number, newPassword: string): Promi
 export async function deleteUser(id: number): Promise<void> {
   await apiFetch(`/users/${id}`, { method: "DELETE" });
 }
+
+// ============ POSITION HISTORY ============
+
+export interface PositionHistoryEntry {
+  id: number;
+  employeeId: number;
+  companyId: number;
+  departmentName: string | null;
+  positionName: string | null;
+  startDate: string;
+  endDate: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export async function getPositionHistory(employeeId: number): Promise<PositionHistoryEntry[]> {
+  return apiFetch(`/position-history/employee/${employeeId}`);
+}
+
+export async function createPositionHistoryEntry(employeeId: number, data: {
+  departmentName?: string;
+  positionName?: string;
+  startDate: string;
+  endDate?: string;
+  note?: string;
+}): Promise<PositionHistoryEntry> {
+  return apiFetch(`/position-history/employee/${employeeId}`, { method: "POST", body: data });
+}
+
+export async function updatePositionHistoryEntry(id: number, data: {
+  departmentName?: string;
+  positionName?: string;
+  startDate?: string;
+  endDate?: string;
+  note?: string;
+}): Promise<PositionHistoryEntry> {
+  return apiFetch(`/position-history/${id}`, { method: "PATCH", body: data });
+}
+
+export async function deletePositionHistoryEntry(id: number): Promise<void> {
+  await apiFetch(`/position-history/${id}`, { method: "DELETE" });
+}

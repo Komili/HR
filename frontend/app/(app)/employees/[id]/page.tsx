@@ -46,7 +46,11 @@ import {
   Plus,
   Search,
   Clock,
+  History,
+  Trash2,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   getEmployee,
   getEmployeeDocuments,
@@ -60,6 +64,10 @@ import {
   getEmployeeAttendance,
   uploadEmployeePhoto,
   getEmployeePhotoUrl,
+  getPositionHistory,
+  createPositionHistoryEntry,
+  deletePositionHistoryEntry,
+  type PositionHistoryEntry,
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary } from "@/lib/types";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -121,6 +129,15 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().getMonth() + 1);
   const [attendanceYear, setAttendanceYear] = useState(() => new Date().getFullYear());
 
+  // Position history state
+  const [positionHistory, setPositionHistory] = useState<PositionHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistoryForm, setShowHistoryForm] = useState(false);
+  const [historyForm, setHistoryForm] = useState({
+    departmentName: "", positionName: "", startDate: "", endDate: "", note: "",
+  });
+  const [savingHistory, setSavingHistory] = useState(false);
+
   const employeeId = Number(id);
 
   const loadData = useCallback(async () => {
@@ -163,6 +180,18 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
   }, [employeeId, attendanceMonth, attendanceYear]);
 
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const data = await getPositionHistory(employeeId);
+      setPositionHistory(data);
+    } catch {
+      setPositionHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [employeeId]);
+
   useEffect(() => {
     if (!Number.isFinite(employeeId)) return;
     loadData();
@@ -172,6 +201,11 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     if (!Number.isFinite(employeeId)) return;
     loadAttendance();
   }, [employeeId, loadAttendance]);
+
+  useEffect(() => {
+    if (!Number.isFinite(employeeId)) return;
+    loadHistory();
+  }, [employeeId, loadHistory]);
 
   // Загрузка фото сотрудника через авторизованный fetch
   useEffect(() => {
@@ -515,6 +549,19 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             <Clock className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Посещаемость</span>
             <span className="sm:hidden">Посещ.</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="history"
+            className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs sm:text-sm px-2 sm:px-3"
+          >
+            <History className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">История</span>
+            <span className="sm:hidden">Ист.</span>
+            {positionHistory.length > 0 && (
+              <span className="ml-1 sm:ml-2 flex h-4 sm:h-5 min-w-4 sm:min-w-5 items-center justify-center rounded-full bg-white/20 px-1 sm:px-1.5 text-[10px] sm:text-xs">
+                {positionHistory.length}
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -1001,6 +1048,176 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                     </div>
                   </div>
                 </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* История должностей */}
+        <TabsContent value="history" className="mt-0">
+          <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden">
+            <CardHeader className="border-b border-emerald-100/50 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                  <History className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600" />
+                  История должностей
+                </CardTitle>
+                <Button
+                  size="sm"
+                  onClick={() => { setShowHistoryForm(true); setHistoryForm({ departmentName: employee?.department?.name || "", positionName: employee?.position?.name || "", startDate: "", endDate: "", note: "" }); }}
+                  className="h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Добавить запись
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-5">
+              {/* Форма добавления */}
+              {showHistoryForm && (
+                <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
+                  <p className="text-sm font-medium text-emerald-800">Новая запись</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Должность</Label>
+                      <Input
+                        value={historyForm.positionName}
+                        onChange={e => setHistoryForm(f => ({ ...f, positionName: e.target.value }))}
+                        placeholder="Название должности"
+                        className="h-9 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Отдел</Label>
+                      <Input
+                        value={historyForm.departmentName}
+                        onChange={e => setHistoryForm(f => ({ ...f, departmentName: e.target.value }))}
+                        placeholder="Название отдела"
+                        className="h-9 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Дата начала *</Label>
+                      <Input
+                        type="date"
+                        value={historyForm.startDate}
+                        onChange={e => setHistoryForm(f => ({ ...f, startDate: e.target.value }))}
+                        className="h-9 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Дата окончания</Label>
+                      <Input
+                        type="date"
+                        value={historyForm.endDate}
+                        onChange={e => setHistoryForm(f => ({ ...f, endDate: e.target.value }))}
+                        className="h-9 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs">Примечание</Label>
+                      <Input
+                        value={historyForm.note}
+                        onChange={e => setHistoryForm(f => ({ ...f, note: e.target.value }))}
+                        placeholder="Причина перевода, приказ и т.д."
+                        className="h-9 rounded-lg text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      disabled={savingHistory || !historyForm.startDate}
+                      onClick={async () => {
+                        if (!historyForm.startDate) return;
+                        setSavingHistory(true);
+                        try {
+                          await createPositionHistoryEntry(employeeId, {
+                            departmentName: historyForm.departmentName || undefined,
+                            positionName: historyForm.positionName || undefined,
+                            startDate: historyForm.startDate,
+                            endDate: historyForm.endDate || undefined,
+                            note: historyForm.note || undefined,
+                          });
+                          setShowHistoryForm(false);
+                          loadHistory();
+                        } catch {}
+                        setSavingHistory(false);
+                      }}
+                      className="h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-xs"
+                    >
+                      {savingHistory ? "Сохранение..." : "Сохранить"}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setShowHistoryForm(false)} className="h-8 rounded-lg text-xs">
+                      Отмена
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {historyLoading ? (
+                <div className="flex items-center justify-center py-10 text-muted-foreground text-sm">
+                  Загрузка...
+                </div>
+              ) : positionHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                  <History className="h-12 w-12 text-gray-200 mb-3" />
+                  <p className="text-sm">История должностей пуста</p>
+                  <p className="text-xs mt-1">Нажмите «Добавить запись» чтобы внести историю</p>
+                </div>
+              ) : (
+                <div className="relative">
+                  {/* Timeline */}
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-emerald-100" />
+                  <div className="space-y-4">
+                    {positionHistory.map((entry, i) => (
+                      <div key={entry.id} className="relative flex gap-4 pl-10">
+                        {/* Dot */}
+                        <div className={`absolute left-2.5 top-3 h-3 w-3 rounded-full border-2 border-white shadow-sm ${i === 0 ? "bg-emerald-500" : "bg-gray-300"}`} />
+                        <div className="flex-1 rounded-xl border border-emerald-100 bg-white p-3 sm:p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-1 min-w-0">
+                              {entry.positionName && (
+                                <div className="flex items-center gap-1.5 text-sm font-semibold">
+                                  <Briefcase className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+                                  {entry.positionName}
+                                  {i === 0 && !entry.endDate && (
+                                    <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">Текущая</span>
+                                  )}
+                                </div>
+                              )}
+                              {entry.departmentName && (
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                  <Building2 className="h-3 w-3 flex-shrink-0" />
+                                  {entry.departmentName}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Calendar className="h-3 w-3 flex-shrink-0" />
+                                {new Date(entry.startDate).toLocaleDateString("ru-RU")}
+                                {entry.endDate && ` — ${new Date(entry.endDate).toLocaleDateString("ru-RU")}`}
+                                {!entry.endDate && " — по настоящее время"}
+                              </div>
+                              {entry.note && (
+                                <p className="text-xs text-muted-foreground italic mt-1">{entry.note}</p>
+                              )}
+                            </div>
+                            <button
+                              onClick={async () => {
+                                if (!confirm("Удалить запись?")) return;
+                                await deletePositionHistoryEntry(entry.id).catch(() => {});
+                                loadHistory();
+                              }}
+                              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

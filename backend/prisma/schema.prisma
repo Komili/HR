@@ -96,6 +96,7 @@ model Employee {
   attendanceEvents AttendanceEvent[]
   attendances      Attendance[]
   salaries         Salary[]
+  positionHistory  PositionHistory[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -268,6 +269,23 @@ model RegistrationToken {
   usageCount Int      @default(0)
   createdAt  DateTime @default(now())
 
+  @@index([companyId])
+}
+
+model PositionHistory {
+  id             Int      @id @default(autoincrement())
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId     Int
+  companyId      Int
+  departmentName String?  // Название отдела на момент записи
+  positionName   String?  // Название должности на момент записи
+  startDate      DateTime
+  endDate        DateTime?
+  note           String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([employeeId])
   @@index([companyId])
 }
 
