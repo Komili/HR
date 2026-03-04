@@ -40,12 +40,15 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     const text = await response.text();
+    let message = response.statusText;
     try {
-      const data = JSON.parse(text) as { message?: string };
-      throw new Error(data.message || response.statusText);
+      const data = JSON.parse(text) as { message?: string | string[] };
+      const msg = data.message;
+      message = Array.isArray(msg) ? msg.join(", ") : (msg || message);
     } catch {
-      throw new Error(text || response.statusText);
+      message = text || message;
     }
+    throw new Error(message);
   }
 
   // 204 No Content — пустое тело
