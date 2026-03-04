@@ -122,14 +122,23 @@ export class HikvisionService implements OnModuleInit {
 
     // Отправляем уведомление в Telegram
     const fullName = `${employee.lastName} ${employee.firstName}${employee.patronymic ? ' ' + employee.patronymic : ''}`;
-    const directionEmoji = device.direction === 'IN' ? '✅' : '🚪';
-    const directionText = device.direction === 'IN' ? 'Вход' : 'Выход';
-    const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dushanbe' });
+    const isIn = device.direction === 'IN';
+    const directionEmoji = isIn ? '🟢' : '🔴';
+    const directionText = isIn ? 'Вход сотрудника' : 'Выход сотрудника';
+    const doorText = isIn ? 'Вход (Снаружи)' : 'Выход (Внутри)';
+    const timeStr = timestamp.toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      timeZone: 'Asia/Dushanbe',
+    });
 
     const message = [
-      `${directionEmoji} ${directionText}: ${fullName}`,
-      `🏢 ${device.officeName} — ${employee.company.name}`,
-      `⏰ ${timeStr}`,
+      `${directionEmoji} ${directionText}`,
+      ``,
+      `🏢 Офис: ${device.officeName}`,
+      `🚪 Дверь: ${doorText}`,
+      `👤 Сотрудник: ${fullName}`,
+      `⏰ Время: ${timeStr}`,
     ].join('\n');
 
     await this.telegramService.sendMessage(message);

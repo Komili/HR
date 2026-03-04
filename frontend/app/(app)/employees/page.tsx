@@ -48,6 +48,7 @@ import {
   Trash2,
   Copy,
   Briefcase,
+  X,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -97,6 +98,29 @@ export default function EmployeesPage() {
   const [positions, setPositions] = React.useState<Position[]>([])
   const [editingEmployee, setEditingEmployee] = React.useState<Employee | null>(null)
 
+  // Фильтры
+  const [showFilters, setShowFilters] = React.useState(false)
+  const [filterDept, setFilterDept] = React.useState<string>("")
+  const [filterPosition, setFilterPosition] = React.useState<string>("")
+  const [filterStatus, setFilterStatus] = React.useState<string>("")
+
+  const hasFilters = !!(filterDept || filterPosition || filterStatus)
+
+  const filteredData = React.useMemo(() => {
+    if (!hasFilters) return data
+    return data.filter((emp) => {
+      if (filterDept && String(emp.departmentId) !== filterDept) return false
+      if (filterPosition && String(emp.positionId) !== filterPosition) return false
+      if (filterStatus && emp.status !== filterStatus) return false
+      return true
+    })
+  }, [data, filterDept, filterPosition, filterStatus, hasFilters])
+
+  const displayData = React.useMemo(() => {
+    if (!hasFilters) return data
+    return filteredData.slice(page * limit, (page + 1) * limit)
+  }, [filteredData, hasFilters, page, limit, data])
+
   // Диалог подтверждения удаления
   const [deleteDialog, setDeleteDialog] = React.useState<{ id: number; name: string; inventoryCount: number } | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
@@ -112,11 +136,13 @@ export default function EmployeesPage() {
     positionId: undefined,
   })
 
-  const pageCount = Math.ceil(total / limit)
+  const pageCount = hasFilters ? Math.ceil(filteredData.length / limit) : Math.ceil(total / limit)
 
   const loadEmployees = React.useCallback(() => {
     setError(null)
-    getEmployees(page + 1, limit, debouncedSearch)
+    const loadPage = hasFilters ? 1 : page + 1
+    const loadLimit = hasFilters ? 1000 : limit
+    getEmployees(loadPage, loadLimit, debouncedSearch)
       .then((result) => {
         setData(result.data)
         setTotal(result.total)
@@ -126,7 +152,7 @@ export default function EmployeesPage() {
         setTotal(0)
         setError(err instanceof Error ? err.message : "Ошибка загрузки данных")
       })
-  }, [page, limit, debouncedSearch])
+  }, [page, limit, debouncedSearch, hasFilters])
 
   React.useEffect(() => {
     loadEmployees()
@@ -490,14 +516,85 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`h-9 rounded-xl text-xs sm:text-sm gap-1.5 ${showFilters || hasFilters ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-emerald-200 bg-white/80"}`}
+            >
+              <Filter className="h-3.5 w-3.5" />
+              Фильтры
+              {hasFilters && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] text-white font-bold">
+                  {[filterDept, filterPosition, filterStatus].filter(Boolean).length}
+                </span>
+              )}
+            </Button>
             <div className="flex items-center gap-2 text-sm">
               <span className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-2 sm:px-3 py-1 sm:py-1.5 text-emerald-700 font-medium text-xs sm:text-sm">
                 <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                Всего: {total}
+                {hasFilters ? `${filteredData.length} из ${total}` : `Всего: ${total}`}
               </span>
             </div>
           </div>
         </div>
+
+        {/* Панель фильтров */}
+        {showFilters && (
+          <div className="flex flex-wrap items-end gap-3 px-3 sm:px-5 py-3 bg-emerald-50/50 border-b border-emerald-100/50">
+            <div className="flex-1 min-w-[150px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Отдел</label>
+              <select
+                value={filterDept}
+                onChange={(e) => { setFilterDept(e.target.value); setPage(0) }}
+                className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-2 text-sm"
+              >
+                <option value="">Все отделы</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={String(d.id)}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1 min-w-[150px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Должность</label>
+              <select
+                value={filterPosition}
+                onChange={(e) => { setFilterPosition(e.target.value); setPage(0) }}
+                className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-2 text-sm"
+              >
+                <option value="">Все должности</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={String(p.id)}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1 min-w-[130px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Статус</label>
+              <select
+                value={filterStatus}
+                onChange={(e) => { setFilterStatus(e.target.value); setPage(0) }}
+                className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-2 text-sm"
+              >
+                <option value="">Все статусы</option>
+                <option value="Активный">Активный</option>
+                <option value="В отпуске">В отпуске</option>
+                <option value="Больничный">Больничный</option>
+                <option value="Уволен">Уволен</option>
+              </select>
+            </div>
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setFilterDept(""); setFilterPosition(""); setFilterStatus(""); setPage(0) }}
+                className="h-9 rounded-lg text-xs text-red-500 hover:text-red-600 hover:bg-red-50 gap-1"
+              >
+                <X className="h-3.5 w-3.5" />
+                Сбросить
+              </Button>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="mx-3 sm:mx-5 mt-3 sm:mt-4 rounded-xl bg-red-50 border border-red-200 p-3 sm:p-4 text-sm text-red-600">
@@ -506,7 +603,7 @@ export default function EmployeesPage() {
         )}
 
         <div className="p-3 sm:p-5">
-          <DataTable columns={columns} data={data} pagination={pagination} />
+          <DataTable columns={columns} data={displayData} pagination={pagination} />
         </div>
       </div>
 

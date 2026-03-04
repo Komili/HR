@@ -99,6 +99,7 @@ export type Employee = {
   email: string | null;
   phone: string | null;
   photoPath: string | null;
+  status: string | null;
 };
 
 export type EmployeeDocument = {
