@@ -113,6 +113,14 @@
   * {
     @apply border-border outline-ring/50;
   }
+  ::selection {
+    background-color: hsl(152 76% 42% / 0.2);
+    color: hsl(150 25% 10%);
+  }
+  ::-moz-selection {
+    background-color: hsl(152 76% 42% / 0.2);
+    color: hsl(150 25% 10%);
+  }
   input::placeholder,
   textarea::placeholder {
     color: hsl(150 10% 40% / 0.3) !important;
