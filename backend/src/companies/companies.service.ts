@@ -95,6 +95,22 @@ export class CompaniesService {
     });
   }
 
+  async updateSchedule(
+    id: number,
+    data: { lunchBreakStart?: string; lunchBreakEnd?: string },
+    user: RequestUser,
+  ): Promise<Company> {
+    // Суперадмин — любая компания; Кадровик/Руководитель — только своя
+    if (!user.isHoldingAdmin && user.companyId !== id) {
+      throw new ForbiddenException('Access denied to this company');
+    }
+
+    return this.prisma.company.update({
+      where: { id },
+      data,
+    });
+  }
+
   async remove(id: number, user?: RequestUser): Promise<Company> {
     // Только суперадмин может удалять компании
     if (user && !user.isHoldingAdmin) {

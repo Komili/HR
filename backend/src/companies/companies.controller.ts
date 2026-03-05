@@ -54,6 +54,16 @@ export class CompaniesController {
     return company;
   }
 
+  @Patch(':id/schedule')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  updateSchedule(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { lunchBreakStart?: string; lunchBreakEnd?: string },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.companiesService.updateSchedule(id, body, req.user);
+  }
+
   @Patch(':id')
   @Roles('Суперадмин')
   update(

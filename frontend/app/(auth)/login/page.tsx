@@ -47,7 +47,14 @@ export default function LoginPage() {
       const { token, user } = await login(email.trim(), password);
       authLogin(token, user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Неверный email или пароль");
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.toLowerCase().includes("unauthorized") || msg.includes("Неверный email")) {
+        setError("Неверный email или пароль");
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+        setError("Не удалось подключиться к серверу. Проверьте соединение.");
+      } else {
+        setError(msg || "Произошла ошибка при входе");
+      }
     } finally {
       setIsLoading(false);
     }

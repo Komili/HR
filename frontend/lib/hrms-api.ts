@@ -62,6 +62,13 @@ export async function deleteCompany(id: number): Promise<void> {
   await apiFetch(`/companies/${id}`, { method: "DELETE" });
 }
 
+export async function updateCompanySchedule(
+  id: number,
+  data: { lunchBreakStart?: string; lunchBreakEnd?: string },
+): Promise<Company> {
+  return apiFetch(`/companies/${id}/schedule`, { method: "PATCH", body: data });
+}
+
 // ============ EMPLOYEES ============
 
 export async function getEmployees(

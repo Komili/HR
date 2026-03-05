@@ -200,6 +200,12 @@ export class AttendanceService {
     const employee = await this.prisma.employee.findUnique({ where: { id: employeeId } });
     if (!employee) return;
 
+    // Load company lunch break settings
+    const company = await this.prisma.company.findUnique({
+      where: { id: employee.companyId },
+      select: { lunchBreakStart: true, lunchBreakEnd: true },
+    });
+
     // Start/end of the day
     const dayStart = new Date(dateTime);
     dayStart.setHours(0, 0, 0, 0);
@@ -228,6 +234,23 @@ export class AttendanceService {
     let totalMinutes = 0;
     if (firstEntry && lastExit && lastExit > firstEntry) {
       totalMinutes = Math.round((lastExit.getTime() - firstEntry.getTime()) / 60000);
+
+      // Subtract lunch break overlap
+      const lunchStartStr = company?.lunchBreakStart || '12:00';
+      const lunchEndStr = company?.lunchBreakEnd || '13:00';
+      const [lsh, lsm] = lunchStartStr.split(':').map(Number);
+      const [leh, lem] = lunchEndStr.split(':').map(Number);
+
+      const lunchStart = new Date(dateTime);
+      lunchStart.setHours(lsh, lsm, 0, 0);
+      const lunchEnd = new Date(dateTime);
+      lunchEnd.setHours(leh, lem, 0, 0);
+
+      const overlapStart = Math.max(firstEntry.getTime(), lunchStart.getTime());
+      const overlapEnd = Math.min(lastExit.getTime(), lunchEnd.getTime());
+      if (overlapEnd > overlapStart) {
+        totalMinutes -= Math.round((overlapEnd - overlapStart) / 60000);
+      }
     }
 
     // Office from first IN event

@@ -1,98 +1,130 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# КАДРЫ — Бэкенд (NestJS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+REST API для мультитенантной HR-системы холдинга.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Стек
 
-## Description
+- **NestJS 11** + TypeScript
+- **Prisma ORM** + MySQL 8.0
+- **Passport.js** (JWT + Local стратегии)
+- **bcrypt** для хеширования паролей
+- **Multer** для загрузки файлов
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Запуск (Docker)
 
 ```bash
-$ npm install
+# Из корня проекта
+docker-compose up -d --build backend
+
+# Просмотр логов
+docker-compose logs -f backend
 ```
 
-## Compile and run the project
+## Запуск локально
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+cp .env.example .env   # настроить DATABASE_URL
+npm run start:dev
 ```
 
-## Run tests
+## База данных
 
 ```bash
-# unit tests
-$ npm run test
+# Применить схему (без миграций, т.к. shadow DB недоступна)
+npx prisma db push
 
-# e2e tests
-$ npm run test:e2e
+# Сгенерировать клиент
+npx prisma generate
 
-# test coverage
-$ npm run test:cov
+# Заполнить тестовыми данными
+node prisma/seed.js
 ```
 
-## Deployment
+## Структура модулей
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+| Модуль | Путь | Описание |
+|---|---|---|
+| Auth | `src/auth/` | JWT-авторизация, Passport, Guards |
+| Companies | `src/companies/` | CRUD компаний холдинга |
+| Employees | `src/employees/` | CRUD сотрудников с фильтром по компании |
+| Departments | `src/departments/` | Отделы |
+| Positions | `src/positions/` | Должности |
+| Documents | `src/documents/` | Загрузка/скачивание файлов |
+| Inventory | `src/inventory/` | Инвентарь + история |
+| Offices | `src/offices/` | Офисы компаний |
+| Attendance | `src/attendance/` | Посещаемость (события IN/OUT, пересчёт) |
+| Salary | `src/salary/` | Расчёт зарплат по посещаемости |
+| Position History | `src/position-history/` | История должностей сотрудника |
+| Registration | `src/registration/` | Регистрация через QR-код |
+| Users | `src/users/` | Управление пользователями |
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## API Эндпоинты
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+Все эндпоинты с префиксом `/api`. Требуют JWT Bearer токен, кроме:
+- `POST /api/auth/login`
+- `POST /api/registration/submit`
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Auth
+- `POST /auth/login` — вход (возвращает `access_token`)
 
-## Resources
+### Companies
+- `GET /companies` — список компаний
+- `GET /companies/stats` — статистика холдинга (суперадмин)
+- `GET /companies/:id` — одна компания
+- `POST /companies` — создать (суперадмин)
+- `PATCH /companies/:id` — обновить (суперадмин)
+- `PATCH /companies/:id/schedule` — обновить расписание обеда (кадровик/руководитель)
+- `DELETE /companies/:id` — удалить (суперадмин)
 
-Check out a few resources that may come in handy when working with NestJS:
+### Employees
+- `GET /employees?companyId=&page=&limit=&search=` — список
+- `POST /employees` — создать
+- `GET /employees/:id` — профиль
+- `PATCH /employees/:id` — обновить
+- `DELETE /employees/:id` — удалить
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Attendance
+- `GET /attendance?date=YYYY-MM-DD&companyId=` — дневная сводка
+- `GET /attendance/range?dateFrom=&dateTo=&companyId=` — за период
+- `GET /attendance/employee/:id?month=&year=` — по сотруднику
+- `PATCH /attendance/:id/correct` — корректировка (±минуты)
+- `POST /attendance/event` — регистрация события IN/OUT
 
-## Support
+> **Обед**: при расчёте `totalMinutes` автоматически вычитается перерыв на обед компании (настраивается через `/companies/:id/schedule`). По умолчанию 12:00–13:00.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Salary
+- `GET /salary?month=&year=&companyId=` — ведомость за месяц
+- `GET /salary/employee/:id?year=` — история по сотруднику
+- `POST /salary/calculate?month=&year=&companyId=` — рассчитать
+- `PATCH /salary/:id` — обновить премию/удержание
 
-## Stay in touch
+### Position History
+- `GET /position-history/employee/:id` — история должностей
+- `POST /position-history/employee/:id` — добавить запись
+- `PATCH /position-history/:id` — обновить запись
+- `DELETE /position-history/:id` — удалить запись
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Registration (QR)
+- `GET /registration/tokens?companyId=` — токены
+- `POST /registration/tokens` — создать токен
+- `DELETE /registration/tokens/:id` — удалить токен
+- `POST /registration/submit` — подать заявку (публично)
+- `GET /registration/pending?companyId=` — заявки на рассмотрении
+- `PATCH /registration/:id/approve` — одобрить
+- `PATCH /registration/:id/reject` — отклонить
 
-## License
+## Мультитенантность
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- Каждый запрос фильтруется по `companyId` из JWT
+- Суперадмин может передать `?companyId=X` для работы с любой компанией
+- Пересечение данных между компаниями невозможно — `ForbiddenException` при попытке
+
+## Переменные окружения
+
+| Переменная | Описание |
+|---|---|
+| `DATABASE_URL` | Строка подключения MySQL |
+| `JWT_SECRET` | Секрет для подписи JWT |
+| `JWT_EXPIRES_IN` | Время жизни токена (напр. `1h`) |
+| `STORAGE_PATH` | Путь хранения файлов (напр. `/app/storage`) |

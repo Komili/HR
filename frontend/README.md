@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# КАДРЫ — Фронтенд (Next.js)
 
-## Getting Started
+Веб-интерфейс мультитенантной HR-системы холдинга.
 
-First, run the development server:
+## Стек
+
+- **Next.js 15** + React 19 + TypeScript
+- **Tailwind CSS v4** + shadcn/ui
+- **TanStack React Table** — таблицы инвентаря и посещаемости
+- **XLSX (SheetJS)** — экспорт в Excel
+- **lucide-react** — иконки
+
+## Запуск (Docker)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Из корня проекта
+docker-compose up -d --build frontend
+
+# Просмотр логов
+docker-compose logs -f frontend
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Запуск локально
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+cp .env.local.example .env.local   # настроить NEXT_PUBLIC_API_URL
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Откройте [http://localhost:3000](http://localhost:3000)
 
-## Learn More
+## Структура страниц
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/
+├── (auth)/
+│   └── login/              # Страница входа
+├── (app)/                  # Защищённые маршруты
+│   ├── dashboard/          # Главная — статистика, быстрые действия
+│   ├── employees/          # Список сотрудников
+│   │   └── [id]/           # Профиль сотрудника (вкладки)
+│   ├── departments/        # Отделы
+│   ├── positions/          # Должности
+│   ├── inventory/          # Инвентарь (TanStack Table)
+│   ├── attendance/         # Посещаемость с цветовым кодированием
+│   ├── salary/             # Зарплатные ведомости
+│   ├── reports/            # Отчёты (экспорт Excel)
+│   ├── settings/           # Настройки аккаунта и расписания
+│   ├── admin/              # Управление пользователями (суперадмин)
+│   └── registrations/      # QR-регистрация сотрудников
+└── register/               # Публичная форма регистрации по QR
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Ключевые компоненты
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Компонент | Описание |
+|---|---|
+| `AuthContext` | Авторизация, роль, компания, переключение компаний |
+| `CompanySelector` | Выбор компании для суперадмина (сайдбар) |
+| `EmployeeAvatar` | Аватар с JWT-авторизацией для фото |
+| `DataTable` | Таблица с пагинацией и поиском |
 
-## Deploy on Vercel
+## API клиент
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `lib/api.ts` — базовый `apiFetch` с JWT-заголовком и обработкой ошибок
+- `lib/hrms-api.ts` — все функции для работы с API (сотрудники, компании, зарплаты и т.д.)
+- `lib/types.ts` — TypeScript типы
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Роли и доступ
+
+| Роль | Доступ |
+|---|---|
+| Суперадмин | Все компании, управление пользователями и компаниями |
+| Кадровик | Полный CRUD в своей компании, настройки расписания |
+| Руководитель | Просмотр + корректировка посещаемости |
+| Бухгалтер | Только просмотр профилей сотрудников |
+
+## Переменные окружения
+
+| Переменная | Описание |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | URL бэкенда (напр. `/api` через Nginx или `http://localhost:7272/api`) |
+
+## Особенности реализации
+
+- **Мультитенантность**: `currentCompanyId` хранится в `localStorage`, передаётся в каждый запрос через `withCompanyId()`
+- **Фото сотрудников**: требуют JWT-авторизации, используйте компонент `EmployeeAvatar`
+- **Dynamic Tailwind классы**: не работают с JIT (напр. `text-${color}-600`) — использовать явные классы
+- **Next.js 15 params**: в client-компонентах использовать `React.use(params)`
+- **Обед**: при отображении отработанного времени учитывается настройка компании (12:00–13:00 по умолчанию)

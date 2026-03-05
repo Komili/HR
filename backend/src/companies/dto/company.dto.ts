@@ -28,4 +28,12 @@ export class CompanyDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @IsString()
+  @IsOptional()
+  lunchBreakStart?: string;
+
+  @IsString()
+  @IsOptional()
+  lunchBreakEnd?: string;
 }

@@ -21,7 +21,9 @@ model Company {
   address     String?
   phone       String?
   email       String?
-  isActive    Boolean    @default(true)
+  isActive        Boolean    @default(true)
+  lunchBreakStart String?    @default("12:00") // Начало обеда (HH:mm)
+  lunchBreakEnd   String?    @default("13:00") // Конец обеда (HH:mm)
   users       User[]
   employees      Employee[]
   departments    Department[]

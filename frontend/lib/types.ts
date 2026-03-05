@@ -37,6 +37,8 @@ export type Company = {
   phone?: string | null;
   email?: string | null;
   isActive: boolean;
+  lunchBreakStart?: string | null;
+  lunchBreakEnd?: string | null;
   _count?: {
     employees: number;
     departments: number;
