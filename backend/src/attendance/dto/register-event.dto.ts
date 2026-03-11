@@ -15,4 +15,14 @@ export class RegisterEventDto {
   @IsString()
   @IsOptional()
   deviceName?: string;
+
+  // Комментарий кадровика (опционально)
+  @IsString()
+  @IsOptional()
+  note?: string;
+
+  // Срок возврата в офис, формат HH:mm (опционально)
+  @IsString()
+  @IsOptional()
+  deadline?: string;
 }

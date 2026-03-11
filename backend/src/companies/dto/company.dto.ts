@@ -36,4 +36,12 @@ export class CompanyDto {
   @IsString()
   @IsOptional()
   lunchBreakEnd?: string;
+
+  @IsString()
+  @IsOptional()
+  workDayStart?: string;
+
+  @IsString()
+  @IsOptional()
+  workDayEnd?: string;
 }

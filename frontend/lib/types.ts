@@ -39,6 +39,8 @@ export type Company = {
   isActive: boolean;
   lunchBreakStart?: string | null;
   lunchBreakEnd?: string | null;
+  workDayStart?: string | null;
+  workDayEnd?: string | null;
   _count?: {
     employees: number;
     departments: number;
@@ -79,6 +81,8 @@ export type EmployeeProfile = {
   phone?: string | null;
   address?: string | null;
   photoPath?: string | null;
+  status?: string | null;
+  managerId?: number | null;
   companyId: number;
   company: { id: number; name: string } | null;
   department: { name: string } | null;
@@ -98,10 +102,25 @@ export type Employee = {
   companyId: number;
   departmentId: number | null;
   positionId: number | null;
+  managerId: number | null;
   email: string | null;
   phone: string | null;
   photoPath: string | null;
   status: string | null;
+  documents?: { type: string }[];
+};
+
+export type OrgChartNode = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  patronymic: string | null;
+  photoPath: string | null;
+  status: string | null;
+  managerId: number | null;
+  department: { name: string } | null;
+  position: { name: string } | null;
+  subordinates: OrgChartNode[];
 };
 
 export type EmployeeDocument = {
@@ -123,6 +142,7 @@ export type CreateEmployeeInput = {
   address?: string;
   departmentId?: number;
   positionId?: number;
+  managerId?: number;
   companyId?: number;
   salary?: number;
   hireDate?: string;
@@ -212,6 +232,10 @@ export type AttendanceSummary = {
   correctedBy: string | null;
   correctionNote: string | null;
   officeName: string | null;
+  isLate?: boolean;
+  isEarlyLeave?: boolean;
+  correctionType?: string | null;
+  correctionDeadline?: string | null;
 };
 
 export type SalaryRecord = {

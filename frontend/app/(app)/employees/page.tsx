@@ -20,6 +20,7 @@ import {
   getPositions,
   getEmployeeInventory,
 } from "@/lib/hrms-api"
+import { StatusBadge, ALL_STATUSES } from "@/components/status-badge"
 import {
   Dialog,
   DialogContent,
@@ -179,6 +180,8 @@ export default function EmployeesPage() {
       phone: "",
       departmentId: undefined,
       positionId: undefined,
+      managerId: undefined,
+      status: "Активен",
     })
     setIsModalOpen(true)
   }
@@ -195,6 +198,8 @@ export default function EmployeesPage() {
       phone: employee.phone || "",
       departmentId: employee.departmentId || undefined,
       positionId: employee.positionId || undefined,
+      managerId: employee.managerId || undefined,
+      status: employee.status || "Активен",
     })
     setIsModalOpen(true)
   }
@@ -356,6 +361,49 @@ export default function EmployeesPage() {
           )}
         </div>
       ),
+    },
+    {
+      id: "documents",
+      header: "Документы",
+      cell: ({ row }) => {
+        const docs = row.original.documents ?? []
+        const TOTAL = 10
+        const REQUIRED_TYPES = ["Паспорт", "СНИЛС", "ИНН", "Трудовой договор", "Приказ о приёме"]
+        const uploadedTypes = new Set(docs.map((d) => d.type))
+        const uploadedCount = ["Паспорт", "СНИЛС", "ИНН", "Трудовой договор", "Приказ о приёме",
+          "Диплом / Аттестат", "Фотография 3x4", "Медицинская справка", "Военный билет", "Прочие документы"]
+          .filter((t) => uploadedTypes.has(t)).length
+        const requiredDone = REQUIRED_TYPES.filter((t) => uploadedTypes.has(t)).length
+        const pct = Math.round((uploadedCount / TOTAL) * 100)
+
+        const color =
+          pct >= 80 ? "bg-emerald-500" :
+          pct >= 40 ? "bg-amber-400" :
+          "bg-red-400"
+
+        const textColor =
+          pct >= 80 ? "text-emerald-700" :
+          pct >= 40 ? "text-amber-700" :
+          "text-red-600"
+
+        return (
+          <div className="w-28 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-semibold ${textColor}`}>{pct}%</span>
+              <span className="text-xs text-muted-foreground">{uploadedCount}/{TOTAL}</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${color}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground">
+              обяз: {requiredDone}/{REQUIRED_TYPES.length}
+            </div>
+          </div>
+        )
+      },
     },
     {
       id: "actions",
@@ -576,10 +624,9 @@ export default function EmployeesPage() {
                 className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-2 text-sm"
               >
                 <option value="">Все статусы</option>
-                <option value="Активный">Активный</option>
-                <option value="В отпуске">В отпуске</option>
-                <option value="Больничный">Больничный</option>
-                <option value="Уволен">Уволен</option>
+                {ALL_STATUSES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
               </select>
             </div>
             {hasFilters && (
@@ -724,6 +771,40 @@ export default function EmployeesPage() {
                 {positions.map((pos) => (
                   <option key={pos.id} value={pos.id}>{pos.name}</option>
                 ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="status">Статус</Label>
+              <select
+                id="status"
+                value={formData.status || "Активен"}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
+              >
+                {ALL_STATUSES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="manager">Руководитель</Label>
+              <select
+                id="manager"
+                value={formData.managerId || ""}
+                onChange={(e) => setFormData({ ...formData, managerId: e.target.value ? Number(e.target.value) : undefined })}
+                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Нет руководителя</option>
+                {data
+                  .filter((emp) => emp.id !== editingEmployee?.id)
+                  .map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.lastName} {emp.firstName}
+                    </option>
+                  ))}
               </select>
             </div>
           </div>

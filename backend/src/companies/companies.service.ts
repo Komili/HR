@@ -97,12 +97,12 @@ export class CompaniesService {
 
   async updateSchedule(
     id: number,
-    data: { lunchBreakStart?: string; lunchBreakEnd?: string },
+    data: { lunchBreakStart?: string; lunchBreakEnd?: string; workDayStart?: string; workDayEnd?: string },
     user: RequestUser,
   ): Promise<Company> {
-    // Суперадмин — любая компания; Кадровик/Руководитель — только своя
-    if (!user.isHoldingAdmin && user.companyId !== id) {
-      throw new ForbiddenException('Access denied to this company');
+    // Только суперадмин может менять расписание
+    if (!user.isHoldingAdmin) {
+      throw new ForbiddenException('Only holding admins can update company schedule');
     }
 
     return this.prisma.company.update({

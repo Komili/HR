@@ -18,6 +18,7 @@ import type {
   SalaryRecord,
   RegistrationToken,
   PendingEmployee,
+  OrgChartNode,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -64,7 +65,7 @@ export async function deleteCompany(id: number): Promise<void> {
 
 export async function updateCompanySchedule(
   id: number,
-  data: { lunchBreakStart?: string; lunchBreakEnd?: string },
+  data: { lunchBreakStart?: string; lunchBreakEnd?: string; workDayStart?: string; workDayEnd?: string },
 ): Promise<Company> {
   return apiFetch(`/companies/${id}/schedule`, { method: "PATCH", body: data });
 }
@@ -113,6 +114,12 @@ export async function uploadEmployeePhoto(employeeId: number, file: File): Promi
 export function getEmployeePhotoUrl(employeeId: number, thumb?: boolean): string {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
   return `${API_URL}/employees/${employeeId}/photo${thumb ? '?thumb=1' : ''}`;
+}
+
+export async function getOrgChart(): Promise<OrgChartNode[]> {
+  const params = withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/employees/org-chart${query ? `?${query}` : ""}`);
 }
 
 // ============ DEPARTMENTS ============
@@ -311,22 +318,28 @@ export async function getEmployeeAttendance(
 
 export async function correctAttendance(
   id: number,
-  correctionMinutes: number,
-  note: string,
+  data: {
+    type?: string
+    correctionMinutes?: number
+    time?: string
+    note: string
+    deadline?: string
+  },
 ): Promise<AttendanceSummary> {
-  return apiFetch(`/attendance/${id}/correct`, {
-    method: "PATCH",
-    body: { correctionMinutes, note },
-  });
+  return apiFetch(`/attendance/${id}/correct`, { method: "PATCH", body: data });
 }
 
 export async function registerAttendanceEvent(
   employeeId: number,
   direction: "IN" | "OUT",
   officeId?: number,
+  note?: string,
+  deadline?: string,
 ): Promise<any> {
   const payload: any = { employeeId, direction };
   if (officeId) payload.officeId = officeId;
+  if (note) payload.note = note;
+  if (deadline) payload.deadline = deadline;
   return apiFetch("/attendance/event", { method: "POST", body: payload });
 }
 

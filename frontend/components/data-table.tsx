@@ -35,12 +35,14 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
   pagination?: DataTablePaginationProps
+  getRowClassName?: (row: TData) => string
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
   pagination,
+  getRowClassName,
 }: DataTableProps<TData, TValue>) {
   const table = useReactTable({
     data,
@@ -84,7 +86,7 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className="border-b border-emerald-50 transition-colors hover:bg-emerald-50/50 data-[state=selected]:bg-emerald-100/50"
+                  className={`border-b border-emerald-50 transition-colors data-[state=selected]:bg-emerald-100/50 ${getRowClassName ? getRowClassName(row.original) : "hover:bg-emerald-50/50"}`}
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   {row.getVisibleCells().map((cell) => (

@@ -55,10 +55,10 @@ export class CompaniesController {
   }
 
   @Patch(':id/schedule')
-  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  @Roles('Суперадмин')
   updateSchedule(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { lunchBreakStart?: string; lunchBreakEnd?: string },
+    @Body() body: { lunchBreakStart?: string; lunchBreakEnd?: string; workDayStart?: string; workDayEnd?: string },
     @Request() req: { user: RequestUser },
   ) {
     return this.companiesService.updateSchedule(id, body, req.user);

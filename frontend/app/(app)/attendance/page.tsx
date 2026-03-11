@@ -37,6 +37,7 @@ import {
   LogIn,
   LogOut,
   CalendarRange,
+  AlertTriangle,
 } from "lucide-react"
 
 function formatTime(iso: string | null) {
@@ -72,6 +73,17 @@ const ROW_BG: Record<string, string> = {
   excused: "bg-amber-100/70 hover:bg-amber-200/70",
 }
 
+function getRowBg(row: AttendanceSummary): string {
+  if (row.correctionType) {
+    // Проверяем истёк ли срок
+    if (row.correctionDeadline && new Date(row.correctionDeadline) < new Date()) {
+      return "bg-orange-100/80 hover:bg-orange-200/80"
+    }
+    return "bg-yellow-100/80 hover:bg-yellow-200/80"
+  }
+  return ROW_BG[row.status] || ""
+}
+
 function StatusBadge({ status }: { status: string }) {
   const style = STATUS_STYLES[status] || "bg-gray-100 text-gray-700 border-gray-200"
   return (
@@ -96,9 +108,16 @@ export default function AttendancePage() {
 
   // Correction dialog
   const [correcting, setCorrecting] = React.useState<AttendanceSummary | null>(null)
+  const [corrType, setCorrType] = React.useState<"minutes" | "manual_in" | "manual_out" | "remote">("minutes")
   const [corrMinutes, setCorrMinutes] = React.useState(0)
+  const [corrTime, setCorrTime] = React.useState("09:00")
+  const [corrDeadline, setCorrDeadline] = React.useState("")
   const [corrNote, setCorrNote] = React.useState("")
   const [corrSaving, setCorrSaving] = React.useState(false)
+
+  // Register event extra fields
+  const [regNote, setRegNote] = React.useState("")
+  const [regDeadline, setRegDeadline] = React.useState("")
 
   // Register event dialog
   const [registerOpen, setRegisterOpen] = React.useState(false)
@@ -160,16 +179,30 @@ export default function AttendancePage() {
 
   // Correction handlers
   const openCorrection = (row: AttendanceSummary) => {
+    const now = new Date()
+    const hh = String(now.getHours()).padStart(2, "0")
+    const mm = String(now.getMinutes()).padStart(2, "0")
     setCorrecting(row)
+    setCorrType("minutes")
     setCorrMinutes(0)
+    setCorrTime(`${hh}:${mm}`)
+    setCorrDeadline("")
     setCorrNote("")
   }
 
   const handleCorrect = async () => {
-    if (!correcting || corrMinutes === 0 || !corrNote.trim()) return
+    if (!correcting || !corrNote.trim()) return
+    if (corrType === "minutes" && corrMinutes === 0) return
+    if ((corrType === "manual_in" || corrType === "manual_out") && !corrTime) return
     setCorrSaving(true)
     try {
-      await correctAttendance(correcting.id, corrMinutes, corrNote)
+      await correctAttendance(correcting.id, {
+        type: corrType,
+        correctionMinutes: corrType === "minutes" ? corrMinutes : undefined,
+        time: (corrType === "manual_in" || corrType === "manual_out") ? corrTime : undefined,
+        note: corrNote,
+        deadline: corrDeadline || undefined,
+      })
       setCorrecting(null)
       loadData()
     } catch (err) {
@@ -186,6 +219,8 @@ export default function AttendancePage() {
     setRegDirection("IN")
     setRegOfficeId("")
     setEmpSearch("")
+    setRegNote("")
+    setRegDeadline("")
     try {
       const [empResult, officeResult] = await Promise.all([
         getEmployees(1, 1000, ""),
@@ -207,6 +242,8 @@ export default function AttendancePage() {
         regEmployeeId as number,
         regDirection,
         regOfficeId ? (regOfficeId as number) : undefined,
+        regNote || undefined,
+        regDeadline || undefined,
       )
       setRegisterOpen(false)
       loadData()
@@ -482,18 +519,32 @@ export default function AttendancePage() {
       accessorKey: "firstEntry",
       header: "Вход",
       cell: ({ row }) => (
-        <span className="text-sm font-medium">
-          {formatTime(row.original.firstEntry)}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium">
+            {formatTime(row.original.firstEntry)}
+          </span>
+          {row.original.isLate && row.original.firstEntry && (
+            <span className="inline-flex items-center rounded-full bg-orange-100 border border-orange-200 px-1.5 py-0.5 text-xs font-medium text-orange-700" title="Опоздание">
+              Опоздал
+            </span>
+          )}
+        </div>
       ),
     },
     {
       accessorKey: "lastExit",
       header: "Выход",
       cell: ({ row }) => (
-        <span className="text-sm font-medium">
-          {formatTime(row.original.lastExit)}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium">
+            {formatTime(row.original.lastExit)}
+          </span>
+          {row.original.isEarlyLeave && row.original.lastExit && (
+            <span className="inline-flex items-center rounded-full bg-purple-100 border border-purple-200 px-1.5 py-0.5 text-xs font-medium text-purple-700" title="Ранний уход">
+              Ранний
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -684,51 +735,83 @@ export default function AttendancePage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredData.map((row, index) => (
-                      <tr
-                        key={row.id}
-                        className={`group border-b border-blue-50 transition-colors ${ROW_BG[row.status] || ""}`}
-                      >
-                        <td className="py-3 px-4 text-sm text-muted-foreground">{index + 1}</td>
-                        <td className="py-3 px-4">
-                          <a
-                            href={`/employees/${row.employeeId}`}
-                            className="font-medium text-foreground hover:text-blue-600 hover:underline transition-colors"
-                          >
-                            {row.employeeName}
-                          </a>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-muted-foreground hidden lg:table-cell">{row.departmentName || "—"}</td>
-                        <td className="py-3 px-4 text-sm text-muted-foreground hidden lg:table-cell">{row.positionName || "—"}</td>
-                        <td className="py-3 px-4 text-sm text-muted-foreground hidden md:table-cell">{row.officeName || "—"}</td>
-                        <td className="py-3 px-4 text-sm font-medium">{formatTime(row.firstEntry)}</td>
-                        <td className="py-3 px-4 text-sm font-medium">{formatTime(row.lastExit)}</td>
-                        <td className="py-3 px-4 text-sm hidden md:table-cell">
-                          <span className="font-medium">{formatMinutesToHours(row.totalMinutes)}</span>
-                          {row.correctionMinutes !== 0 && (
-                            <span className={`ml-1 text-xs ${row.correctionMinutes > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                              ({row.correctionMinutes > 0 ? "+" : ""}{row.correctionMinutes}м)
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 hidden md:table-cell">
-                          <StatusBadge status={row.status} />
-                        </td>
-                        <td className="py-3 px-4">
-                          {canCorrect && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-50"
-                              onClick={() => openCorrection(row)}
-                              title="Корректировка"
+                    filteredData.map((row, index) => {
+                      const deadlineExpired = row.correctionDeadline && new Date(row.correctionDeadline) < new Date()
+                      return (
+                        <tr
+                          key={row.id}
+                          className={`group border-b border-blue-50 transition-colors ${getRowBg(row)}`}
+                        >
+                          <td className="py-3 px-4 text-sm text-muted-foreground">{index + 1}</td>
+                          <td className="py-3 px-4">
+                            <a
+                              href={`/employees/${row.employeeId}`}
+                              className="font-medium text-foreground hover:text-blue-600 hover:underline transition-colors"
                             >
-                              <Pencil className="h-4 w-4 text-blue-600" />
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                              {row.employeeName}
+                            </a>
+                            {row.correctionNote && (
+                              <div className="flex items-start gap-1 mt-0.5">
+                                {deadlineExpired && (
+                                  <AlertTriangle className="h-3 w-3 text-orange-500 flex-shrink-0 mt-0.5" />
+                                )}
+                                <p className="text-xs text-muted-foreground truncate max-w-[200px]" title={row.correctionNote}>
+                                  {row.correctionNote}
+                                  {row.correctionDeadline && (
+                                    <span className={`ml-1 font-medium ${deadlineExpired ? "text-orange-600" : "text-yellow-700"}`}>
+                                      (до {new Date(row.correctionDeadline).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })})
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-muted-foreground hidden lg:table-cell">{row.departmentName || "—"}</td>
+                          <td className="py-3 px-4 text-sm text-muted-foreground hidden lg:table-cell">{row.positionName || "—"}</td>
+                          <td className="py-3 px-4 text-sm text-muted-foreground hidden md:table-cell">{row.officeName || "—"}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium">{formatTime(row.firstEntry)}</span>
+                              {row.isLate && row.firstEntry && (
+                                <span className="inline-flex items-center rounded-full bg-orange-100 border border-orange-200 px-1.5 py-0.5 text-xs font-medium text-orange-700">Опоздал</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium">{formatTime(row.lastExit)}</span>
+                              {row.isEarlyLeave && row.lastExit && (
+                                <span className="inline-flex items-center rounded-full bg-purple-100 border border-purple-200 px-1.5 py-0.5 text-xs font-medium text-purple-700">Ранний</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-sm hidden md:table-cell">
+                            <span className="font-medium">{formatMinutesToHours(row.totalMinutes)}</span>
+                            {row.correctionMinutes !== 0 && (
+                              <span className={`ml-1 text-xs ${row.correctionMinutes > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                ({row.correctionMinutes > 0 ? "+" : ""}{row.correctionMinutes}м)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 hidden md:table-cell">
+                            <StatusBadge status={row.status} />
+                          </td>
+                          <td className="py-3 px-4">
+                            {canCorrect && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-50"
+                                onClick={() => openCorrection(row)}
+                                title="Корректировка"
+                              >
+                                <Pencil className="h-4 w-4 text-blue-600" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -743,65 +826,140 @@ export default function AttendancePage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-5 w-5 text-blue-600" />
-              Корректировка времени
+              Корректировка
             </DialogTitle>
             <DialogDescription>
               {correcting?.employeeName} — {correcting?.date}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5">
-            <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
-              <div className="text-sm text-blue-700">
-                Текущее время: <span className="font-bold">{correcting ? formatMinutesToHours(correcting.totalMinutes) : ""}</span>
-              </div>
-              {corrMinutes !== 0 && (
-                <div className="mt-1 text-sm text-blue-600">
-                  После корректировки:{" "}
-                  <span className="font-bold">
-                    {correcting ? formatMinutesToHours(Math.max(0, correcting.totalMinutes + corrMinutes)) : ""}
-                  </span>
-                </div>
-              )}
+          <div className="space-y-4">
+            {/* Тип */}
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { key: "minutes", label: "±Минуты", icon: Pencil, color: "blue" },
+                { key: "manual_in", label: "Check-In", icon: LogIn, color: "emerald" },
+                { key: "manual_out", label: "Check-Out", icon: LogOut, color: "red" },
+              ] as const).map(({ key, label, icon: Icon, color }) => (
+                <button
+                  key={key}
+                  onClick={() => setCorrType(key)}
+                  className={`flex items-center gap-2 h-10 px-3 rounded-xl border text-sm font-medium transition-colors ${
+                    corrType === key
+                      ? color === "blue" ? "bg-blue-500 border-blue-500 text-white"
+                        : color === "emerald" ? "bg-emerald-500 border-emerald-500 text-white"
+                        : color === "red" ? "bg-red-500 border-red-500 text-white"
+                        : "bg-purple-500 border-purple-500 text-white"
+                      : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Корректировка (минуты):</Label>
-              <div className="flex items-center justify-center gap-3">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-12 w-12 rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-lg font-bold"
-                  onClick={() => setCorrMinutes((v) => v - 30)}
-                >
-                  −
-                </Button>
-                <div className={`flex items-center justify-center h-12 min-w-[100px] rounded-xl border-2 px-4 text-xl font-bold tabular-nums ${
-                  corrMinutes > 0
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                    : corrMinutes < 0
-                      ? "border-red-300 bg-red-50 text-red-700"
+            {/* Поля по типу */}
+            {corrType === "minutes" && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-red-700">
+                    <span className="font-semibold">−минуты</span> — уже работал до прихода в офис (был на объекте)
+                  </div>
+                  <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 text-yellow-700">
+                    <span className="font-semibold">+минуты</span> — вышел по делам / отпросился (строка станет жёлтой)
+                  </div>
+                </div>
+                <div className="flex items-center justify-center gap-3">
+                  <Button variant="outline" size="icon"
+                    className="h-12 w-12 rounded-xl border-red-200 text-red-600 hover:bg-red-50 text-lg font-bold"
+                    onClick={() => setCorrMinutes((v) => v - 30)}>−</Button>
+                  <div className={`flex items-center justify-center h-12 min-w-[100px] rounded-xl border-2 px-4 text-xl font-bold tabular-nums ${
+                    corrMinutes > 0 ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                      : corrMinutes < 0 ? "border-red-300 bg-red-50 text-red-700"
                       : "border-gray-200 bg-gray-50 text-gray-500"
-                }`}>
-                  {corrMinutes > 0 ? "+" : ""}{corrMinutes}
+                  }`}>
+                    {corrMinutes > 0 ? "+" : ""}{corrMinutes}
+                  </div>
+                  <Button variant="outline" size="icon"
+                    className="h-12 w-12 rounded-xl border-emerald-200 text-emerald-600 hover:bg-emerald-50 text-lg font-bold"
+                    onClick={() => setCorrMinutes((v) => v + 30)}>+</Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-12 w-12 rounded-xl border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-300 text-lg font-bold"
-                  onClick={() => setCorrMinutes((v) => v + 30)}
-                >
-                  +
-                </Button>
+                <div className="text-center text-sm text-muted-foreground">
+                  Итого: <span className="font-semibold text-foreground">
+                    {correcting ? formatMinutesToHours(correcting.totalMinutes + Math.abs(corrMinutes)) : ""}
+                  </span>
+                  {corrMinutes !== 0 && (
+                    <span className="ml-1 text-xs text-emerald-600">(+{Math.abs(corrMinutes)} мин.)</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {(corrType === "manual_in" || corrType === "manual_out") && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  {corrType === "manual_in" ? "Время прихода" : "Время ухода"}
+                </Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" min={0} max={23}
+                    value={corrTime.split(":")[0]}
+                    onChange={(e) => {
+                      const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                      setCorrTime(`${h}:${corrTime.split(":")[1]}`)
+                    }}
+                    className="w-16 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <span className="text-lg font-bold">:</span>
+                  <input
+                    type="number" min={0} max={59}
+                    value={corrTime.split(":")[1]}
+                    onChange={(e) => {
+                      const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                      setCorrTime(`${corrTime.split(":")[0]}:${m}`)
+                    }}
+                    className="w-16 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Срок */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Срок — ожидается в офисе до (необязательно)</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={0} max={23}
+                  value={corrDeadline ? corrDeadline.split(":")[0] : ""}
+                  placeholder="ЧЧ"
+                  onChange={(e) => {
+                    const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                    setCorrDeadline(`${h}:${corrDeadline ? corrDeadline.split(":")[1] : "00"}`)
+                  }}
+                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
+                <span className="text-lg font-bold">:</span>
+                <input
+                  type="number" min={0} max={59}
+                  value={corrDeadline ? corrDeadline.split(":")[1] : ""}
+                  placeholder="ММ"
+                  onChange={(e) => {
+                    const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                    setCorrDeadline(`${corrDeadline ? corrDeadline.split(":")[0] : "00"}:${m}`)
+                  }}
+                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
+                {corrDeadline && (
+                  <button onClick={() => setCorrDeadline("")} className="text-xs text-muted-foreground hover:text-red-500 ml-1">✕ убрать</button>
+                )}
               </div>
             </div>
 
+            {/* Комментарий */}
             <div className="space-y-2">
-              <Label htmlFor="corrNote" className="text-sm font-medium">
-                Причина *
-              </Label>
+              <Label className="text-sm font-medium">Комментарий *</Label>
               <textarea
-                id="corrNote"
                 value={corrNote}
                 onChange={(e) => setCorrNote(e.target.value)}
                 placeholder="Укажите причину корректировки..."
@@ -811,19 +969,15 @@ export default function AttendancePage() {
             </div>
 
             <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setCorrecting(null)} className="rounded-xl">
-                Отмена
-              </Button>
+              <Button variant="outline" onClick={() => setCorrecting(null)} className="rounded-xl">Отмена</Button>
               <Button
                 onClick={handleCorrect}
-                disabled={corrMinutes === 0 || !corrNote.trim() || corrSaving}
+                disabled={!corrNote.trim() || (corrType === "minutes" && corrMinutes === 0) || corrSaving}
                 className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
               >
-                {corrSaving ? (
-                  <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                ) : (
-                  "Сохранить"
-                )}
+                {corrSaving
+                  ? <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  : "Сохранить"}
               </Button>
             </div>
           </div>
@@ -933,6 +1087,49 @@ export default function AttendancePage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Комментарий */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Комментарий (необязательно)</Label>
+              <textarea
+                value={regNote}
+                onChange={(e) => setRegNote(e.target.value)}
+                placeholder="Например: работает на объекте, позвонил в 9:00..."
+                rows={2}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            {/* Срок */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Ожидается в офисе до (необязательно)</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={0} max={23}
+                  value={regDeadline ? regDeadline.split(":")[0] : ""}
+                  placeholder="ЧЧ"
+                  onChange={(e) => {
+                    const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                    setRegDeadline(`${h}:${regDeadline ? regDeadline.split(":")[1] : "00"}`)
+                  }}
+                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
+                <span className="text-lg font-bold">:</span>
+                <input
+                  type="number" min={0} max={59}
+                  value={regDeadline ? regDeadline.split(":")[1] : ""}
+                  placeholder="ММ"
+                  onChange={(e) => {
+                    const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                    setRegDeadline(`${regDeadline ? regDeadline.split(":")[0] : "00"}:${m}`)
+                  }}
+                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
+                {regDeadline && (
+                  <button onClick={() => setRegDeadline("")} className="text-xs text-muted-foreground hover:text-red-500 ml-1">✕ убрать</button>
+                )}
+              </div>
             </div>
           </div>
 

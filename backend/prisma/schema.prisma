@@ -24,6 +24,8 @@ model Company {
   isActive        Boolean    @default(true)
   lunchBreakStart String?    @default("12:00") // Начало обеда (HH:mm)
   lunchBreakEnd   String?    @default("13:00") // Конец обеда (HH:mm)
+  workDayStart    String?    @default("09:00") // Начало рабочего дня (HH:mm)
+  workDayEnd      String?    @default("18:00") // Конец рабочего дня (HH:mm)
   users       User[]
   employees      Employee[]
   departments    Department[]
@@ -99,11 +101,15 @@ model Employee {
   attendances      Attendance[]
   salaries         Salary[]
   positionHistory  PositionHistory[]
+  managerId        Int?
+  manager          Employee?          @relation("EmployeeHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
+  subordinates     Employee[]         @relation("EmployeeHierarchy")
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
   @@index([companyId])
   @@index([skudId])
+  @@index([managerId])
 }
 
 model Department {
@@ -230,6 +236,11 @@ model Attendance {
   correctedBy       String?
   correctionNote    String?
   officeName        String?
+  isLate                    Boolean   @default(false)
+  isEarlyLeave              Boolean   @default(false)
+  correctionType            String?   // "minutes" | "manual_in" | "manual_out" | "remote"
+  correctionDeadline        DateTime? // До какого времени отпросился (сегодня HH:mm)
+  correctionDeadlineNotified Boolean  @default(false) // TG уведомление об истечении отправлено
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

@@ -21,9 +21,49 @@ import { apiFetch } from "@/lib/api"
 import { getCompanies, updateCompanySchedule } from "@/lib/hrms-api"
 import type { Company } from "@/lib/types"
 
+function TimeInput({ value, onChange, id, className }: {
+  value: string
+  onChange: (v: string) => void
+  id?: string
+  className?: string
+}) {
+  const [h, m] = value.split(":").map(Number)
+
+  const setHour = (newH: number) => {
+    const clamped = Math.max(0, Math.min(23, newH))
+    onChange(`${String(clamped).padStart(2, "0")}:${String(m).padStart(2, "0")}`)
+  }
+  const setMin = (newM: number) => {
+    const clamped = Math.max(0, Math.min(59, newM))
+    onChange(`${String(h).padStart(2, "0")}:${String(clamped).padStart(2, "0")}`)
+  }
+
+  return (
+    <div id={id} className={`flex items-center gap-1 ${className ?? ""}`}>
+      <input
+        type="number"
+        min={0}
+        max={23}
+        value={String(h).padStart(2, "0")}
+        onChange={(e) => setHour(parseInt(e.target.value) || 0)}
+        className="w-14 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+      />
+      <span className="text-lg font-semibold text-muted-foreground">:</span>
+      <input
+        type="number"
+        min={0}
+        max={59}
+        value={String(m).padStart(2, "0")}
+        onChange={(e) => setMin(parseInt(e.target.value) || 0)}
+        className="w-14 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+      />
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const { user } = useAuth()
-  const canEditSchedule = user && (user.isHoldingAdmin || user.role === "Кадровик" || user.role === "Руководитель")
+  const canEditSchedule = user && user.isHoldingAdmin
 
   const [currentPassword, setCurrentPassword] = React.useState("")
   const [newPassword, setNewPassword] = React.useState("")
@@ -36,9 +76,13 @@ export default function SettingsPage() {
   const [error, setError] = React.useState<string | null>(null)
 
   // Schedule settings
+  const [allCompanies, setAllCompanies] = React.useState<Company[]>([])
+  const [selectedCompanyId, setSelectedCompanyId] = React.useState<number | null>(null)
   const [company, setCompany] = React.useState<Company | null>(null)
   const [lunchStart, setLunchStart] = React.useState("12:00")
   const [lunchEnd, setLunchEnd] = React.useState("13:00")
+  const [workStart, setWorkStart] = React.useState("09:00")
+  const [workEnd, setWorkEnd] = React.useState("18:00")
   const [scheduleSaving, setScheduleSaving] = React.useState(false)
   const [scheduleSuccess, setScheduleSuccess] = React.useState(false)
   const [scheduleError, setScheduleError] = React.useState<string | null>(null)
@@ -46,16 +90,29 @@ export default function SettingsPage() {
   React.useEffect(() => {
     if (!canEditSchedule) return
     getCompanies().then((companies) => {
-      const c = user?.isHoldingAdmin
-        ? companies[0]
-        : companies.find((x) => x.id === (user as any)?.companyId) || companies[0]
-      if (c) {
-        setCompany(c)
-        setLunchStart(c.lunchBreakStart || "12:00")
-        setLunchEnd(c.lunchBreakEnd || "13:00")
+      setAllCompanies(companies)
+      // Попытаться взять текущую выбранную компанию из localStorage (CompanySelector)
+      const storedId = typeof window !== "undefined" ? localStorage.getItem("currentCompanyId") : null
+      const initialCompany = storedId
+        ? companies.find((x) => x.id === parseInt(storedId, 10)) || companies[0]
+        : companies[0]
+      if (initialCompany) {
+        setSelectedCompanyId(initialCompany.id)
       }
     })
-  }, [canEditSchedule, user])
+  }, [canEditSchedule])
+
+  React.useEffect(() => {
+    if (!selectedCompanyId || allCompanies.length === 0) return
+    const c = allCompanies.find((x) => x.id === selectedCompanyId) || null
+    setCompany(c)
+    if (c) {
+      setLunchStart(c.lunchBreakStart || "12:00")
+      setLunchEnd(c.lunchBreakEnd || "13:00")
+      setWorkStart(c.workDayStart || "09:00")
+      setWorkEnd(c.workDayEnd || "18:00")
+    }
+  }, [selectedCompanyId, allCompanies])
 
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,7 +121,12 @@ export default function SettingsPage() {
     setScheduleSuccess(false)
     setScheduleSaving(true)
     try {
-      await updateCompanySchedule(company.id, { lunchBreakStart: lunchStart, lunchBreakEnd: lunchEnd })
+      await updateCompanySchedule(company.id, {
+        lunchBreakStart: lunchStart,
+        lunchBreakEnd: lunchEnd,
+        workDayStart: workStart,
+        workDayEnd: workEnd,
+      })
       setScheduleSuccess(true)
       setTimeout(() => setScheduleSuccess(false), 3000)
     } catch (err) {
@@ -124,54 +186,97 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
-        {/* Расписание обеда */}
-        {canEditSchedule && company && (
-          <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden">
-            <CardHeader className="border-b border-emerald-100/50 bg-gradient-to-r from-amber-50/50 to-orange-50/50 p-4 sm:p-5">
+        {/* Расписание компании */}
+        {canEditSchedule && (
+          <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden lg:col-span-2">
+            <CardHeader className="border-b border-amber-100/50 bg-gradient-to-r from-amber-50/50 to-orange-50/50 p-4 sm:p-5">
               <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100">
                   <Clock className="h-4 w-4 text-amber-600" />
                 </div>
-                Время обеда
+                Рабочее расписание компании
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 sm:p-5">
-              <form onSubmit={handleSaveSchedule} className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Перерыв на обед автоматически вычитается из отработанного времени сотрудников.
-                </p>
-                <div className="grid grid-cols-2 gap-4">
+              <form onSubmit={handleSaveSchedule} className="space-y-5">
+                {/* Выбор компании */}
+                {allCompanies.length > 1 && (
                   <div className="space-y-2">
-                    <Label htmlFor="lunchStart">Начало обеда</Label>
-                    <Input
-                      id="lunchStart"
-                      type="time"
-                      value={lunchStart}
-                      onChange={(e) => setLunchStart(e.target.value)}
-                      className="h-10 rounded-xl border-amber-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20"
-                    />
+                    <Label htmlFor="companySelect">Компания</Label>
+                    <select
+                      id="companySelect"
+                      value={selectedCompanyId ?? ""}
+                      onChange={(e) => setSelectedCompanyId(Number(e.target.value))}
+                      className="w-full h-10 rounded-xl border border-amber-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+                    >
+                      {allCompanies.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lunchEnd">Конец обеда</Label>
-                    <Input
-                      id="lunchEnd"
-                      type="time"
-                      value={lunchEnd}
-                      onChange={(e) => setLunchEnd(e.target.value)}
-                      className="h-10 rounded-xl border-amber-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20"
-                    />
-                  </div>
-                </div>
+                )}
 
-                <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
-                  Текущее расписание: <span className="font-semibold">{lunchStart} — {lunchEnd}</span>
-                  {" "}({(() => {
-                    const [sh, sm] = lunchStart.split(":").map(Number)
-                    const [eh, em] = lunchEnd.split(":").map(Number)
-                    const mins = (eh * 60 + em) - (sh * 60 + sm)
-                    return mins > 0 ? `${mins} мин.` : "—"
-                  })()})
-                </div>
+                {company && (
+                  <>
+                    {/* Рабочее время */}
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-slate-700">Рабочее время</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label>Начало рабочего дня</Label>
+                          <TimeInput value={workStart} onChange={setWorkStart} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Конец рабочего дня</Label>
+                          <TimeInput value={workEnd} onChange={setWorkEnd} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Обеденный перерыв */}
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-slate-700">Обеденный перерыв</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label>Начало обеда</Label>
+                          <TimeInput value={lunchStart} onChange={setLunchStart} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Конец обеда</Label>
+                          <TimeInput value={lunchEnd} onChange={setLunchEnd} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Итоговая сводка */}
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 space-y-1">
+                      <div>
+                        Рабочий день: <span className="font-semibold">{workStart} — {workEnd}</span>
+                        {" "}({(() => {
+                          const [sh, sm] = workStart.split(":").map(Number)
+                          const [eh, em] = workEnd.split(":").map(Number)
+                          const total = (eh * 60 + em) - (sh * 60 + sm)
+                          const lunch = (() => {
+                            const [lsh, lsm] = lunchStart.split(":").map(Number)
+                            const [leh, lem] = lunchEnd.split(":").map(Number)
+                            return (leh * 60 + lem) - (lsh * 60 + lsm)
+                          })()
+                          const net = total - (lunch > 0 ? lunch : 0)
+                          return net > 0 ? `${Math.floor(net / 60)}ч ${net % 60}м рабочих` : "—"
+                        })()})
+                      </div>
+                      <div className="text-amber-700">
+                        Обед: <span className="font-semibold">{lunchStart} — {lunchEnd}</span>
+                        {" "}({(() => {
+                          const [sh, sm] = lunchStart.split(":").map(Number)
+                          const [eh, em] = lunchEnd.split(":").map(Number)
+                          const mins = (eh * 60 + em) - (sh * 60 + sm)
+                          return mins > 0 ? `${mins} мин.` : "—"
+                        })()})
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {scheduleError && (
                   <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600">
@@ -188,7 +293,7 @@ export default function SettingsPage() {
 
                 <Button
                   type="submit"
-                  disabled={scheduleSaving}
+                  disabled={scheduleSaving || !company}
                   className="w-full h-10 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/25 text-white"
                 >
                   {scheduleSaving ? (

@@ -71,6 +71,7 @@ import {
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary } from "@/lib/types";
 import PhotoLightbox from "@/components/photo-lightbox";
+import { StatusBadge } from "@/components/status-badge";
 
 // Предопределённые типы документов для HR
 const DOCUMENT_TYPES = [
@@ -450,9 +451,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 </span>
               </div>
               <div className="mt-2 sm:mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full bg-emerald-500/20 px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-medium text-emerald-300 border border-emerald-500/30">
-                  Активен
-                </span>
+                <StatusBadge status={employee.status} size="sm" />
                 <span className="rounded-full bg-white/10 px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-medium text-white/70 border border-white/10">
                   ID: {employeeId}
                 </span>
@@ -505,6 +504,87 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
           </div>
         </div>
       )}
+
+      {/* Заполненность документов */}
+      {(() => {
+        const ALL_DOC_TYPES = [
+          { name: "Паспорт", required: true },
+          { name: "СНИЛС", required: true },
+          { name: "ИНН", required: true },
+          { name: "Трудовой договор", required: true },
+          { name: "Приказ о приёме", required: true },
+          { name: "Диплом / Аттестат", required: false },
+          { name: "Фотография 3x4", required: false },
+          { name: "Медицинская справка", required: false },
+          { name: "Военный билет", required: false },
+          { name: "Прочие документы", required: false },
+        ];
+        const uploadedTypes = new Set(documents.map((d) => d.type));
+        const totalUploaded = ALL_DOC_TYPES.filter((t) => uploadedTypes.has(t.name)).length;
+        const requiredDocs = ALL_DOC_TYPES.filter((t) => t.required);
+        const requiredDone = requiredDocs.filter((t) => uploadedTypes.has(t.name)).length;
+        const pct = Math.round((totalUploaded / ALL_DOC_TYPES.length) * 100);
+        const barColor = pct >= 80 ? "bg-emerald-500" : pct >= 40 ? "bg-amber-400" : "bg-red-400";
+        const ringColor = pct >= 80 ? "text-emerald-600" : pct >= 40 ? "text-amber-500" : "text-red-500";
+        const bgCard = pct >= 80 ? "from-emerald-50 to-teal-50 border-emerald-200" : pct >= 40 ? "from-amber-50 to-yellow-50 border-amber-200" : "from-red-50 to-rose-50 border-red-200";
+
+        return (
+          <div className={`rounded-2xl border bg-gradient-to-r ${bgCard} p-4 sm:p-5`}>
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+              {/* Круговой индикатор */}
+              <div className="relative flex h-16 w-16 sm:h-20 sm:w-20 flex-shrink-0 items-center justify-center">
+                <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-200" />
+                  <circle
+                    cx="18" cy="18" r="15.9" fill="none" strokeWidth="2.5"
+                    strokeDasharray={`${pct} ${100 - pct}`}
+                    strokeLinecap="round"
+                    className={ringColor}
+                    stroke="currentColor"
+                  />
+                </svg>
+                <span className={`absolute text-base sm:text-lg font-bold ${ringColor}`}>{pct}%</span>
+              </div>
+
+              {/* Текст и прогресс */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm font-semibold text-foreground">Заполненность документов</h3>
+                  <span className="text-xs text-muted-foreground">{totalUploaded} из {ALL_DOC_TYPES.length}</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-white/60 overflow-hidden mb-3">
+                  <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
+                </div>
+
+                {/* Обязательные документы */}
+                <div className="flex flex-wrap gap-1.5">
+                  {requiredDocs.map((doc) => {
+                    const done = uploadedTypes.has(doc.name);
+                    return (
+                      <span
+                        key={doc.name}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${
+                          done
+                            ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                            : "bg-white/70 text-muted-foreground border-gray-200"
+                        }`}
+                      >
+                        {done ? <CheckCircle2 className="h-2.5 w-2.5" /> : <XCircle className="h-2.5 w-2.5" />}
+                        {doc.name}
+                      </span>
+                    );
+                  })}
+                  {requiredDone < requiredDocs.length && (
+                    <span className="inline-flex items-center rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-muted-foreground border border-gray-200">
+                      необяз: {totalUploaded - requiredDone}/{ALL_DOC_TYPES.length - requiredDocs.length}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <Tabs defaultValue="main-data" className="space-y-4 sm:space-y-6">
         <TabsList className="bg-white/80 backdrop-blur-sm border border-emerald-100/50 rounded-xl p-1 flex flex-wrap h-auto gap-1">
