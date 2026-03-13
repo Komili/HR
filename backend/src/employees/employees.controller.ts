@@ -43,7 +43,7 @@ export class EmployeesController {
     @Body() createEmployeeDto: CreateEmployeeDto,
     @Request() req: { user: RequestUser },
   ) {
-    const { departmentId, positionId, companyId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = createEmployeeDto;
+    const { departmentId, positionId, companyId, managerId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = createEmployeeDto;
 
     const targetCompanyId = req.user.isHoldingAdmin && companyId
       ? companyId
@@ -62,6 +62,7 @@ export class EmployeesController {
       company: { connect: { id: targetCompanyId } },
       department: departmentId ? { connect: { id: departmentId } } : undefined,
       position: positionId ? { connect: { id: positionId } } : undefined,
+      manager: managerId ? { connect: { id: managerId } } : undefined,
     };
     return this.employeesService.create(data, req.user);
   }
@@ -77,6 +78,16 @@ export class EmployeesController {
   ) {
     const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
     return this.employeesService.findAll(+page, +limit, search, req?.user, requestedCompanyId);
+  }
+
+  @Get('org-chart')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  getOrgChart(
+    @Query('companyId') companyId?: string,
+    @Request() req?: { user: RequestUser },
+  ) {
+    const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
+    return this.employeesService.getOrgChart(req!.user, requestedCompanyId);
   }
 
   @Get('pending')
@@ -181,7 +192,7 @@ export class EmployeesController {
     @Body() updateEmployeeDto: UpdateEmployeeDto,
     @Request() req: { user: RequestUser },
   ) {
-    const { departmentId, positionId, companyId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = updateEmployeeDto;
+    const { departmentId, positionId, companyId, managerId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = updateEmployeeDto;
     const data = {
       ...employeeData,
       ...(birthDate ? { birthDate: new Date(birthDate) } : {}),
@@ -190,6 +201,9 @@ export class EmployeesController {
       ...(hireDate ? { hireDate: new Date(hireDate) } : {}),
       department: departmentId ? { connect: { id: departmentId } } : undefined,
       position: positionId ? { connect: { id: positionId } } : undefined,
+      manager: managerId !== undefined
+        ? (managerId ? { connect: { id: managerId } } : { disconnect: true })
+        : undefined,
     };
     return this.employeesService.update(id, data, req.user);
   }

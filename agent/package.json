@@ -1,0 +1,14 @@
+{
+  "name": "hrms-relay-agent",
+  "version": "1.0.0",
+  "description": "HRMS Door Access Relay Agent — локальный агент для Hikvision Face ID",
+  "main": "relay-agent.js",
+  "scripts": {
+    "start": "node relay-agent.js",
+    "test-conn": "node test-connection.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {}
+}

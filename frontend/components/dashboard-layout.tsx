@@ -26,6 +26,7 @@ import {
   Network,
   Shield,
   UserPlus2,
+  DoorOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -235,6 +236,7 @@ export default function DashboardLayout({
                   </span>
                 </div>
                 <NavLink path="/admin" icon={Shield} name="Админ-панель" description="Управление" />
+                <NavLink path="/doors" icon={DoorOpen} name="Двери (СКУД)" description="Face ID доступ" />
               </>
             )}
           </nav>
@@ -305,6 +307,7 @@ export default function DashboardLayout({
                     </span>
                   </div>
                   <NavLink path="/admin" icon={Shield} name="Админ-панель" description="Управление" onClick={() => setMobileMenuOpen(false)} />
+                  <NavLink path="/doors" icon={DoorOpen} name="Двери (СКУД)" description="Face ID доступ" onClick={() => setMobileMenuOpen(false)} />
                 </>
               )}
               <div className="my-3 border-t border-gray-100" />

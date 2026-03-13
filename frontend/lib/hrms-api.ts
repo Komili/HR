@@ -19,6 +19,7 @@ import type {
   RegistrationToken,
   PendingEmployee,
   OrgChartNode,
+  Door,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -428,6 +429,58 @@ export async function changeUserPassword(id: number, newPassword: string): Promi
 
 export async function deleteUser(id: number): Promise<void> {
   await apiFetch(`/users/${id}`, { method: "DELETE" });
+}
+
+// ============ DOORS ============
+
+export async function getDoors(companyId?: number): Promise<Door[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/doors${query ? `?${query}` : ""}`);
+}
+
+export async function createDoor(data: {
+  name: string;
+  companyId: number;
+  inDeviceIp: string;
+  inDevicePort?: number;
+  outDeviceIp: string;
+  outDevicePort?: number;
+  login?: string;
+  password: string;
+}): Promise<Door> {
+  return apiFetch("/doors", { method: "POST", body: data });
+}
+
+export async function updateDoor(id: number, data: Partial<{
+  name: string;
+  inDeviceIp: string;
+  inDevicePort: number;
+  outDeviceIp: string;
+  outDevicePort: number;
+  login: string;
+  password: string;
+  isActive: boolean;
+}>): Promise<Door> {
+  return apiFetch(`/doors/${id}`, { method: "PATCH", body: data });
+}
+
+export async function deleteDoor(id: number): Promise<void> {
+  await apiFetch(`/doors/${id}`, { method: "DELETE" });
+}
+
+export async function getEmployeeDoors(employeeId: number): Promise<Door[]> {
+  return apiFetch(`/doors/employee/${employeeId}`);
+}
+
+export async function grantDoorAccess(doorId: number, employeeId: number): Promise<void> {
+  await apiFetch(`/doors/${doorId}/grant/${employeeId}`, { method: "POST" });
+}
+
+export async function revokeDoorAccess(doorId: number, employeeId: number): Promise<void> {
+  await apiFetch(`/doors/${doorId}/revoke/${employeeId}`, { method: "DELETE" });
 }
 
 // ============ POSITION HISTORY ============

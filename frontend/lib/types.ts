@@ -287,6 +287,25 @@ export type PendingEmployee = Employee & {
   createdAt: string;
 };
 
+export type Door = {
+  id: number;
+  name: string;
+  companyId: number;
+  company?: { id: number; name: string; shortName: string | null };
+  inDeviceIp: string;
+  inDevicePort: number;
+  outDeviceIp: string;
+  outDevicePort: number;
+  login: string;
+  isActive: boolean;
+  createdAt?: string;
+  _count?: { accesses: number };
+  // Для employee-doors view:
+  hasAccess?: boolean;
+  grantedBy?: string | null;
+  grantedAt?: string | null;
+};
+
 export type HoldingStats = {
   totalCompanies: number;
   totalEmployees: number;

@@ -8,7 +8,7 @@ import sharp = require('sharp');
 import { RequestUser } from '../auth/jwt.strategy';
 
 type EmployeeWithRelations = Prisma.EmployeeGetPayload<{
-  include: { department: true; position: true; company: true };
+  include: { department: true; position: true; company: true; documents: { select: { type: true } } };
 }>;
 
 @Injectable()
@@ -41,6 +41,7 @@ export class EmployeesService {
         department: true,
         position: true,
         company: true,
+        documents: { select: { type: true } },
       },
     });
 
@@ -103,6 +104,7 @@ export class EmployeesService {
           department: true,
           position: true,
           company: true,
+          documents: { select: { type: true } },
         },
         orderBy: { id: 'desc' },
       }),
@@ -119,6 +121,7 @@ export class EmployeesService {
         department: true,
         position: true,
         company: true,
+        documents: { select: { type: true } },
       },
     });
 
@@ -145,6 +148,7 @@ export class EmployeesService {
         department: true,
         position: true,
         company: true,
+        documents: { select: { type: true } },
       },
     });
   }
@@ -167,6 +171,7 @@ export class EmployeesService {
           department: true,
           position: true,
           company: true,
+          documents: { select: { type: true } },
         },
       });
     });
@@ -298,6 +303,43 @@ export class EmployeesService {
     });
   }
 
+  async getOrgChart(user: RequestUser, requestedCompanyId?: number) {
+    const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
+    const where: Prisma.EmployeeWhereInput = {
+      status: { notIn: ['Ожидает', 'Отклонён'] },
+    };
+    if (companyFilter) {
+      where.companyId = companyFilter;
+    }
+
+    const employees = await this.prisma.employee.findMany({
+      where,
+      include: {
+        department: true,
+        position: true,
+        documents: { select: { type: true } },
+      },
+      orderBy: { lastName: 'asc' },
+    });
+
+    // Строим дерево иерархии
+    type OrgNode = typeof employees[0] & { subordinates: OrgNode[] };
+    const map = new Map<number, OrgNode>(
+      employees.map((e) => [e.id, { ...e, subordinates: [] }]),
+    );
+    const roots: OrgNode[] = [];
+
+    for (const node of map.values()) {
+      if (node.managerId && map.has(node.managerId)) {
+        map.get(node.managerId)!.subordinates.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+
+    return roots;
+  }
+
   // Метод для получения всех сотрудников всех компаний (только для суперадминов)
   async findAllForHolding(
     page: number = 1,
@@ -324,6 +366,7 @@ export class EmployeesService {
           department: true,
           position: true,
           company: true,
+          documents: { select: { type: true } },
         },
         orderBy: { id: 'desc' },
       }),

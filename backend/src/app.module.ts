@@ -19,6 +19,7 @@ import { RegistrationModule } from './registration/registration.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { HikvisionModule } from './hikvision/hikvision.module';
 import { PositionHistoryModule } from './position-history/position-history.module';
+import { DoorsModule } from './doors/doors.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { PositionHistoryModule } from './position-history/position-history.modul
     TelegramModule,
     HikvisionModule,
     PositionHistoryModule,
+    DoorsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,0 +1,27 @@
+{
+  "_comment": "Скопируй этот файл в config.json и заполни своими значениями",
+
+  "serverUrl": "https://твой-сервер.com",
+  "_serverUrl_comment": "Адрес центрального HRMS сервера (с https если есть SSL)",
+
+  "agentToken": "ВСТАВЬ_СЮДА_ТОКЕН_ИЗ_ENV_ФАЙЛА_СЕРВЕРА",
+  "_agentToken_comment": "Значение AGENT_SECRET_TOKEN из backend/.env на сервере",
+
+  "companyId": 1,
+  "_companyId_comment": "ID компании этого офиса в системе (смотри в /settings или /admin)",
+
+  "pollIntervalMs": 5000,
+  "_pollIntervalMs_comment": "Как часто опрашивать сервер на наличие команд (мс). 5000 = каждые 5 секунд",
+
+  "deviceCheckIntervalMs": 30000,
+  "_deviceCheckIntervalMs_comment": "Как часто проверять доступность Hikvision устройств (мс). 30000 = каждые 30 секунд",
+
+  "hikvisionTimeoutMs": 10000,
+  "_hikvisionTimeoutMs_comment": "Таймаут для запросов к Hikvision устройствам (мс)",
+
+  "logFile": "agent.log",
+  "_logFile_comment": "Файл для логов. Пустая строка = только консоль",
+
+  "logMaxSizeMb": 10,
+  "_logMaxSizeMb_comment": "Максимальный размер лога в МБ (потом перезапишется)"
+}

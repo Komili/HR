@@ -184,18 +184,29 @@ DATABASE_URL="mysql://hrms:ВАШ_НАДЁЖНЫЙ_ПАРОЛЬ_ДЛЯ_БД@db:3
 # JWT секрет — сгенерировать случайный (минимум 32 символа)
 JWT_SECRET=сгенерируйте-случайную-строку-здесь-минимум-32-символа
 
+# Relay Agent токен — для авторизации агентов СКУД в офисах
+# Сгенерировать: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+AGENT_SECRET_TOKEN=сгенерируйте-отдельный-случайный-токен-для-агентов
+
+# Telegram уведомления (опционально)
+TELEGRAM_TOKEN=токен_бота_от_@BotFather
+TELEGRAM_CHAT_IDS=id_чата1,id_чата2
+
 # Не менять
 PORT=7070
 NEXT_PUBLIC_API_URL=/api
 ```
 
-#### Генерация случайного JWT секрета:
+#### Генерация секретных строк:
 ```bash
 # Linux/Mac
 openssl rand -base64 48
-# или
-cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 48 | head -n 1
+
+# Node.js (работает везде)
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+> **ВАЖНО:** `AGENT_SECRET_TOKEN` нужно будет скопировать в `config.json` каждого relay-агента в офисах. Подробнее: [agent/README.md](agent/README.md)
 
 ### Проверить права на папку storage
 
