@@ -218,6 +218,8 @@ model AttendanceEvent {
   deviceName String?
   office     Office?  @relation(fields: [officeId], references: [id])
   officeId   Int?
+  source     String?  @default("HIKVISION") // "HIKVISION" | "QR_CHECKIN"
+  selfiePath String?
   createdAt  DateTime @default(now())
 
   @@index([employeeId, timestamp])

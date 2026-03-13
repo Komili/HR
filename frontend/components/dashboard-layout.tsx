@@ -27,6 +27,7 @@ import {
   Shield,
   UserPlus2,
   DoorOpen,
+  QrCode,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -58,6 +59,7 @@ const menuItems = [
   { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },
   { name: "Оргструктура", path: "/org-structure", icon: Network, description: "Иерархия" },
   { name: "Регистрации", path: "/registrations", icon: UserPlus2, description: "Заявки" },
+  { name: "QR Check-in", path: "/qr", icon: QrCode, description: "Без оборудования" },
 ];
 
 const settingsNav = { name: "Настройки", path: "/settings", icon: Settings, description: "Конфиг" };
