@@ -77,4 +77,45 @@ export class DoorsController {
   ) {
     return this.doorsService.revokeAccess(doorId, employeeId, req.user);
   }
+
+  // ── Direct device sync (минуя relay-агента) ──
+
+  @Post(':id/sync/:employeeId')
+  @Roles('Суперадмин', 'Кадровик')
+  syncToDevice(
+    @Param('id', ParseIntPipe) doorId: number,
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.doorsService.directSync(doorId, employeeId, 'grant', req.user);
+  }
+
+  @Delete(':id/sync/:employeeId')
+  @Roles('Суперадмин', 'Кадровик')
+  removeFromDevice(
+    @Param('id', ParseIntPipe) doorId: number,
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.doorsService.directSync(doorId, employeeId, 'revoke', req.user);
+  }
+
+  @Post(':id/sync-all')
+  @Roles('Суперадмин', 'Кадровик')
+  syncAll(
+    @Param('id', ParseIntPipe) doorId: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.doorsService.syncAll(doorId, req.user);
+  }
+
+  @Get(':id/check/:employeeId')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  checkOnDevice(
+    @Param('id', ParseIntPipe) doorId: number,
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.doorsService.checkEmployeeOnDevice(doorId, employeeId, req.user);
+  }
 }

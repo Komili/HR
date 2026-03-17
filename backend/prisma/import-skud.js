@@ -604,8 +604,8 @@ async function main() {
       eventSkipped++;
       continue;
     }
-    // СКУД хранит время в UTC+5 (Душанбе), корректируем на -5 часов для хранения в UTC
-    timestamp.setHours(timestamp.getHours() - 5);
+    // Сервер работает в TZ=Asia/Dushanbe (UTC+5), поэтому коррекция не нужна —
+    // new Date(localTime) уже создаёт корректный UTC timestamp через Prisma
 
     const direction = log.eventType === 'entry' ? 'IN' : 'OUT';
     const deviceName = [log.door, log.terminalIp].filter(Boolean).join(' / ') || null;
@@ -646,8 +646,7 @@ async function main() {
 
     const timestamp = new Date(log.timestamp);
     if (isNaN(timestamp.getTime())) continue;
-    // Корректируем на -5 часов (СКУД хранит в UTC+5)
-    timestamp.setHours(timestamp.getHours() - 5);
+    // Сервер в TZ=Asia/Dushanbe — коррекция не нужна
 
     const dateStr = timestamp.toISOString().split('T')[0]; // YYYY-MM-DD
     const key = `${hrEmployee.id}_${dateStr}`;
@@ -782,6 +781,26 @@ async function main() {
     }
   }
   console.log(`   ✅ Создано пользователей: ${userCount}`);
+
+  // --- ШАГ 12: Создание офисов (по одному на компанию) ---
+  console.log('\n🏢 Шаг 12: Создание офисов...');
+  let officeCount = 0;
+  for (const sc of skudCompanies) {
+    const hrCompany = companyMap[sc.id];
+    if (!hrCompany) continue;
+    try {
+      await prisma.office.create({
+        data: {
+          name: hrCompany.shortName || hrCompany.name,
+          companyId: hrCompany.id,
+        },
+      });
+      officeCount++;
+    } catch (err) {
+      // уже существует — пропускаем
+    }
+  }
+  console.log(`   ✅ Создано офисов: ${officeCount}`);
 
   // --- ИТОГО ---
   console.log('\n══════════════════════════════════════════════');

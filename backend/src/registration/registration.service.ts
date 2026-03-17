@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmployeesService } from '../employees/employees.service';
 import { SelfRegisterDto } from './dto/self-register.dto';
-import { transliterate } from './utils/transliterate';
 import { RequestUser } from '../auth/jwt.strategy';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
@@ -40,26 +40,13 @@ export class RegistrationService {
       throw new BadRequestException('Токен недействителен или отозван');
     }
 
-    const latinFirstName = transliterate(dto.firstName);
-    const latinLastName = transliterate(dto.lastName);
-
     // Создаём сотрудника со статусом "Ожидает"
     const employee = await this.prisma.employee.create({
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
         patronymic: dto.patronymic || null,
-        latinFirstName,
-        latinLastName,
-        birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
         phone: dto.phone || null,
-        email: dto.email || null,
-        address: dto.address || null,
-        passportSerial: dto.passportSerial || null,
-        passportNumber: dto.passportNumber || null,
-        passportIssuedBy: dto.passportIssuedBy || null,
-        passportIssueDate: dto.passportIssueDate ? new Date(dto.passportIssueDate) : null,
-        inn: dto.inn || null,
         status: 'Ожидает',
         company: { connect: { id: regToken.companyId } },
       },
@@ -81,12 +68,12 @@ export class RegistrationService {
   }
 
   private async processAndSavePhoto(
-    employee: { id: number; latinFirstName: string; latinLastName: string },
+    employee: { id: number; firstName: string; lastName: string },
     photo: Express.Multer.File,
     companyName: string,
   ) {
-    const companyFolder = companyName.replace(/[^a-zA-Z0-9а-яА-ЯёЁғӣҷӯҳқ_-]/g, '_');
-    const employeeDir = `${this.sanitize(employee.latinFirstName)}_${this.sanitize(employee.latinLastName)}_${employee.id}`;
+    const companyFolder = companyName.replace(/[/\\:*?"<>|]/g, '_').trim();
+    const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir);
     await fs.mkdir(targetDir, { recursive: true });
 
@@ -118,9 +105,6 @@ export class RegistrationService {
     });
   }
 
-  private sanitize(value: string): string {
-    return value.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/\s+/g, '_');
-  }
 
   // ===== Админские методы для токенов =====
 

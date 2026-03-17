@@ -52,6 +52,13 @@ import {
   Loader2,
   ShieldCheck,
   ShieldOff,
+  ScanSearch,
+  Wifi,
+  WifiOff,
+  UserCheck,
+  UserX,
+  Camera,
+  CameraOff,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,6 +82,10 @@ import {
   getEmployeeDoors,
   grantDoorAccess,
   revokeDoorAccess,
+  syncEmployeeToDevice,
+  removeEmployeeFromDevice,
+  checkEmployeeOnDevice,
+  type DeviceCheckResult,
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door } from "@/lib/types";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -152,6 +163,9 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [doorsLoading, setDoorsLoading] = useState(false);
   const [doorsError, setDoorsError] = useState<string | null>(null);
   const [togglingDoorId, setTogglingDoorId] = useState<number | null>(null);
+  const [doorResults, setDoorResults] = useState<Record<number, { ok: boolean; message: string; isWarning?: boolean } | null>>({});
+  const [checkingDevices, setCheckingDevices] = useState(false);
+  const [deviceChecks, setDeviceChecks] = useState<Record<number, DeviceCheckResult | { error: string } | null>>({});
 
   const { user } = useAuth();
 
@@ -276,18 +290,48 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const handleToggleDoor = async (door: Door) => {
     const hasAccess = door.hasAccess;
     setTogglingDoorId(door.id);
+    setDoorResults(prev => ({ ...prev, [door.id]: null }));
     try {
       if (hasAccess) {
         await revokeDoorAccess(door.id, employeeId);
+        try {
+          await removeEmployeeFromDevice(door.id, employeeId);
+          setDoorResults(prev => ({ ...prev, [door.id]: { ok: true, message: 'Доступ закрыт, сотрудник удалён с устройства' } }));
+        } catch {
+          setDoorResults(prev => ({ ...prev, [door.id]: { ok: true, message: 'Доступ закрыт в системе (устройство недоступно)', isWarning: true } }));
+        }
       } else {
         await grantDoorAccess(door.id, employeeId);
+        try {
+          const result = await syncEmployeeToDevice(door.id, employeeId);
+          setDoorResults(prev => ({ ...prev, [door.id]: { ok: true, message: result.message || 'Доступ выдан, лицо загружено на устройство' } }));
+        } catch (e: any) {
+          setDoorResults(prev => ({ ...prev, [door.id]: { ok: true, message: 'Доступ выдан в системе (не удалось загрузить на устройство)', isWarning: true } }));
+        }
       }
       await loadDoors();
     } catch (e: any) {
-      setDoorsError(e.message || "Ошибка изменения доступа");
+      setDoorResults(prev => ({ ...prev, [door.id]: { ok: false, message: e.message || 'Ошибка изменения доступа' } }));
     } finally {
       setTogglingDoorId(null);
     }
+  };
+
+  const handleCheckAllDevices = async () => {
+    if (employeeDoors.length === 0) return;
+    setCheckingDevices(true);
+    setDeviceChecks({});
+    await Promise.all(
+      employeeDoors.map(async (door) => {
+        try {
+          const result = await checkEmployeeOnDevice(door.id, employeeId);
+          setDeviceChecks(prev => ({ ...prev, [door.id]: result }));
+        } catch (e: any) {
+          setDeviceChecks(prev => ({ ...prev, [door.id]: { error: e.message || 'Ошибка связи' } }));
+        }
+      }),
+    );
+    setCheckingDevices(false);
   };
 
   const handleUpload = async (file: File, documentType: string) => {
@@ -725,11 +769,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 <DataField label="Имя" value={employee.firstName} icon={User} />
                 <DataField label="Отчество" value={employee.patronymic} icon={User} />
                 <DataField
-                  label="ФИО (латиница)"
-                  value={`${employee.latinLastName || ""} ${employee.latinFirstName || ""}`}
-                  icon={User}
+                  label="Дата рождения"
+                  value={employee.birthDate ? new Date(employee.birthDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }) : undefined}
+                  icon={Calendar}
                 />
-                <DataField label="Дата рождения" value={employee.birthDate} icon={Calendar} />
               </CardContent>
             </Card>
 
@@ -1132,7 +1175,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                         };
                         const formatT = (iso: string | null) => {
                           if (!iso) return "—";
-                          return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+                          return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false });
                         };
                         const h = Math.floor(row.totalMinutes / 60);
                         const m = row.totalMinutes % 60;
@@ -1373,17 +1416,30 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
         <TabsContent value="doors" className="mt-0">
           <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl">
             <CardHeader className="border-b border-emerald-100/50 bg-gradient-to-r from-emerald-50/50 to-teal-50/50">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <DoorOpen className="h-5 w-5 text-emerald-600" />
-                Доступ к дверям (СКУД Face ID)
-              </CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <DoorOpen className="h-5 w-5 text-emerald-600" />
+                  Доступ к дверям (СКУД Face ID)
+                </CardTitle>
+                {employeeDoors.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCheckAllDevices}
+                    disabled={checkingDevices}
+                    className="border-violet-200 text-violet-600 hover:bg-violet-50 hover:border-violet-300 shrink-0"
+                  >
+                    {checkingDevices ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                    ) : (
+                      <ScanSearch className="h-4 w-4 mr-1.5" />
+                    )}
+                    Проверить устройства
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              {doorsError && (
-                <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm mb-4">
-                  {doorsError}
-                </div>
-              )}
               {doorsLoading ? (
                 <div className="flex justify-center py-12">
                   <Loader2 className="h-7 w-7 animate-spin text-emerald-500" />
@@ -1398,56 +1454,132 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 <div className="space-y-3">
                   {employeeDoors.map(door => {
                     const isToggling = togglingDoorId === door.id;
+                    const result = doorResults[door.id];
+                    const check = deviceChecks[door.id];
                     return (
                       <div
                         key={door.id}
-                        className={`flex items-center justify-between p-4 rounded-xl border transition-colors ${
+                        className={`rounded-2xl border overflow-hidden transition-all ${
                           door.hasAccess
-                            ? "bg-emerald-50 border-emerald-200"
-                            : "bg-slate-50 border-slate-200"
+                            ? "border-emerald-200 shadow-sm shadow-emerald-100"
+                            : "border-slate-200"
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-lg ${door.hasAccess ? "bg-emerald-100" : "bg-slate-100"}`}>
-                            <DoorOpen className={`h-4 w-4 ${door.hasAccess ? "text-emerald-600" : "text-slate-400"}`} />
-                          </div>
-                          <div>
-                            <div className="font-medium text-sm">{door.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {door.company?.name || ""}
-                              {door.hasAccess && door.grantedBy && (
-                                <span className="ml-2 text-emerald-600">
-                                  — выдан: {door.grantedBy}
-                                  {door.grantedAt && ` (${new Date(door.grantedAt).toLocaleDateString("ru-RU")})`}
-                                </span>
-                              )}
+                        {/* Основная строка */}
+                        <div className={`flex items-center justify-between px-4 py-3.5 ${
+                          door.hasAccess ? "bg-emerald-50/60" : "bg-white"
+                        }`}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`shrink-0 p-2.5 rounded-xl ${door.hasAccess ? "bg-emerald-100" : "bg-slate-100"}`}>
+                              <DoorOpen className={`h-5 w-5 ${door.hasAccess ? "text-emerald-600" : "text-slate-400"}`} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-sm truncate">{door.name}</div>
+                              <div className="text-xs text-slate-400 truncate">{door.inDeviceIp}</div>
                             </div>
                           </div>
+
+                          {/* Toggle switch */}
+                          <button
+                            onClick={() => handleToggleDoor(door)}
+                            disabled={isToggling || !door.isActive}
+                            className={`relative shrink-0 inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none disabled:opacity-40 ${
+                              door.hasAccess ? "bg-emerald-500" : "bg-slate-200"
+                            }`}
+                            title={door.hasAccess ? "Закрыть доступ" : "Открыть доступ"}
+                          >
+                            {isToggling ? (
+                              <Loader2 className="absolute inset-0 m-auto h-4 w-4 animate-spin text-white" />
+                            ) : (
+                              <span
+                                className={`inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform ${
+                                  door.hasAccess ? "translate-x-6" : "translate-x-1"
+                                }`}
+                              />
+                            )}
+                          </button>
                         </div>
-                        <Button
-                          variant={door.hasAccess ? "outline" : "default"}
-                          size="sm"
-                          onClick={() => handleToggleDoor(door)}
-                          disabled={isToggling || !door.isActive}
-                          className={door.hasAccess
-                            ? "border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-                            : "bg-emerald-500 hover:bg-emerald-600 text-white"
-                          }
-                        >
-                          {isToggling ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : door.hasAccess ? (
+
+                        {/* Строка статуса */}
+                        <div className={`flex items-center gap-1.5 px-4 py-2 border-t text-xs ${
+                          door.hasAccess
+                            ? "bg-emerald-50/40 border-emerald-100 text-emerald-700"
+                            : "bg-slate-50 border-slate-100 text-slate-400"
+                        }`}>
+                          {door.hasAccess ? (
                             <>
-                              <ShieldOff className="h-4 w-4 mr-1.5" />
-                              Закрыть доступ
+                              <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                              <span>Доступ разрешён</span>
+                              {door.grantedBy && (
+                                <span className="text-emerald-500">· {door.grantedBy}</span>
+                              )}
+                              {door.grantedAt && (
+                                <span className="text-emerald-400">
+                                  {new Date(door.grantedAt).toLocaleDateString("ru-RU")}
+                                </span>
+                              )}
                             </>
                           ) : (
                             <>
-                              <ShieldCheck className="h-4 w-4 mr-1.5" />
-                              Открыть доступ
+                              <ShieldOff className="h-3.5 w-3.5 shrink-0" />
+                              <span>Нет доступа</span>
                             </>
                           )}
-                        </Button>
+                        </div>
+
+                        {/* Результат проверки устройства */}
+                        {check && (
+                          <div className="border-t border-violet-100 bg-violet-50/60 px-4 py-3 text-xs space-y-1.5">
+                            {'error' in check ? (
+                              <div className="flex items-center gap-1.5 text-red-600">
+                                <WifiOff className="h-3.5 w-3.5 shrink-0" />
+                                <span>Устройство недоступно: {check.error}</span>
+                              </div>
+                            ) : (
+                              check.deviceResults.map((dr) => (
+                                <div key={dr.ip} className="space-y-1">
+                                  <div className={`flex items-center gap-1.5 font-medium ${dr.error ? 'text-red-600' : 'text-violet-700'}`}>
+                                    {dr.error ? (
+                                      <WifiOff className="h-3.5 w-3.5 shrink-0" />
+                                    ) : (
+                                      <Wifi className="h-3.5 w-3.5 shrink-0" />
+                                    )}
+                                    <span>{dr.ip}:{dr.port}</span>
+                                    {dr.error && <span className="text-red-500 font-normal">— {dr.error}</span>}
+                                  </div>
+                                  {!dr.error && (
+                                    <div className="pl-5 flex gap-3">
+                                      <span className={`flex items-center gap-1 ${dr.userFound ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                        {dr.userFound ? <UserCheck className="h-3.5 w-3.5" /> : <UserX className="h-3.5 w-3.5" />}
+                                        {dr.userFound ? `Есть на устройстве${dr.userName ? ` (${dr.userName})` : ''}` : 'Нет на устройстве'}
+                                      </span>
+                                      <span className={`flex items-center gap-1 ${dr.faceFound ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                        {dr.faceFound ? <Camera className="h-3.5 w-3.5" /> : <CameraOff className="h-3.5 w-3.5" />}
+                                        {dr.faceFound ? 'Фото есть' : 'Фото нет'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+
+                        {/* Результат последнего действия */}
+                        {result && (
+                          <div className={`flex items-start gap-2 px-4 py-2.5 border-t text-xs ${
+                            !result.ok
+                              ? "bg-red-50 border-red-100 text-red-700"
+                              : result.isWarning
+                              ? "bg-amber-50 border-amber-100 text-amber-700"
+                              : "bg-emerald-50 border-emerald-100 text-emerald-700"
+                          }`}>
+                            <span className="shrink-0 font-bold">
+                              {!result.ok ? "✗" : result.isWarning ? "⚠" : "✓"}
+                            </span>
+                            <span>{result.message}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

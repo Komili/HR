@@ -60,7 +60,6 @@ export class CheckinService {
         id: true,
         firstName: true,
         lastName: true,
-        middleName: true,
         position: { select: { name: true } },
       },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
@@ -93,7 +92,8 @@ export class CheckinService {
 
     let selfiePath: string | null = null;
     if (selfieBase64) {
-      const dateStr = new Date().toISOString().split('T')[0];
+      const now0 = new Date();
+      const dateStr = `${now0.getFullYear()}-${String(now0.getMonth()+1).padStart(2,'0')}-${String(now0.getDate()).padStart(2,'0')}`;
       const dir = path.join('storage', 'checkin-selfies', dateStr);
       fs.mkdirSync(dir, { recursive: true });
       const filename = `${employeeId}_${Date.now()}.jpg`;
@@ -121,7 +121,7 @@ export class CheckinService {
       ok: true,
       direction,
       employeeName: `${employee.lastName} ${employee.firstName}`,
-      time: now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: now.toISOString(), // форматируем на клиенте в его часовом поясе
     };
   }
 }

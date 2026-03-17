@@ -71,8 +71,8 @@ model Employee {
   firstName       String
   lastName        String
   patronymic      String?
-  latinFirstName  String
-  latinLastName   String
+  latinFirstName  String?
+  latinLastName   String?
   birthDate       DateTime?
   passportSerial  String?
   passportNumber  String?

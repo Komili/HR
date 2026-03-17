@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmployeesService } from '../employees/employees.service';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -63,17 +64,13 @@ export class DocumentsService {
       include: { company: true },
     });
 
-    if (!employee || !employee.latinFirstName || !employee.latinLastName) {
+    if (!employee) {
       await fsp.unlink(file.path);
-      throw new NotFoundException(
-        `Employee with ID ${employeeId} not found or missing latin name.`,
-      );
+      throw new NotFoundException(`Employee with ID ${employeeId} not found.`);
     }
 
-    const companyDir = this.sanitize(employee.company?.name || 'default');
-    const sanitizedFirstName = this.sanitize(employee.latinFirstName);
-    const sanitizedLastName = this.sanitize(employee.latinLastName);
-    const employeeDir = `${sanitizedFirstName}_${sanitizedLastName}_${employee.id}`;
+    const companyDir = (employee.company?.name || 'default').replace(/[/\\:*?"<>|]/g, '_').trim();
+    const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyDir, 'employees', employeeDir, 'docs');
 
     await fsp.mkdir(targetDir, { recursive: true });

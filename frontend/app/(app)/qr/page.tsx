@@ -10,6 +10,10 @@ import type { Office } from "@/lib/types"
 
 const WINDOW_MS = 5 * 60 * 1000 // 5 минут
 
+function currentWindow(): number {
+  return Math.floor(Date.now() / WINDOW_MS)
+}
+
 function secondsLeft(): number {
   return Math.ceil((WINDOW_MS - (Date.now() % WINDOW_MS)) / 1000)
 }
@@ -17,11 +21,12 @@ function secondsLeft(): number {
 type QrData = { token: string; expiresIn: number }
 
 export default function QrPage() {
-  useAuth() // проверяем авторизацию
+  const { user } = useAuth()
   const [offices, setOffices] = React.useState<Office[]>([])
   const [loading, setLoading] = React.useState(true)
   const [qrMap, setQrMap] = React.useState<Record<number, QrData>>({})
   const [countdown, setCountdown] = React.useState(secondsLeft())
+  const windowRef = React.useRef(currentWindow())
 
   const origin = typeof window !== "undefined" ? window.location.origin : ""
 
@@ -34,11 +39,11 @@ export default function QrPage() {
 
   // Загрузить токены для всех офисов
   const loadTokens = React.useCallback(async (officeList: Office[]) => {
-    const token = localStorage.getItem("token")
+    const authToken = localStorage.getItem("authToken")
     const results = await Promise.all(
       officeList.map(o =>
         fetch(`/api/checkin/admin/qr?officeId=${o.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${authToken}` },
         })
           .then(r => r.json())
           .then(data => [o.id, data] as const)
@@ -54,13 +59,13 @@ export default function QrPage() {
     if (offices.length > 0) loadTokens(offices)
   }, [offices, loadTokens])
 
-  // Обратный отсчёт + авторефреш токенов
+  // Обратный отсчёт + авторефреш при смене окна
   React.useEffect(() => {
     const interval = setInterval(() => {
-      const secs = secondsLeft()
-      setCountdown(secs)
-      if (secs === 300 || secs === 299) {
-        // новое окно — обновить токены
+      setCountdown(secondsLeft())
+      const win = currentWindow()
+      if (win !== windowRef.current) {
+        windowRef.current = win
         if (offices.length > 0) loadTokens(offices)
       }
     }, 1000)

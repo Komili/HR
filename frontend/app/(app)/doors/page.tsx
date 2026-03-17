@@ -56,6 +56,7 @@ export default function DoorsPage() {
   const [deleteId, setDeleteId] = React.useState<number | null>(null)
   const [deleting, setDeleting] = React.useState(false)
 
+
   const isSuperAdmin = user?.isHoldingAdmin
 
   const load = React.useCallback(async () => {

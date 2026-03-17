@@ -7,6 +7,7 @@ services:
       MYSQL_USER: hrms
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Dushanbe
     volumes:
       - hrms_mysql:/var/lib/mysql
     ports:
@@ -26,6 +27,7 @@ services:
     env_file: .env
     environment:
       PORT: 7070
+      TZ: Asia/Dushanbe
     depends_on:
       db:
         condition: service_healthy
@@ -47,6 +49,8 @@ services:
     build: ./frontend
     container_name: hrms_frontend
     env_file: .env
+    environment:
+      TZ: Asia/Dushanbe
     depends_on:
       - backend
     networks:
@@ -63,8 +67,10 @@ services:
       - backend
     ports:
       - "7474:80"
+      - "7443:443"
     volumes:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
     networks:
       - hrms_net
     restart: unless-stopped

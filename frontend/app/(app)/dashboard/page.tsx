@@ -115,8 +115,8 @@ export default function DashboardPage() {
       const h = Math.floor(att.totalMinutes / 60), m = att.totalMinutes % 60;
       return [
         att.employeeName, att.departmentName || "—", att.positionName || "—",
-        att.firstEntry ? new Date(att.firstEntry).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—",
-        att.lastExit ? new Date(att.lastExit).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—",
+        att.firstEntry ? new Date(att.firstEntry).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false }) : "—",
+        att.lastExit ? new Date(att.lastExit).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false }) : "—",
         att.totalMinutes > 0 ? `${h}ч ${m}м` : "—", statusLabels[att.status] || att.status,
       ];
     });

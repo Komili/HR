@@ -6,6 +6,7 @@ import { createReadStream, existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import sharp = require('sharp');
 import { RequestUser } from '../auth/jwt.strategy';
+import { searchVariants } from '../common/transliterate';
 
 type EmployeeWithRelations = Prisma.EmployeeGetPayload<{
   include: { department: true; position: true; company: true; documents: { select: { type: true } } };
@@ -51,20 +52,22 @@ export class EmployeesService {
     return employee;
   }
 
+  /** Формирует имя папки сотрудника: Фамилия_Имя_ID */
+  static employeeDirName(employee: { id: number; firstName: string; lastName: string }): string {
+    const sanitize = (s: string) => (s || '').replace(/[/\\:*?"<>|]/g, '_').trim();
+    return `${sanitize(employee.lastName)}_${sanitize(employee.firstName)}_${employee.id}`;
+  }
+
   private async createEmployeeFolder(employee: EmployeeWithRelations): Promise<string> {
-    const sanitizedFirstName = this.sanitize(employee.latinFirstName || 'unknown');
-    const sanitizedLastName = this.sanitize(employee.latinLastName || 'unknown');
-    const companyFolder = this.sanitize(employee.company?.name || 'unknown');
-    const employeeDir = `${sanitizedFirstName}_${sanitizedLastName}_${employee.id}`;
+    const companyFolder = this.sanitizeCompany(employee.company?.name || 'unknown');
+    const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir, 'docs');
-
     await fs.mkdir(targetDir, { recursive: true });
-
     return targetDir;
   }
 
-  private sanitize(value: string): string {
-    return value.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/\s+/g, '_');
+  private sanitizeCompany(value: string): string {
+    return value.replace(/[/\\:*?"<>|]/g, '_').trim();
   }
 
   async findAll(
@@ -88,11 +91,12 @@ export class EmployeesService {
     where.status = { notIn: ['Ожидает', 'Отклонён'] };
 
     if (search) {
-      where.OR = [
-        { firstName: { contains: search } },
-        { lastName: { contains: search } },
-        { patronymic: { contains: search } },
-      ];
+      const variants = searchVariants(search);
+      where.OR = variants.flatMap((v) => [
+        { firstName: { contains: v } },
+        { lastName: { contains: v } },
+        { patronymic: { contains: v } },
+      ]);
     }
 
     const [data, total] = await this.prisma.$transaction([
@@ -182,8 +186,8 @@ export class EmployeesService {
     if (!employee) throw new NotFoundException('Сотрудник не найден');
 
     // Создаём целевую папку
-    const companyFolder = this.sanitize(employee.company?.name || 'unknown');
-    const employeeDir = `${this.sanitize(employee.latinFirstName || 'unknown')}_${this.sanitize(employee.latinLastName || 'unknown')}_${employee.id}`;
+    const companyFolder = this.sanitizeCompany(employee.company?.name || 'unknown');
+    const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir);
     await fs.mkdir(targetDir, { recursive: true });
 
@@ -349,12 +353,13 @@ export class EmployeesService {
     const where: Prisma.EmployeeWhereInput = {};
 
     if (search) {
-      where.OR = [
-        { firstName: { contains: search } },
-        { lastName: { contains: search } },
-        { patronymic: { contains: search } },
-        { company: { name: { contains: search } } },
-      ];
+      const variants = searchVariants(search);
+      where.OR = variants.flatMap((v) => [
+        { firstName: { contains: v } },
+        { lastName: { contains: v } },
+        { patronymic: { contains: v } },
+        { company: { name: { contains: v } } },
+      ]);
     }
 
     const [data, total] = await this.prisma.$transaction([

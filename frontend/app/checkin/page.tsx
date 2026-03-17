@@ -8,7 +8,6 @@ type Employee = {
   id: number
   firstName: string
   lastName: string
-  middleName: string | null
   position: { name: string } | null
 }
 
@@ -16,7 +15,7 @@ type Step = "loading" | "error" | "select" | "camera" | "submitting" | "success"
 
 const API = "/api"
 
-export default function CheckinPage() {
+function CheckinContent() {
   const params = useSearchParams()
   const officeId = Number(params.get("office") ?? 0)
   const token = params.get("t") ?? ""
@@ -28,7 +27,7 @@ export default function CheckinPage() {
   const [selected, setSelected] = React.useState<Employee | null>(null)
   const [direction, setDirection] = React.useState<"IN" | "OUT">("IN")
   const [errorMsg, setErrorMsg] = React.useState("")
-  const [result, setResult] = React.useState<{ employeeName: string; time: string; direction: string } | null>(null)
+  const [result, setResult] = React.useState<{ employeeName: string; timestamp: string; direction: string } | null>(null)
 
   const videoRef = React.useRef<HTMLVideoElement>(null)
   const canvasRef = React.useRef<HTMLCanvasElement>(null)
@@ -128,8 +127,7 @@ export default function CheckinPage() {
     const q = search.toLowerCase()
     return (
       e.lastName.toLowerCase().includes(q) ||
-      e.firstName.toLowerCase().includes(q) ||
-      (e.middleName ?? "").toLowerCase().includes(q)
+      e.firstName.toLowerCase().includes(q)
     )
   })
 
@@ -152,7 +150,9 @@ export default function CheckinPage() {
         {result.direction === "IN" ? "Вход записан" : "Выход записан"}
       </p>
       <p className="text-slate-600 mt-1 text-lg">{result.employeeName}</p>
-      <p className="text-2xl font-mono font-bold text-amber-500 mt-2">{result.time}</p>
+      <p className="text-2xl font-mono font-bold text-amber-500 mt-2">
+        {new Date(result.timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false })}
+      </p>
       <p className="text-slate-400 text-sm mt-4">{officeName}</p>
     </Screen>
   )
@@ -283,7 +283,7 @@ export default function CheckinPage() {
             </div>
             <div className="min-w-0">
               <p className="font-semibold text-slate-800 text-sm">
-                {emp.lastName} {emp.firstName} {emp.middleName ?? ""}
+                {emp.lastName} {emp.firstName}
               </p>
               {emp.position && (
                 <p className="text-xs text-slate-500 truncate">{emp.position.name}</p>
@@ -293,6 +293,18 @@ export default function CheckinPage() {
         ))}
       </div>
     </div>
+  )
+}
+
+export default function CheckinPage() {
+  return (
+    <React.Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="h-10 w-10 animate-spin text-amber-500" />
+      </div>
+    }>
+      <CheckinContent />
+    </React.Suspense>
   )
 }
 

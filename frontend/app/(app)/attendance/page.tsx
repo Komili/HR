@@ -43,7 +43,7 @@ import {
 function formatTime(iso: string | null) {
   if (!iso) return "—"
   const d = new Date(iso)
-  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false })
 }
 
 function formatMinutesToHours(minutes: number) {
@@ -261,7 +261,7 @@ export default function AttendancePage() {
     })
     const exportTime = new Date().toLocaleString("ru-RU", {
       day: "2-digit", month: "2-digit", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
     })
     const companyLabel = currentCompanyName || "Все компании"
 
@@ -380,7 +380,7 @@ export default function AttendancePage() {
       const toFormatted = new Date(rangeTo + "T00:00:00").toLocaleDateString("ru-RU")
       const exportTime = new Date().toLocaleString("ru-RU", {
         day: "2-digit", month: "2-digit", year: "numeric",
-        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
       })
       const companyLabel = currentCompanyName || "Все компании"
 
@@ -759,7 +759,7 @@ export default function AttendancePage() {
                                   {row.correctionNote}
                                   {row.correctionDeadline && (
                                     <span className={`ml-1 font-medium ${deadlineExpired ? "text-orange-600" : "text-yellow-700"}`}>
-                                      (до {new Date(row.correctionDeadline).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })})
+                                      (до {new Date(row.correctionDeadline).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false })})
                                     </span>
                                   )}
                                 </p>

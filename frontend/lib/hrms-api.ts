@@ -483,6 +483,37 @@ export async function revokeDoorAccess(doorId: number, employeeId: number): Prom
   await apiFetch(`/doors/${doorId}/revoke/${employeeId}`, { method: "DELETE" });
 }
 
+export async function syncEmployeeToDevice(doorId: number, employeeId: number): Promise<{ ok: boolean; message: string }> {
+  return apiFetch(`/doors/${doorId}/sync/${employeeId}`, { method: "POST" });
+}
+
+export async function syncAllToDevice(doorId: number): Promise<{
+  total: number; success: number; noPhoto: number; faceError: number; failed: number; errors: string[];
+}> {
+  return apiFetch(`/doors/${doorId}/sync-all`, { method: "POST" });
+}
+
+export async function removeEmployeeFromDevice(doorId: number, employeeId: number): Promise<{ ok: boolean; message: string }> {
+  return apiFetch(`/doors/${doorId}/sync/${employeeId}`, { method: "DELETE" });
+}
+
+export type DeviceCheckResult = {
+  employeeNo: string;
+  doorName: string;
+  deviceResults: Array<{
+    ip: string;
+    port: number;
+    userFound: boolean;
+    faceFound: boolean;
+    userName: string | null;
+    error?: string;
+  }>;
+};
+
+export async function checkEmployeeOnDevice(doorId: number, employeeId: number): Promise<DeviceCheckResult> {
+  return apiFetch(`/doors/${doorId}/check/${employeeId}`, { method: "GET" });
+}
+
 // ============ POSITION HISTORY ============
 
 export interface PositionHistoryEntry {

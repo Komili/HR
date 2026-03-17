@@ -23,10 +23,12 @@ export class AttendanceService implements OnModuleInit {
     return user.companyId;
   }
 
-  /** Строит DateTime из даты посещаемости + строки "HH:mm" */
+  /** Строит DateTime из даты посещаемости + строки "HH:mm" в локальном времени (Asia/Dushanbe) */
   private buildDeadlineDate(attendanceDate: Date, timeStr: string): Date {
-    const dateStr = attendanceDate.toISOString().split('T')[0]; // YYYY-MM-DD (UTC)
-    return new Date(`${dateStr}T${timeStr}:00`);
+    const y = attendanceDate.getFullYear();
+    const m = String(attendanceDate.getMonth() + 1).padStart(2, '0');
+    const d = String(attendanceDate.getDate()).padStart(2, '0');
+    return new Date(`${y}-${m}-${d}T${timeStr}:00`);
   }
 
   private mapAttendance(a: any) {

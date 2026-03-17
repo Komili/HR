@@ -10,6 +10,7 @@ import * as http from 'http';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
+import sharp = require('sharp');
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { RequestUser } from '../auth/jwt.strategy';
@@ -220,31 +221,221 @@ export class DoorsService {
     return { ok: true };
   }
 
-  // ─────────── Hikvision ISAPI ───────────
+  // ─────────── Direct sync (без relay-агента) ───────────
 
-  private async pushEmployeeToDevice(door: any, employee: any, action: 'grant' | 'revoke') {
+  async directSync(doorId: number, employeeId: number, action: 'grant' | 'revoke', user: RequestUser) {
+    const [door, employee] = await Promise.all([
+      this.prisma.door.findUnique({ where: { id: doorId } }),
+      this.prisma.employee.findUnique({ where: { id: employeeId } }),
+    ]);
+    if (!door) throw new NotFoundException('Дверь не найдена');
+    if (!employee) throw new NotFoundException('Сотрудник не найден');
+
+    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
+      throw new ForbiddenException('Доступ только к дверям своей компании');
+    }
+
+    const { faceWarning } = await this.pushEmployeeToDevice(door, employee, action);
+
+    const empName = `${employee.lastName} ${employee.firstName}`;
+    const actionText = action === 'grant'
+      ? (faceWarning ? '⚠️ Добавлен без фото на устройство' : '✅ Лицо добавлено на устройство')
+      : '✅ Удалён с устройства';
+    this.telegram.sendMessage(
+      `${actionText}\n` +
+      `👤 Сотрудник: *${empName}*\n` +
+      `🚪 Дверь: *${door.name}*\n` +
+      (faceWarning ? `⚠️ ${faceWarning}\n` : '') +
+      `👮 Выполнил: ${user.email}`,
+    ).catch(() => {});
+
+    if (faceWarning) {
+      return { ok: true, message: faceWarning };
+    }
+    return { ok: true, message: action === 'grant' ? 'Сотрудник и фото загружены на устройство' : 'Сотрудник удалён с устройства' };
+  }
+
+  async syncAll(doorId: number, user: RequestUser) {
+    const door = await this.prisma.door.findUnique({ where: { id: doorId } });
+    if (!door) throw new NotFoundException('Дверь не найдена');
+
+    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
+      throw new ForbiddenException('Доступ только к дверям своей компании');
+    }
+
+    const employees = await this.prisma.employee.findMany({
+      where: { companyId: door.companyId, status: { not: 'Уволен' } },
+      select: { id: true, firstName: true, lastName: true, photoPath: true },
+    });
+
+    const results = { success: 0, noPhoto: 0, faceError: 0, failed: 0, errors: [] as string[] };
+
+    for (const employee of employees) {
+      try {
+        const { faceWarning } = await this.pushEmployeeToDevice(door, employee, 'grant');
+        if (faceWarning) {
+          results.faceError++;
+          results.errors.push(`${employee.lastName} ${employee.firstName}: фото не принято устройством`);
+        } else if (!employee.photoPath) {
+          results.noPhoto++;
+        } else {
+          results.success++;
+        }
+      } catch (err) {
+        results.failed++;
+        results.errors.push(`${employee.lastName} ${employee.firstName}: ${err.message}`);
+        this.logger.error(`syncAll error [${employee.id}]: ${err.message}`);
+      }
+    }
+
+    const summary =
+      `📋 Массовая синхронизация с устройством\n` +
+      `🚪 Дверь: *${door.name}*\n` +
+      `✅ Успешно: ${results.success}\n` +
+      `📷 Ошибка фото: ${results.faceError}\n` +
+      `🚫 Без фото: ${results.noPhoto}\n` +
+      `❌ Ошибок: ${results.failed}\n` +
+      `👮 Запустил: ${user.email}`;
+    this.telegram.sendMessage(summary).catch(() => {});
+
+    return { total: employees.length, ...results };
+  }
+
+  // ─────────── Check employee on device ───────────
+
+  async checkEmployeeOnDevice(doorId: number, employeeId: number, user: RequestUser) {
+    const [door, employee] = await Promise.all([
+      this.prisma.door.findUnique({ where: { id: doorId } }),
+      this.prisma.employee.findUnique({ where: { id: employeeId } }),
+    ]);
+    if (!door) throw new NotFoundException('Дверь не найдена');
+    if (!employee) throw new NotFoundException('Сотрудник не найден');
+
+    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
+      throw new ForbiddenException('Доступ только к дверям своей компании');
+    }
+
+    const employeeNo = String(employee.id);
+    const searchBody = JSON.stringify({
+      UserInfoSearchCond: {
+        searchID: '1',
+        searchResultPosition: 0,
+        maxResults: 1,
+        EmployeeNoList: [{ employeeNo }],
+      },
+    });
+
     const devices = [
       { ip: door.inDeviceIp, port: door.inDevicePort },
       { ip: door.outDeviceIp, port: door.outDevicePort },
     ];
 
-    for (const device of devices) {
-      try {
-        if (action === 'grant') {
-          await this.hikvisionCreateUser(device, door, employee);
-          await this.hikvisionUploadFace(device, door, employee);
-        } else {
-          await this.hikvisionDeleteUser(device, door, employee);
+    // Убираем дубли если IP одинаковый
+    const uniqueDevices = devices.filter(
+      (d, i, arr) => arr.findIndex(x => x.ip === d.ip && x.port === d.port) === i,
+    );
+
+    const deviceResults = await Promise.all(
+      uniqueDevices.map(async (device) => {
+        let userFound = false;
+        let faceFound = false;
+        let userName: string | null = null;
+        let error: string | undefined;
+
+        try {
+          const responseBody = await this.hikvisionRequest(
+            device, door, 'POST',
+            '/ISAPI/AccessControl/UserInfo/Search?format=json',
+            searchBody, 'application/json',
+          );
+          const data = JSON.parse(responseBody);
+          const search = data?.UserInfoSearch;
+          userFound = (search?.numOfMatches ?? 0) > 0;
+          if (userFound && Array.isArray(search?.UserInfo)) {
+            userName = search.UserInfo[0]?.name ?? null;
+          }
+
+          // Проверяем наличие фото
+          if (userFound) {
+            try {
+              const faceBody = JSON.stringify({
+                searchResultPosition: 0,
+                maxResults: 1,
+                faceLibType: 'blackFD',
+                FDID: '1',
+                FPID: employeeNo,
+              });
+              const faceResp = await this.hikvisionRequest(
+                device, door, 'POST',
+                '/ISAPI/Intelligent/FDLib/FDSearch?format=json&FDID=1',
+                faceBody, 'application/json',
+              );
+              const faceData = JSON.parse(faceResp);
+              const numFaces =
+                faceData?.numOfMatches ??
+                faceData?.FaceDataInfo?.numOfMatches ??
+                (Array.isArray(faceData?.FaceInfo) ? faceData.FaceInfo.length : 0);
+              faceFound = numFaces > 0;
+            } catch {
+              // не критично — face check failure
+            }
+          }
+        } catch (err) {
+          error = err.message;
         }
-      } catch (err) {
-        this.logger.error(
-          `Hikvision ${action} error [${device.ip}:${device.port}]: ${err.message}`,
-        );
-        throw new BadRequestException(
-          `Ошибка связи с устройством ${device.ip}:${device.port} — ${err.message}`,
-        );
+
+        return { ip: device.ip, port: device.port, userFound, faceFound, userName, error };
+      }),
+    );
+
+    return { employeeNo, doorName: door.name, deviceResults };
+  }
+
+  // ─────────── Hikvision ISAPI ───────────
+
+  private async pushEmployeeToDevice(
+    door: any,
+    employee: any,
+    action: 'grant' | 'revoke',
+  ): Promise<{ faceWarning?: string }> {
+    const devices = [
+      { ip: door.inDeviceIp, port: door.inDevicePort },
+      { ip: door.outDeviceIp, port: door.outDevicePort },
+    ];
+
+    let faceWarning: string | undefined;
+
+    for (const device of devices) {
+      if (action === 'grant') {
+        // Сначала создаём пользователя — это критично
+        try {
+          await this.hikvisionCreateUser(device, door, employee);
+        } catch (err) {
+          this.logger.error(`Hikvision createUser error [${device.ip}:${device.port}]: ${err.message}`);
+          throw new BadRequestException(
+            `Ошибка связи с устройством ${device.ip}:${device.port} — ${err.message}`,
+          );
+        }
+        // Загрузка лица — не критично, ошибку только логируем
+        try {
+          await this.hikvisionUploadFace(device, door, employee);
+        } catch (err) {
+          this.logger.warn(`Hikvision uploadFace warning [${device.ip}:${device.port}]: ${err.message}`);
+          faceWarning = `Пользователь добавлен на устройство, но фото не загружено — ${err.message.includes('SubpicAnalysisModelingError') || err.message.includes('saveFacePic') ? 'устройство не распознало лицо на фото (проверьте качество фото сотрудника)' : err.message}`;
+        }
+      } else {
+        try {
+          await this.hikvisionDeleteUser(device, door, employee);
+        } catch (err) {
+          this.logger.error(`Hikvision deleteUser error [${device.ip}:${device.port}]: ${err.message}`);
+          throw new BadRequestException(
+            `Ошибка связи с устройством ${device.ip}:${device.port} — ${err.message}`,
+          );
+        }
       }
     }
+
+    return { faceWarning };
   }
 
   private async hikvisionCreateUser(
@@ -263,18 +454,32 @@ export class DoorsService {
         Valid: {
           enable: true,
           beginTime: '2020-01-01T00:00:00',
-          endTime: '2099-12-31T23:59:59',
+          endTime: '2037-12-31T23:59:59',
         },
         doorRight: '1',
         RightPlan: [{ doorNo: 1, planTemplateNo: '1' }],
       },
     });
 
-    await this.hikvisionRequest(
-      device, door, 'PUT',
-      '/ISAPI/AccessControl/UserInfo/Record?format=json',
-      body, 'application/json',
-    );
+    try {
+      await this.hikvisionRequest(
+        device, door, 'POST',
+        '/ISAPI/AccessControl/UserInfo/Record?format=json',
+        body, 'application/json',
+      );
+    } catch (err) {
+      // Пользователь уже существует — удаляем и создаём заново
+      if (err.message?.includes('employeeNoAlreadyExist')) {
+        await this.hikvisionDeleteUser(device, door, employee);
+        await this.hikvisionRequest(
+          device, door, 'POST',
+          '/ISAPI/AccessControl/UserInfo/Record?format=json',
+          body, 'application/json',
+        );
+      } else {
+        throw err;
+      }
+    }
   }
 
   private async hikvisionDeleteUser(
@@ -311,28 +516,31 @@ export class DoorsService {
       return;
     }
 
-    const imageBuffer = fs.readFileSync(photoAbsPath);
+    // Сжимаем фото: Hikvision принимает max ~200KB, JPEG, до 1080px
+    const imageBuffer = await sharp(photoAbsPath)
+      .resize(640, 640, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    this.logger.log(`Фото сжато: ${imageBuffer.length} байт для сотрудника ${employee.id}`);
     const boundary = `----FormBoundary${crypto.randomBytes(8).toString('hex')}`;
 
+    const employeeNo = String(employee.id);
     const jsonPart = JSON.stringify({
-      FaceDataRecord: {
-        employeeNo: String(employee.id),
-        faceLibType: 'blackFD',
-        FDID: '1',
-        FPID: '1',
-      },
+      faceLibType: 'blackFD',
+      FDID: '1',
+      FPID: employeeNo,
     });
 
     const body = Buffer.concat([
       Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="FaceDataRecord"\r\nContent-Type: application/json\r\n\r\n${jsonPart}\r\n--${boundary}\r\nContent-Disposition: form-data; name="faceData"; filename="face.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`,
+        `--${boundary}\r\nContent-Disposition: form-data; name="FaceDataRecord"\r\nContent-Type: application/json\r\n\r\n${jsonPart}\r\n--${boundary}\r\nContent-Disposition: form-data; name="img"; filename="face.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`,
       ),
       imageBuffer,
       Buffer.from(`\r\n--${boundary}--\r\n`),
     ]);
 
     await this.hikvisionRequest(
-      device, door, 'PUT',
+      device, door, 'POST',
       '/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json',
       body, `multipart/form-data; boundary=${boundary}`,
     );
@@ -366,6 +574,9 @@ export class DoorsService {
 
     // Второй запрос с авторизацией
     const secondRes = await this.rawRequest(device, method, urlPath, body, contentType, digestAuth);
+    if (secondRes.status === 401) {
+      throw new Error(`Неверный логин или пароль для устройства ${device.ip} (проверьте настройки двери)`);
+    }
     if (secondRes.status >= 400) {
       throw new Error(`HTTP ${secondRes.status}: ${secondRes.body}`);
     }
@@ -427,7 +638,7 @@ export class DoorsService {
           'Content-Length': bodyBuffer.length,
           ...(authorization ? { Authorization: authorization } : {}),
         },
-        timeout: 10_000,
+        timeout: 30_000,
       };
 
       // Используем http (большинство Hikvision на http)

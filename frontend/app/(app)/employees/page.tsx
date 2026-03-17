@@ -260,8 +260,8 @@ export default function EmployeesPage() {
   }
 
   const handleSave = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.latinFirstName || !formData.latinLastName) {
-      setError("Заполните обязательные поля: Имя, Фамилия, Имя (лат.), Фамилия (лат.)")
+    if (!formData.firstName || !formData.lastName) {
+      setError("Заполните обязательные поля: Имя и Фамилия")
       return
     }
 
@@ -695,29 +695,6 @@ export default function EmployeesPage() {
               placeholder="Введите отчество"
               className="h-10 rounded-xl"
             />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="latinLastName">Фамилия (лат.) *</Label>
-              <Input
-                id="latinLastName"
-                value={formData.latinLastName}
-                onChange={(e) => setFormData({ ...formData, latinLastName: e.target.value })}
-                placeholder="Фамилия латиницей"
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="latinFirstName">Имя (лат.) *</Label>
-              <Input
-                id="latinFirstName"
-                value={formData.latinFirstName}
-                onChange={(e) => setFormData({ ...formData, latinFirstName: e.target.value })}
-                placeholder="Имя латиницей"
-                className="h-10 rounded-xl"
-              />
-            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
