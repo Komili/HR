@@ -172,9 +172,10 @@ async function main() {
       continue;
     }
 
-    // Создаём путь: storage/companies/{CompanyName}/employees/{Фамилия}_{Имя}_{id}/
-    const companyName = hrEmp.company?.name || 'Без_компании';
-    const empFolder = `${hrEmp.lastName}_${hrEmp.firstName}_${hrEmp.id}`.replace(/[\/\\:*?"<>|]/g, '_');
+    // Создаём путь: storage/companies/{CompanyName}/employees/{id}/
+    // Папка = только ID сотрудника — никогда не дублируется при смене имени
+    const companyName = (hrEmp.company?.name || 'unknown').replace(/[/\\:*?"<>|]/g, '_').trim();
+    const empFolder = String(hrEmp.id);
     const destDir = path.join(process.cwd(), 'storage', 'companies', companyName, 'employees', empFolder);
     const docsDir = path.join(destDir, 'docs');
 

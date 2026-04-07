@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmployeesService } from '../employees/employees.service';
 import * as fs from 'fs';
@@ -69,7 +69,7 @@ export class DocumentsService {
       throw new NotFoundException(`Employee with ID ${employeeId} not found.`);
     }
 
-    const companyDir = (employee.company?.name || 'default').replace(/[/\\:*?"<>|]/g, '_').trim();
+    const companyDir = EmployeesService.sanitizeCompany(employee.company?.name || 'unknown');
     const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyDir, 'employees', employeeDir, 'docs');
 
@@ -95,6 +95,26 @@ export class DocumentsService {
     });
 
     return documentRecord;
+  }
+
+  async deleteDocument(documentId: number): Promise<void> {
+    const document = await this.prisma.employeeDocument.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new NotFoundException(`Документ с ID ${documentId} не найден`);
+    }
+
+    // Удаляем файл с диска
+    try {
+      const filePath = path.resolve(document.filePath);
+      await fsp.unlink(filePath);
+    } catch {
+      // Файл уже удалён или не существует — продолжаем
+    }
+
+    await this.prisma.employeeDocument.delete({ where: { id: documentId } });
   }
 
   private sanitize(value: string): string {

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   UploadedFile,
   UseInterceptors,
@@ -59,6 +60,12 @@ export class DocumentsController {
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
     return new StreamableFile(stream);
+  }
+
+  @Delete(':documentId')
+  async deleteDocument(@Param('documentId', ParseIntPipe) documentId: number) {
+    await this.documentsService.deleteDocument(documentId);
+    return { message: 'Документ удалён' };
   }
 
   @Post('upload/employee/:employeeId')

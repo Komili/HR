@@ -53,6 +53,7 @@ export type Department = {
   id: number;
   name: string;
   companyId?: number;
+  sortOrder?: number;
   company?: {
     id: number;
     name: string;
@@ -103,6 +104,7 @@ export type Employee = {
   departmentId: number | null;
   positionId: number | null;
   managerId: number | null;
+  sortOrder?: number;
   email: string | null;
   phone: string | null;
   photoPath: string | null;

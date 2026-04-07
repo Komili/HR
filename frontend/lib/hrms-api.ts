@@ -217,6 +217,28 @@ export async function viewDocument(documentId: number): Promise<Blob> {
   return response.blob();
 }
 
+export async function reorderDepartments(items: { id: number; sortOrder: number }[]): Promise<void> {
+  await apiFetch<void>("/departments/reorder", {
+    method: "PATCH",
+    body: { items },
+  });
+}
+
+export async function reorderEmployees(items: { id: number; sortOrder: number }[]): Promise<void> {
+  await apiFetch<void>("/employees/reorder", {
+    method: "PATCH",
+    body: { items },
+  });
+}
+
+export async function deleteDocument(documentId: number): Promise<void> {
+  const response = await apiFetchRaw(`/documents/${documentId}`, { method: "DELETE" });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Failed to delete document");
+  }
+}
+
 // ============ INVENTORY ============
 
 export async function getInventoryItems(

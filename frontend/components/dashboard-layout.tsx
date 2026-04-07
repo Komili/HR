@@ -17,12 +17,12 @@ import {
   ChevronDown,
   Building,
   Check,
-  Package,
+  // Package,  // скрыто (инвентарь скрыт по решению руководства)
   Clock,
   Menu,
   X,
   AlertTriangle,
-  Banknote,
+  // Banknote,  // скрыто (зарплата скрыта по решению руководства)
   Network,
   Shield,
   UserPlus2,
@@ -54,9 +54,9 @@ const menuItems = [
   { name: "Сотрудники", path: "/employees", icon: Users, description: "Команда" },
   { name: "Отделы", path: "/departments", icon: Building2, description: "Структура" },
   { name: "Должности", path: "/positions", icon: Briefcase, description: "Роли" },
-  { name: "Инвентарь", path: "/inventory", icon: Package, description: "Имущество" },
+  // { name: "Инвентарь", path: "/inventory", icon: Package, description: "Имущество" },  // скрыто по решению руководства
   { name: "Посещаемость", path: "/attendance", icon: Clock, description: "Учёт времени" },
-  { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },
+  // { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },  // скрыто по решению руководства
   { name: "Оргструктура", path: "/org-structure", icon: Network, description: "Иерархия" },
   { name: "Регистрации", path: "/registrations", icon: UserPlus2, description: "Заявки" },
   { name: "QR Check-in", path: "/qr", icon: QrCode, description: "Без оборудования" },
@@ -203,7 +203,7 @@ export default function DashboardLayout({
     <div className="min-h-screen">
       <div className="flex min-h-screen">
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:flex lg:w-72 lg:flex-col bg-white border-r border-gray-200 shadow-sm">
+        <aside className="hidden lg:flex lg:w-72 lg:flex-col bg-white border-r border-gray-200 shadow-sm h-screen sticky top-0 overflow-hidden">
           <div className="flex h-20 items-center gap-3 px-6 border-b border-gray-100">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-lg shadow-emerald-500/30">
               <Sparkles className="h-6 w-6 text-white" />
@@ -275,27 +275,34 @@ export default function DashboardLayout({
 
         {/* Mobile Sidebar Sheet */}
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-          <SheetContent side="left" className="w-72 p-0">
-            <SheetHeader className="flex h-16 flex-row items-center gap-3 px-6 border-b border-gray-100">
-              <div className={`flex h-9 w-9 items-center justify-center rounded-xl shadow-lg ${
+          <SheetContent side="left" className="w-[280px] p-0 bg-white flex flex-col border-r border-gray-200 shadow-xl">
+
+            {/* Шапка */}
+            <SheetHeader className="flex-row items-center gap-3 px-5 py-4 border-b border-gray-100 bg-white space-y-0">
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-lg ${
                 isHoldingAdmin
-                  ? "bg-gradient-to-br from-amber-500 to-orange-500"
-                  : "bg-gradient-to-br from-emerald-500 to-teal-500"
+                  ? "bg-gradient-to-br from-amber-500 to-orange-500 shadow-amber-500/30"
+                  : "bg-gradient-to-br from-emerald-500 to-teal-500 shadow-emerald-500/30"
               }`}>
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
-              <SheetTitle className="text-lg font-bold">КАДРЫ</SheetTitle>
+              <div className="leading-tight">
+                <SheetTitle className="text-base font-bold text-gray-900">КАДРЫ</SheetTitle>
+                <p className={`text-[11px] font-medium ${isHoldingAdmin ? "text-amber-600" : "text-emerald-600"}`}>
+                  {isHoldingAdmin ? "Холдинг" : "Управление персоналом"}
+                </p>
+              </div>
             </SheetHeader>
 
-            <div className="px-4 py-3 border-b border-gray-100">
+            {/* Выбор компании */}
+            <div className="px-4 py-3 border-b border-gray-100 bg-white">
               <CompanySelector />
             </div>
 
-            <nav className="flex-1 space-y-1 px-4 py-4 overflow-y-auto">
+            {/* Навигация */}
+            <nav className="flex-1 overflow-y-auto px-3 py-4 bg-white space-y-0.5">
               <div className="mb-3 px-3">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                  Меню
-                </span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Меню</span>
               </div>
               {menuItems.map((item) => (
                 <NavLink key={item.path} {...item} onClick={() => setMobileMenuOpen(false)} />
@@ -304,22 +311,23 @@ export default function DashboardLayout({
                 <>
                   <div className="my-3 border-t border-gray-100" />
                   <div className="mb-2 px-3">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">
-                      Администрирование
-                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">Администрирование</span>
                   </div>
                   <NavLink path="/admin" icon={Shield} name="Админ-панель" description="Управление" onClick={() => setMobileMenuOpen(false)} />
                   <NavLink path="/doors" icon={DoorOpen} name="Двери (СКУД)" description="Face ID доступ" onClick={() => setMobileMenuOpen(false)} />
                 </>
               )}
-              <div className="my-3 border-t border-gray-100" />
-              <NavLink {...settingsNav} onClick={() => setMobileMenuOpen(false)} />
             </nav>
 
+            {/* Настройки + Профиль — всегда внизу */}
+            <div className="border-t border-gray-100 px-3 pt-3 pb-1 bg-white">
+              <NavLink {...settingsNav} onClick={() => setMobileMenuOpen(false)} />
+            </div>
+
             {user && (
-              <div className="border-t border-gray-100 px-4 py-4">
+              <div className="px-4 pb-4 pt-2 bg-white">
                 <div className="flex items-center gap-3 rounded-xl bg-gray-50 border border-gray-200 px-3 py-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white shadow-lg ${
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-lg ${
                     isHoldingAdmin
                       ? "bg-gradient-to-br from-amber-400 to-orange-500"
                       : "bg-gradient-to-br from-emerald-400 to-teal-500"
@@ -413,10 +421,10 @@ export default function DashboardLayout({
                           <Briefcase className="mr-2 h-4 w-4" />
                           Новую должность
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => router.push("/inventory?action=create")} className="cursor-pointer">
+                        {/* <DropdownMenuItem onClick={() => router.push("/inventory?action=create")} className="cursor-pointer">
                           <Package className="mr-2 h-4 w-4" />
                           Новый инвентарь
-                        </DropdownMenuItem>
+                        </DropdownMenuItem> */}
                       </>
                     )}
                   </DropdownMenuContent>

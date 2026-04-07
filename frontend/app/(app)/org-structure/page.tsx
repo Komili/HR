@@ -7,10 +7,30 @@ import {
   getEmployees,
   getDepartments,
   getOrgChart,
+  reorderDepartments,
+  reorderEmployees,
 } from "@/lib/hrms-api"
 import type { Employee, Department, OrgChartNode } from "@/lib/types"
+import { matchesSearch } from "@/lib/utils"
 import { StatusBadge } from "@/components/status-badge"
 import { EmployeeAvatar } from "@/components/employee-avatar"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import {
   Network,
   Building2,
@@ -23,12 +43,199 @@ import {
   Mail,
   Phone,
   Info,
+  GripVertical,
+  Save,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react"
 import Link from "next/link"
 
-type DeptNode = Department & {
-  employees: Employee[]
+// ---- Drag-and-drop: строка сотрудника ----
+function SortableEmployeeRow({
+  emp,
+  isLast,
+  isDragging: parentDragging,
+}: {
+  emp: Employee
+  isLast: boolean
+  isDragging?: boolean
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: emp.id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  }
+
+  const fullName = `${emp.lastName} ${emp.firstName} ${emp.patronymic || ""}`.trim()
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-3 px-4 py-3 sm:px-6 sm:py-3.5 bg-white transition-colors ${
+        !isLast ? "border-b border-violet-50" : ""
+      } ${isDragging ? "shadow-lg rounded-xl" : "hover:bg-violet-50/70"}`}
+    >
+      {/* Drag handle */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 touch-none"
+        tabIndex={-1}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <EmployeeAvatar
+        employeeId={emp.id}
+        firstName={emp.firstName}
+        lastName={emp.lastName}
+        photoPath={emp.photoPath}
+        className="h-8 w-8 sm:h-9 sm:w-9 flex-shrink-0"
+      />
+      <Link href={`/employees/${emp.id}`} className="flex-1 min-w-0 hover:text-violet-600">
+        <div className="text-sm font-medium truncate">{fullName}</div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {emp.position?.name && (
+            <span className="flex items-center gap-1 truncate">
+              <Briefcase className="h-3 w-3 flex-shrink-0" />
+              {emp.position.name}
+            </span>
+          )}
+          {emp.email && (
+            <span className="hidden sm:flex items-center gap-1 truncate">
+              <Mail className="h-3 w-3 flex-shrink-0" />
+              {emp.email}
+            </span>
+          )}
+          {emp.phone && (
+            <span className="hidden md:flex items-center gap-1">
+              <Phone className="h-3 w-3 flex-shrink-0" />
+              {emp.phone}
+            </span>
+          )}
+        </div>
+      </Link>
+      <StatusBadge status={emp.status} size="sm" />
+    </div>
+  )
+}
+
+// ---- Drag-and-drop: карточка отдела ----
+function SortableDeptCard({
+  dept,
+  empList,
+  expanded,
+  onToggle,
+  onEmployeesReorder,
+  search,
+}: {
+  dept: Department & { sortOrder?: number }
+  empList: Employee[]
   expanded: boolean
+  onToggle: () => void
+  onEmployeesReorder: (deptId: number, newOrder: Employee[]) => void
+  search: string
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: dept.id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const handleEmployeeDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = empList.findIndex(e => e.id === active.id)
+    const newIndex = empList.findIndex(e => e.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    onEmployeesReorder(dept.id, arrayMove(empList, oldIndex, newIndex))
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm overflow-hidden ${
+        isDragging ? "shadow-xl ring-2 ring-violet-400" : ""
+      }`}
+    >
+      <div className="flex items-center w-full">
+        {/* Drag handle для отдела */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="flex-shrink-0 pl-4 pr-2 py-5 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 touch-none"
+          tabIndex={-1}
+        >
+          <GripVertical className="h-5 w-5" />
+        </button>
+
+        {/* Заголовок (кликабельный для toggle) */}
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-3 py-4 pr-4 sm:pr-5 hover:bg-violet-50/50 transition-colors text-left"
+        >
+          <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 shadow-md flex-shrink-0">
+            <Building2 className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-base sm:text-lg font-semibold truncate">{dept.name}</div>
+            <div className="text-xs sm:text-sm text-muted-foreground">{empList.length} сотрудников</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1">
+              <Users className="h-3.5 w-3.5 text-violet-600" />
+              <span className="text-xs font-medium text-violet-700">{empList.length}</span>
+            </div>
+            {expanded
+              ? <ChevronDown className="h-5 w-5 text-muted-foreground" />
+              : <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            }
+          </div>
+        </button>
+      </div>
+
+      {expanded && empList.length > 0 && (
+        <div className="border-t border-violet-100/50">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleEmployeeDragEnd}
+          >
+            <SortableContext items={empList.map(e => e.id)} strategy={verticalListSortingStrategy}>
+              {empList.map((emp, i) => (
+                <SortableEmployeeRow
+                  key={emp.id}
+                  emp={emp}
+                  isLast={i === empList.length - 1}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        </div>
+      )}
+
+      {expanded && empList.length === 0 && (
+        <div className="border-t border-violet-100/50 px-6 py-6 text-center text-sm text-muted-foreground">
+          <User className="h-8 w-8 mx-auto text-gray-300 mb-2" />
+          Нет сотрудников в отделе
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ---- Рекурсивная карточка узла дерева ----
@@ -37,36 +244,31 @@ function OrgNode({ node, depth = 0, searchQuery }: { node: OrgChartNode; depth?:
   const fullName = `${node.lastName} ${node.firstName} ${node.patronymic || ""}`.trim()
   const hasSubordinates = node.subordinates.length > 0
 
-  const matchesSearch = !searchQuery || fullName.toLowerCase().includes(searchQuery.toLowerCase())
-    || (node.position?.name || "").toLowerCase().includes(searchQuery.toLowerCase())
-    || (node.department?.name || "").toLowerCase().includes(searchQuery.toLowerCase())
+  const nodeMatches = !searchQuery
+    || matchesSearch(fullName, searchQuery)
+    || matchesSearch(node.position?.name || "", searchQuery)
+    || matchesSearch(node.department?.name || "", searchQuery)
 
   const anyChildMatches = (n: OrgChartNode, q: string): boolean => {
     if (!q) return true
-    const name = `${n.lastName} ${n.firstName}`.toLowerCase()
-    if (name.includes(q) || (n.position?.name || "").toLowerCase().includes(q)) return true
+    const name = `${n.lastName} ${n.firstName}`
+    if (matchesSearch(name, q) || matchesSearch(n.position?.name || "", q)) return true
     return n.subordinates.some(c => anyChildMatches(c, q))
   }
 
-  if (!matchesSearch && !node.subordinates.some(c => anyChildMatches(c, searchQuery.toLowerCase()))) {
+  if (!nodeMatches && !node.subordinates.some(c => anyChildMatches(c, searchQuery))) {
     return null
   }
 
   return (
     <div className={`relative ${depth > 0 ? "ml-6 sm:ml-10" : ""}`}>
-      {/* Коннектор-линия */}
-      {depth > 0 && (
-        <div className="absolute -left-4 sm:-left-6 top-0 bottom-0 w-px bg-violet-200" />
-      )}
-      {depth > 0 && (
-        <div className="absolute -left-4 sm:-left-6 top-7 h-px w-4 sm:w-6 bg-violet-200" />
-      )}
+      {depth > 0 && <div className="absolute -left-4 sm:-left-6 top-0 bottom-0 w-px bg-violet-200" />}
+      {depth > 0 && <div className="absolute -left-4 sm:-left-6 top-7 h-px w-4 sm:w-6 bg-violet-200" />}
 
       <div className={`relative mb-3 rounded-xl border bg-white/90 shadow-sm transition-all hover:shadow-md ${
-        matchesSearch && searchQuery ? "border-violet-400 ring-1 ring-violet-300" : "border-white/50"
+        nodeMatches && searchQuery ? "border-violet-400 ring-1 ring-violet-300" : "border-white/50"
       }`}>
         <div className="flex items-center gap-3 p-3 sm:p-4">
-          {/* Кнопка collapse если есть дочерние */}
           {hasSubordinates && (
             <button
               onClick={() => setCollapsed(v => !v)}
@@ -124,7 +326,6 @@ function OrgNode({ node, depth = 0, searchQuery }: { node: OrgChartNode; depth?:
         </div>
       </div>
 
-      {/* Подчинённые */}
       {hasSubordinates && !collapsed && (
         <div>
           {node.subordinates.map(child => (
@@ -142,8 +343,19 @@ export default function OrgStructurePage() {
   const [orgChart, setOrgChart] = React.useState<OrgChartNode[]>([])
   const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState("")
+  // По умолчанию все отделы свёрнуты
   const [expandedDepts, setExpandedDepts] = React.useState<Set<number>>(new Set())
-  const [activeView, setActiveView] = React.useState<"departments" | "hierarchy">("hierarchy")
+  const [activeView, setActiveView] = React.useState<"departments" | "hierarchy">("departments")
+  // Локальный порядок сотрудников внутри каждого отдела: deptId → Employee[]
+  const [empOrderMap, setEmpOrderMap] = React.useState<Map<number, Employee[]>>(new Map())
+  const [hasUnsaved, setHasUnsaved] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
+  const [saveStatus, setSaveStatus] = React.useState<"idle" | "saved" | "error">("idle")
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   React.useEffect(() => {
     Promise.all([
@@ -154,7 +366,12 @@ export default function OrgStructurePage() {
       setDepartments(deps)
       setEmployees(empRes.data)
       setOrgChart(chart)
-      setExpandedDepts(new Set(deps.map(d => d.id)))
+      // Инициализируем порядок сотрудников по отделам
+      const map = new Map<number, Employee[]>()
+      deps.forEach(d => {
+        map.set(d.id, empRes.data.filter(e => e.departmentId === d.id))
+      })
+      setEmpOrderMap(map)
     }).catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -171,37 +388,90 @@ export default function OrgStructurePage() {
   const expandAll = () => setExpandedDepts(new Set(departments.map(d => d.id)))
   const collapseAll = () => setExpandedDepts(new Set())
 
-  // Данные для вида "По отделам"
-  const deptNodes: DeptNode[] = React.useMemo(() => {
-    const q = search.toLowerCase()
-    return departments.map(dept => {
-      let deptEmployees = employees.filter(e => e.departmentId === dept.id)
-      if (q) {
-        deptEmployees = deptEmployees.filter(e => {
-          const fullName = `${e.lastName} ${e.firstName} ${e.patronymic || ""}`.toLowerCase()
-          return fullName.includes(q) || (e.position?.name || "").toLowerCase().includes(q)
-        })
+  // Drag-end для отделов — только обновляем UI, сохранение по кнопке
+  const handleDeptDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = departments.findIndex(d => d.id === active.id)
+    const newIndex = departments.findIndex(d => d.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    setDepartments(prev => arrayMove(prev, oldIndex, newIndex))
+    setHasUnsaved(true)
+    setSaveStatus("idle")
+  }
+
+  // Drag-end для сотрудников внутри отдела — только обновляем UI
+  const handleEmployeesReorder = (deptId: number, newOrder: Employee[]) => {
+    setEmpOrderMap(prev => {
+      const next = new Map(prev)
+      next.set(deptId, newOrder)
+      return next
+    })
+    setHasUnsaved(true)
+    setSaveStatus("idle")
+  }
+
+  // Явное сохранение порядка
+  const handleSaveOrder = async () => {
+    setSaving(true)
+    setSaveStatus("idle")
+    try {
+      await reorderDepartments(departments.map((d, i) => ({ id: d.id, sortOrder: i })))
+      const empItems: { id: number; sortOrder: number }[] = []
+      empOrderMap.forEach((emps) => {
+        emps.forEach((e, i) => empItems.push({ id: e.id, sortOrder: i }))
+      })
+      if (empItems.length > 0) {
+        await reorderEmployees(empItems)
       }
-      return { ...dept, employees: deptEmployees, expanded: expandedDepts.has(dept.id) }
-    }).filter(dept => {
-      if (!q) return true
-      return dept.name.toLowerCase().includes(q) || dept.employees.length > 0
-    }).sort((a, b) => b.employees.length - a.employees.length)
-  }, [departments, employees, search, expandedDepts])
+      setHasUnsaved(false)
+      setSaveStatus("saved")
+      setTimeout(() => setSaveStatus("idle"), 3000)
+    } catch (e) {
+      setSaveStatus("error")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Фильтрация отделов при поиске
+  const visibleDepts = React.useMemo(() => {
+    return departments.filter(dept => {
+      const empList = empOrderMap.get(dept.id) || []
+      if (!search) return true
+      if (matchesSearch(dept.name, search)) return true
+      return empList.some(e => {
+        const fullName = `${e.lastName} ${e.firstName} ${e.patronymic || ""}`
+        const latinName = `${e.latinLastName || ""} ${e.latinFirstName || ""}`
+        return matchesSearch(fullName, search) || matchesSearch(latinName, search) || matchesSearch(e.position?.name || "", search)
+      })
+    })
+  }, [departments, empOrderMap, search])
 
   const unassigned = React.useMemo(() => {
     let list = employees.filter(e => !e.departmentId)
     if (search) {
-      const q = search.toLowerCase()
-      list = list.filter(e => `${e.lastName} ${e.firstName}`.toLowerCase().includes(q))
+      list = list.filter(e => {
+        const fullName = `${e.lastName} ${e.firstName}`
+        const latinName = `${e.latinLastName || ""} ${e.latinFirstName || ""}`
+        return matchesSearch(fullName, search) || matchesSearch(latinName, search)
+      })
     }
     return list
   }, [employees, search])
 
-  // Проверяем — есть ли хоть у кого-то managerId
-  const hasHierarchy = React.useMemo(() =>
-    employees.some(e => e.managerId != null),
-  [employees])
+  const hasHierarchy = React.useMemo(() => employees.some(e => e.managerId != null), [employees])
+
+  // Фильтруем сотрудников отдела при поиске
+  const getFilteredEmps = React.useCallback((deptId: number): Employee[] => {
+    const list = empOrderMap.get(deptId) || []
+    if (!search) return list
+    return list.filter(e => {
+      const fullName = `${e.lastName} ${e.firstName} ${e.patronymic || ""}`
+      const latinName = `${e.latinLastName || ""} ${e.latinFirstName || ""}`
+      return matchesSearch(fullName, search) || matchesSearch(latinName, search) || matchesSearch(e.position?.name || "", search)
+    })
+  }, [empOrderMap, search])
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -220,9 +490,36 @@ export default function OrgStructurePage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {activeView === "departments" && (
             <>
+              {saveStatus === "saved" && (
+                <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Порядок сохранён
+                </span>
+              )}
+              {saveStatus === "error" && (
+                <span className="flex items-center gap-1.5 text-sm text-red-500 font-medium">
+                  <AlertCircle className="h-4 w-4" />
+                  Ошибка сохранения
+                </span>
+              )}
+              {hasUnsaved && saveStatus !== "saved" && (
+                <Button
+                  size="sm"
+                  className="h-9 rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                  disabled={saving}
+                  onClick={handleSaveOrder}
+                >
+                  {saving ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  {saving ? "Сохранение..." : "Сохранить порядок"}
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={expandAll} className="h-9 rounded-xl text-xs sm:text-sm">
                 Развернуть
               </Button>
@@ -236,19 +533,7 @@ export default function OrgStructurePage() {
 
       {/* Tabs + Search */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        {/* View switcher */}
         <div className="flex rounded-xl border border-violet-200 bg-violet-50 p-1 gap-1">
-          <button
-            onClick={() => setActiveView("hierarchy")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-              activeView === "hierarchy"
-                ? "bg-white shadow-sm text-violet-700"
-                : "text-violet-500 hover:text-violet-700"
-            }`}
-          >
-            <Network className="h-4 w-4" />
-            Иерархия
-          </button>
           <button
             onClick={() => setActiveView("departments")}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
@@ -259,6 +544,17 @@ export default function OrgStructurePage() {
           >
             <Building2 className="h-4 w-4" />
             По отделам
+          </button>
+          <button
+            onClick={() => setActiveView("hierarchy")}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+              activeView === "hierarchy"
+                ? "bg-white shadow-sm text-violet-700"
+                : "text-violet-500 hover:text-violet-700"
+            }`}
+          >
+            <Network className="h-4 w-4" />
+            Иерархия
           </button>
         </div>
 
@@ -294,8 +590,7 @@ export default function OrgStructurePage() {
       ) : activeView === "hierarchy" ? (
         /* ---- ВКЛАДКА: ИЕРАРХИЯ ---- */
         <div>
-          {!hasHierarchy ? (
-            /* Подсказка если нет иерархии */
+          {!hasHierarchy && (
             <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-violet-200 shadow-sm p-8 sm:p-12 text-center space-y-4">
               <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100">
                 <Network className="h-8 w-8 text-violet-400" />
@@ -310,9 +605,7 @@ export default function OrgStructurePage() {
                 <span>Пока отображаются все сотрудники без иерархии</span>
               </div>
             </div>
-          ) : null}
-
-          {/* Дерево */}
+          )}
           <div className="space-y-1">
             {orgChart.length === 0 && !loading ? (
               <div className="text-center py-8 text-muted-foreground">
@@ -329,88 +622,30 @@ export default function OrgStructurePage() {
       ) : (
         /* ---- ВКЛАДКА: ПО ОТДЕЛАМ ---- */
         <div className="space-y-3">
-          {deptNodes.map((dept) => (
-            <div key={dept.id} className="rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm overflow-hidden">
-              <button
-                onClick={() => toggleDept(dept.id)}
-                className="w-full flex items-center gap-3 p-4 sm:p-5 hover:bg-violet-50/50 transition-colors text-left"
-              >
-                <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 shadow-md flex-shrink-0">
-                  <Building2 className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-base sm:text-lg font-semibold truncate">{dept.name}</div>
-                  <div className="text-xs sm:text-sm text-muted-foreground">{dept.employees.length} сотрудников</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="hidden sm:flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1">
-                    <Users className="h-3.5 w-3.5 text-violet-600" />
-                    <span className="text-xs font-medium text-violet-700">{dept.employees.length}</span>
-                  </div>
-                  {dept.expanded
-                    ? <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                    : <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                  }
-                </div>
-              </button>
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <GripVertical className="h-3.5 w-3.5" />
+            Перетащите отделы или сотрудников для изменения порядка, затем нажмите «Сохранить порядок».
+          </p>
 
-              {dept.expanded && dept.employees.length > 0 && (
-                <div className="border-t border-violet-100/50">
-                  {dept.employees.map((emp, i) => {
-                    const fullName = `${emp.lastName} ${emp.firstName} ${emp.patronymic || ""}`.trim()
-                    return (
-                      <Link
-                        key={emp.id}
-                        href={`/employees/${emp.id}`}
-                        className={`flex items-center gap-3 px-4 py-3 sm:px-6 sm:py-3.5 hover:bg-violet-50/70 transition-colors ${
-                          i < dept.employees.length - 1 ? "border-b border-violet-50" : ""
-                        }`}
-                      >
-                        <EmployeeAvatar
-                          employeeId={emp.id}
-                          firstName={emp.firstName}
-                          lastName={emp.lastName}
-                          photoPath={emp.photoPath}
-                          className="h-8 w-8 sm:h-9 sm:w-9 flex-shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{fullName}</div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            {emp.position?.name && (
-                              <span className="flex items-center gap-1 truncate">
-                                <Briefcase className="h-3 w-3 flex-shrink-0" />
-                                {emp.position.name}
-                              </span>
-                            )}
-                            {emp.email && (
-                              <span className="hidden sm:flex items-center gap-1 truncate">
-                                <Mail className="h-3 w-3 flex-shrink-0" />
-                                {emp.email}
-                              </span>
-                            )}
-                            {emp.phone && (
-                              <span className="hidden md:flex items-center gap-1">
-                                <Phone className="h-3 w-3 flex-shrink-0" />
-                                {emp.phone}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <StatusBadge status={emp.status} size="sm" />
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-
-              {dept.expanded && dept.employees.length === 0 && (
-                <div className="border-t border-violet-100/50 px-6 py-6 text-center text-sm text-muted-foreground">
-                  <User className="h-8 w-8 mx-auto text-gray-300 mb-2" />
-                  Нет сотрудников в отделе
-                </div>
-              )}
-            </div>
-          ))}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDeptDragEnd}
+          >
+            <SortableContext items={visibleDepts.map(d => d.id)} strategy={verticalListSortingStrategy}>
+              {visibleDepts.map(dept => (
+                <SortableDeptCard
+                  key={dept.id}
+                  dept={dept}
+                  empList={getFilteredEmps(dept.id)}
+                  expanded={expandedDepts.has(dept.id)}
+                  onToggle={() => toggleDept(dept.id)}
+                  onEmployeesReorder={handleEmployeesReorder}
+                  search={search}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
 
           {unassigned.length > 0 && (
             <div className="rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur-sm border border-amber-200/50 shadow-sm overflow-hidden">
@@ -458,7 +693,7 @@ export default function OrgStructurePage() {
             </div>
           )}
 
-          {deptNodes.length === 0 && unassigned.length === 0 && (
+          {visibleDepts.length === 0 && unassigned.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
               <Network className="h-16 w-16 mx-auto text-gray-300 mb-4" />
               <p className="text-lg font-medium">Нет данных</p>

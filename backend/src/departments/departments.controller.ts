@@ -67,6 +67,15 @@ export class DepartmentsController {
     return department;
   }
 
+  @Patch('reorder')
+  @Roles('Суперадмин', 'Кадровик')
+  reorder(
+    @Body() body: { items: { id: number; sortOrder: number }[] },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.departmentsService.reorder(body.items, req.user);
+  }
+
   @Patch(':id')
   @Roles('Суперадмин', 'Кадровик')
   update(

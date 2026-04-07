@@ -61,13 +61,19 @@ export function DataTable<TData, TValue>({
   return (
     <div className="w-full space-y-4">
       <div className="overflow-x-auto rounded-xl border border-emerald-100/50 bg-white/50">
-        <Table>
+        <Table style={{ tableLayout: "fixed", width: "100%" }}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="bg-gradient-to-r from-emerald-50/80 to-teal-50/80 border-b border-emerald-100/50 hover:bg-emerald-50/80">
                 {headerGroup.headers.map((header) => {
+                  const size = header.column.columnDef.size
+                  const meta = header.column.columnDef.meta as { className?: string } | undefined
                   return (
-                    <TableHead key={header.id} className="text-emerald-700 text-xs font-semibold uppercase tracking-wider py-4">
+                    <TableHead
+                      key={header.id}
+                      className={`text-emerald-700 text-xs font-semibold uppercase tracking-wider py-4 ${meta?.className ?? ""}`}
+                      style={size ? { width: size, minWidth: size, maxWidth: size } : undefined}
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(
@@ -89,14 +95,19 @@ export function DataTable<TData, TValue>({
                   className={`border-b border-emerald-50 transition-colors data-[state=selected]:bg-emerald-100/50 ${getRowClassName ? getRowClassName(row.original) : "hover:bg-emerald-50/50"}`}
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="py-4">
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const size = cell.column.columnDef.size
+                    const meta = cell.column.columnDef.meta as { className?: string } | undefined
+                    return (
+                      <TableCell
+                        key={cell.id}
+                        className={`py-3 overflow-hidden ${meta?.className ?? ""}`}
+                        style={size ? { width: size, minWidth: size, maxWidth: size } : undefined}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    )
+                  })}
                 </TableRow>
               ))
             ) : (

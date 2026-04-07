@@ -185,6 +185,14 @@ export class EmployeesController {
     return employee;
   }
 
+  @Patch('reorder')
+  @Roles('Суперадмин', 'Кадровик')
+  reorderEmployees(
+    @Body() body: { items: { id: number; sortOrder: number }[] },
+  ) {
+    return this.employeesService.reorderEmployees(body.items);
+  }
+
   @Patch(':id')
   @Roles('Суперадмин', 'Кадровик')
   update(

@@ -86,6 +86,7 @@ import {
   removeEmployeeFromDevice,
   checkEmployeeOnDevice,
   type DeviceCheckResult,
+  deleteDocument,
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door } from "@/lib/types";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -129,6 +130,8 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [deletingDocId, setDeletingDocId] = useState<number | null>(null);
+  const [deleteConfirmDoc, setDeleteConfirmDoc] = useState<EmployeeDocument | null>(null);
   const [previewDoc, setPreviewDoc] = useState<EmployeeDocument | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -388,6 +391,22 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     setPreviewUrl(null);
   };
 
+  const handleDeleteDocument = async (doc: EmployeeDocument) => {
+    setDeletingDocId(doc.id);
+    setDeleteConfirmDoc(null);
+    try {
+      await deleteDocument(doc.id);
+      await loadDocuments();
+      const docName = DOCUMENT_TYPES.find(t => t.id === doc.type || t.name === doc.type)?.name || doc.type;
+      setSuccessMessage(`Документ "${docName}" удалён`);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка удаления документа");
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
+
   const handlePhotoUpload = async (file: File) => {
     setUploadingPhoto(true);
     setError(null);
@@ -602,23 +621,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
 
       {/* Заполненность документов */}
       {(() => {
-        const ALL_DOC_TYPES = [
-          { name: "Паспорт", required: true },
-          { name: "СНИЛС", required: true },
-          { name: "ИНН", required: true },
-          { name: "Трудовой договор", required: true },
-          { name: "Приказ о приёме", required: true },
-          { name: "Диплом / Аттестат", required: false },
-          { name: "Фотография 3x4", required: false },
-          { name: "Медицинская справка", required: false },
-          { name: "Военный билет", required: false },
-          { name: "Прочие документы", required: false },
-        ];
-        const uploadedTypes = new Set(documents.map((d) => d.type));
-        const totalUploaded = ALL_DOC_TYPES.filter((t) => uploadedTypes.has(t.name)).length;
-        const requiredDocs = ALL_DOC_TYPES.filter((t) => t.required);
-        const requiredDone = requiredDocs.filter((t) => uploadedTypes.has(t.name)).length;
-        const pct = Math.round((totalUploaded / ALL_DOC_TYPES.length) * 100);
+        const totalUploaded = DOCUMENT_TYPES.filter((t) => !!getDocumentByType(t.id)).length;
+        const requiredDocs = DOCUMENT_TYPES.filter((t) => t.required);
+        const requiredDone = requiredDocs.filter((t) => !!getDocumentByType(t.id)).length;
+        const pct = Math.round((totalUploaded / DOCUMENT_TYPES.length) * 100);
         const barColor = pct >= 80 ? "bg-emerald-500" : pct >= 40 ? "bg-amber-400" : "bg-red-400";
         const ringColor = pct >= 80 ? "text-emerald-600" : pct >= 40 ? "text-amber-500" : "text-red-500";
         const bgCard = pct >= 80 ? "from-emerald-50 to-teal-50 border-emerald-200" : pct >= 40 ? "from-amber-50 to-yellow-50 border-amber-200" : "from-red-50 to-rose-50 border-red-200";
@@ -645,7 +651,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="text-sm font-semibold text-foreground">Заполненность документов</h3>
-                  <span className="text-xs text-muted-foreground">{totalUploaded} из {ALL_DOC_TYPES.length}</span>
+                  <span className="text-xs text-muted-foreground">{totalUploaded} из {DOCUMENT_TYPES.length}</span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-white/60 overflow-hidden mb-3">
                   <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
@@ -654,10 +660,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 {/* Обязательные документы */}
                 <div className="flex flex-wrap gap-1.5">
                   {requiredDocs.map((doc) => {
-                    const done = uploadedTypes.has(doc.name);
+                    const done = !!getDocumentByType(doc.id);
                     return (
                       <span
-                        key={doc.name}
+                        key={doc.id}
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${
                           done
                             ? "bg-emerald-100 text-emerald-700 border-emerald-200"
@@ -671,7 +677,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                   })}
                   {requiredDone < requiredDocs.length && (
                     <span className="inline-flex items-center rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-muted-foreground border border-gray-200">
-                      необяз: {totalUploaded - requiredDone}/{ALL_DOC_TYPES.length - requiredDocs.length}
+                      необяз: {totalUploaded - requiredDone}/{DOCUMENT_TYPES.length - requiredDocs.length}
                     </span>
                   )}
                 </div>
@@ -704,6 +710,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               </span>
             )}
           </TabsTrigger>
+          {/* Таб Имущество скрыт по решению руководства
           <TabsTrigger
             value="inventory"
             className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs sm:text-sm px-2 sm:px-3"
@@ -717,6 +724,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               </span>
             )}
           </TabsTrigger>
+          */}
           <TabsTrigger
             value="attendance"
             className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-lg text-xs sm:text-sm px-2 sm:px-3"
@@ -902,6 +910,19 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                                   <Download className="h-4 w-4 mr-1" />
                                   Скачать
                                 </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 rounded-lg border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300"
+                                  disabled={deletingDocId === uploadedDoc.id}
+                                  onClick={() => setDeleteConfirmDoc(uploadedDoc)}
+                                >
+                                  {deletingDocId === uploadedDoc.id ? (
+                                    <div className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </Button>
                               </>
                             ) : null}
                             <Button
@@ -989,6 +1010,19 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                               <Download className="h-3 w-3 mr-1" />
                               Скачать
                             </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs rounded-md border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300"
+                              disabled={deletingDocId === doc.id}
+                              onClick={() => setDeleteConfirmDoc(doc)}
+                            >
+                              {deletingDocId === doc.id ? (
+                                <div className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3 w-3" />
+                              )}
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -998,101 +1032,11 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             </CardContent>
           </Card>
         </TabsContent>
+        {/* TabsContent inventory скрыт по решению руководства
         <TabsContent value="inventory" className="mt-0">
-          <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden">
-            <CardHeader className="border-b border-emerald-100/50 bg-gradient-to-r from-indigo-50/50 to-purple-50/50">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Package className="h-5 w-5 text-indigo-600" />
-                  Закреплённое имущество
-                </CardTitle>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">Всего:</span>
-                    <span className="font-semibold text-gray-700">{inventoryItems.length}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    className="h-8 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white"
-                    onClick={handleOpenAssignModal}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Закрепить имущество
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              {inventoryItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <Package className="h-12 w-12 text-gray-300 mb-3" />
-                  <p className="text-sm">За сотрудником нет закреплённого имущества</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                      <TableHead>Название</TableHead>
-                      <TableHead>Инв. номер</TableHead>
-                      <TableHead>Категория</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead className="text-right">Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {inventoryItems.map((item) => (
-                      <TableRow key={item.id} className="hover:bg-indigo-50/30">
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100">
-                              <Package className="h-4 w-4 text-indigo-600" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-900">{item.name}</p>
-                              {item.model && <p className="text-xs text-gray-500">{item.model}</p>}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {item.inventoryNumber ? (
-                            <span className="font-mono text-sm text-gray-600">{item.inventoryNumber}</span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {item.category ? (
-                            <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
-                              {item.category}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center rounded-full bg-blue-100 border border-blue-200 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-                            {item.status}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-                            onClick={() => handleUnassign(item.id)}
-                          >
-                            <Unlink className="h-4 w-4 mr-1" />
-                            Открепить
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          ...
         </TabsContent>
+        */}
         <TabsContent value="attendance" className="mt-0">
           <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden overflow-x-auto">
             <CardHeader className="border-b border-emerald-100/50 bg-gradient-to-r from-blue-50/50 to-cyan-50/50">
@@ -1589,6 +1533,40 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Диалог подтверждения удаления документа */}
+      <Dialog open={!!deleteConfirmDoc} onOpenChange={() => setDeleteConfirmDoc(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              Удалить документ?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 text-sm text-gray-600">
+            <p>Вы уверены, что хотите удалить документ?</p>
+            {deleteConfirmDoc && (
+              <p className="mt-1 font-medium text-gray-900">
+                {DOCUMENT_TYPES.find(t => t.id === deleteConfirmDoc.type || t.name === deleteConfirmDoc.type)?.name || deleteConfirmDoc.type}
+              </p>
+            )}
+            <p className="mt-1 text-xs text-gray-400">Файл будет удалён безвозвратно.</p>
+          </div>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setDeleteConfirmDoc(null)}>
+              Отмена
+            </Button>
+            <Button
+              size="sm"
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={() => deleteConfirmDoc && handleDeleteDocument(deleteConfirmDoc)}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Удалить
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Модальное окно для просмотра документа */}
       <Dialog open={!!previewDoc} onOpenChange={() => closePreview()}>

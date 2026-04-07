@@ -62,6 +62,10 @@ export class UsersService {
     const existing = await this.prisma.user.findUnique({ where: { email: userData.email } });
     if (existing) throw new BadRequestException('Пользователь с таким email уже существует');
 
+    if (!userData.password || userData.password.length < 8) {
+      throw new BadRequestException('Пароль должен быть не менее 8 символов');
+    }
+
     const role = await this.prisma.role.findUnique({ where: { id: userData.roleId } });
     if (!role) throw new BadRequestException('Роль не найдена');
 
@@ -163,8 +167,8 @@ export class UsersService {
     const existing = await this.prisma.user.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Пользователь не найден');
 
-    if (!newPassword || newPassword.length < 6) {
-      throw new BadRequestException('Пароль должен быть не менее 6 символов');
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('Пароль должен быть не менее 8 символов');
     }
 
     const hashed = await bcrypt.hash(newPassword, 10);

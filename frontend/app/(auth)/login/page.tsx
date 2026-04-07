@@ -38,7 +38,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const { login: authLogin } = useAuth();
 
-  const handleLogin = async () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!email.trim()) { setError("Введите электронную почту"); return; }
     if (!password) { setError("Введите пароль"); return; }
     setIsLoading(true);
@@ -58,10 +59,6 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !isLoading) handleLogin();
   };
 
   return (
@@ -141,6 +138,7 @@ export default function LoginPage() {
                 </div>
               </CardHeader>
 
+              <form onSubmit={handleLogin} autoComplete="on">
               <CardContent className="relative space-y-4">
                 {/* Email */}
                 <div className="space-y-2">
@@ -151,12 +149,12 @@ export default function LoginPage() {
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="email"
+                      name="email"
                       type="email"
                       placeholder="user@company.tj"
                       required
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); setError(null); }}
-                      onKeyDown={handleKeyDown}
                       disabled={isLoading}
                       autoComplete="email"
                       autoFocus
@@ -174,12 +172,12 @@ export default function LoginPage() {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="password"
+                      name="password"
                       type={showPassword ? "text" : "password"}
                       placeholder="Введите пароль"
                       required
                       value={password}
                       onChange={(e) => { setPassword(e.target.value); setError(null); }}
-                      onKeyDown={handleKeyDown}
                       disabled={isLoading}
                       autoComplete="current-password"
                       className="pl-10 pr-10 h-11 rounded-xl bg-white border-gray-200 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 transition-all"
@@ -206,8 +204,8 @@ export default function LoginPage() {
 
               <CardFooter className="relative flex flex-col gap-3 pt-2">
                 <Button
+                  type="submit"
                   className="w-full h-11 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-[1.01] text-sm font-semibold"
-                  onClick={handleLogin}
                   disabled={isLoading || !email || !password}
                 >
                   {isLoading ? (
@@ -228,6 +226,7 @@ export default function LoginPage() {
                   <span className="text-emerald-600 font-medium">Обратитесь к администратору</span>
                 </p>
               </CardFooter>
+              </form>
             </Card>
           </div>
 

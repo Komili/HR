@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 /**
  * AgentController — API для relay-агента в офисах.
@@ -25,7 +26,19 @@ export class AgentController {
     if (!expected || expected === 'change_me_to_random_secret_token_here') {
       throw new ForbiddenException('AGENT_SECRET_TOKEN не настроен на сервере');
     }
-    if (!token || token !== expected) {
+    if (!token) {
+      throw new UnauthorizedException('Неверный токен агента');
+    }
+    // Timing-safe сравнение для защиты от timing-атак
+    let valid = false;
+    try {
+      const a = Buffer.from(token);
+      const b = Buffer.from(expected);
+      valid = a.length === b.length && crypto.timingSafeEqual(a, b);
+    } catch {
+      valid = false;
+    }
+    if (!valid) {
       throw new UnauthorizedException('Неверный токен агента');
     }
   }

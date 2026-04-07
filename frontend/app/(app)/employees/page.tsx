@@ -65,7 +65,7 @@ export default function EmployeesPage() {
   const [data, setData] = React.useState<Employee[]>([])
   const [page, setPage] = React.useState(0)
   const [total, setTotal] = React.useState(0)
-  const [limit, setLimit] = React.useState(10)
+  const [limit, setLimit] = React.useState(50)
   const [search, setSearch] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [debouncedSearch] = useDebounce(search, 500)
@@ -285,26 +285,36 @@ export default function EmployeesPage() {
     {
       accessorKey: "lastName",
       header: "Сотрудник",
+      size: 240,
       cell: ({ row }) => {
-        const { lastName, firstName, patronymic, id, photoPath } = row.original
+        const { lastName, firstName, patronymic, id, photoPath, department, position } = row.original
         const fullName = `${lastName} ${firstName} ${patronymic || ""}`.trim()
 
         return (
-          <Link href={`/employees/${id}`} className="group flex items-center gap-3">
+          <Link href={`/employees/${id}`} className="group flex items-center gap-2 sm:gap-3">
             <EmployeeAvatar
               employeeId={id}
               firstName={firstName}
               lastName={lastName}
               photoPath={photoPath}
-              className="shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all"
+              className="shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all shrink-0"
             />
-            <div>
-              <div className="font-medium text-foreground group-hover:text-emerald-600 transition-colors">
+            <div className="min-w-0">
+              <div className="font-medium text-foreground group-hover:text-emerald-600 transition-colors truncate">
                 {fullName}
               </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <User className="h-3 w-3" />
+                <User className="h-3 w-3 shrink-0" />
                 <span>ID: {id}</span>
+              </div>
+              {/* На мобиле показываем отдел и должность прямо здесь */}
+              <div className="sm:hidden mt-0.5 space-y-0.5">
+                {position?.name && (
+                  <div className="text-xs text-purple-600 truncate">{position.name}</div>
+                )}
+                {department?.name && (
+                  <div className="text-xs text-blue-600 truncate">{department.name}</div>
+                )}
               </div>
             </div>
           </Link>
@@ -314,6 +324,8 @@ export default function EmployeesPage() {
     {
       accessorKey: "position.name",
       header: "Должность",
+      size: 160,
+      meta: { className: "hidden sm:table-cell" },
       cell: ({ row }) =>
         row.original.position?.name ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1.5 text-xs font-medium text-purple-700">
@@ -327,6 +339,8 @@ export default function EmployeesPage() {
     {
       accessorKey: "department.name",
       header: "Отдел",
+      size: 150,
+      meta: { className: "hidden sm:table-cell" },
       cell: ({ row }) =>
         row.original.department?.name ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-100 to-cyan-100 px-3 py-1.5 text-xs font-medium text-blue-700">
@@ -340,6 +354,8 @@ export default function EmployeesPage() {
     {
       accessorKey: "email",
       header: "Контакты",
+      size: 160,
+      meta: { className: "hidden md:table-cell" },
       cell: ({ row }) => (
         <div className="space-y-1">
           {row.original.email ? (
@@ -365,41 +381,23 @@ export default function EmployeesPage() {
     {
       id: "documents",
       header: "Документы",
+      size: 100,
+      meta: { className: "hidden md:table-cell" },
       cell: ({ row }) => {
         const docs = row.original.documents ?? []
         const TOTAL = 10
-        const REQUIRED_TYPES = ["Паспорт", "СНИЛС", "ИНН", "Трудовой договор", "Приказ о приёме"]
+        const ALL_IDS = ["passport", "snils", "inn", "employment_contract", "employment_order", "diploma", "photo", "medical", "military_id", "other"]
+        const ALL_NAMES = ["Паспорт", "СНИЛС", "ИНН", "Трудовой договор", "Приказ о приёме", "Диплом / Аттестат", "Фотография 3x4", "Медицинская справка", "Военный билет", "Прочие документы"]
         const uploadedTypes = new Set(docs.map((d) => d.type))
-        const uploadedCount = ["Паспорт", "СНИЛС", "ИНН", "Трудовой договор", "Приказ о приёме",
-          "Диплом / Аттестат", "Фотография 3x4", "Медицинская справка", "Военный билет", "Прочие документы"]
-          .filter((t) => uploadedTypes.has(t)).length
-        const requiredDone = REQUIRED_TYPES.filter((t) => uploadedTypes.has(t)).length
+        const uploadedCount = ALL_IDS.filter((id, i) => uploadedTypes.has(id) || uploadedTypes.has(ALL_NAMES[i])).length
         const pct = Math.round((uploadedCount / TOTAL) * 100)
-
-        const color =
-          pct >= 80 ? "bg-emerald-500" :
-          pct >= 40 ? "bg-amber-400" :
-          "bg-red-400"
-
-        const textColor =
-          pct >= 80 ? "text-emerald-700" :
-          pct >= 40 ? "text-amber-700" :
-          "text-red-600"
-
+        const color = pct >= 80 ? "bg-emerald-500" : pct >= 40 ? "bg-amber-400" : "bg-red-400"
+        const textColor = pct >= 80 ? "text-emerald-700" : pct >= 40 ? "text-amber-700" : "text-red-600"
         return (
-          <div className="w-28 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className={`text-xs font-semibold ${textColor}`}>{pct}%</span>
-              <span className="text-xs text-muted-foreground">{uploadedCount}/{TOTAL}</span>
-            </div>
+          <div className="space-y-1">
+            <span className={`text-xs font-semibold ${textColor}`}>{pct}%</span>
             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${color}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <div className="text-xs text-muted-foreground">
-              обяз: {requiredDone}/{REQUIRED_TYPES.length}
+              <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
             </div>
           </div>
         )
@@ -408,6 +406,7 @@ export default function EmployeesPage() {
     {
       id: "actions",
       header: "",
+      size: 52,
       cell: ({ row }) => {
         const employee = row.original
 
@@ -564,7 +563,7 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <Button
+<Button
               variant="outline"
               size="sm"
               onClick={() => setShowFilters((v) => !v)}

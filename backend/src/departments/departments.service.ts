@@ -41,8 +41,16 @@ export class DepartmentsService {
     return this.prisma.department.findMany({
       where,
       include: { company: true },
-      orderBy: { name: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  async reorder(items: { id: number; sortOrder: number }[], user: RequestUser): Promise<void> {
+    await this.prisma.$transaction(
+      items.map(({ id, sortOrder }) =>
+        this.prisma.department.update({ where: { id }, data: { sortOrder } }),
+      ),
+    );
   }
 
   async findOne(id: number, user?: RequestUser): Promise<DepartmentWithCompany | null> {

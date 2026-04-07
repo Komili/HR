@@ -24,7 +24,7 @@ import { CheckinModule } from './checkin/checkin.module';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 300 }]),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
     AuthModule,
     UsersModule,

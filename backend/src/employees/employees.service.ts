@@ -52,22 +52,25 @@ export class EmployeesService {
     return employee;
   }
 
-  /** Формирует имя папки сотрудника: Фамилия_Имя_ID */
-  static employeeDirName(employee: { id: number; firstName: string; lastName: string }): string {
-    const sanitize = (s: string) => (s || '').replace(/[/\\:*?"<>|]/g, '_').trim();
-    return `${sanitize(employee.lastName)}_${sanitize(employee.firstName)}_${employee.id}`;
+  /**
+   * Имя папки сотрудника — только числовой ID.
+   * Никогда не меняется при переименовании сотрудника → нет дублей.
+   */
+  static employeeDirName(employee: { id: number }): string {
+    return String(employee.id);
+  }
+
+  /** Санитизация имени компании для файловой системы. */
+  static sanitizeCompany(value: string): string {
+    return (value || 'unknown').replace(/[/\\:*?"<>|]/g, '_').trim();
   }
 
   private async createEmployeeFolder(employee: EmployeeWithRelations): Promise<string> {
-    const companyFolder = this.sanitizeCompany(employee.company?.name || 'unknown');
+    const companyFolder = EmployeesService.sanitizeCompany(employee.company?.name || 'unknown');
     const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir, 'docs');
     await fs.mkdir(targetDir, { recursive: true });
     return targetDir;
-  }
-
-  private sanitizeCompany(value: string): string {
-    return value.replace(/[/\\:*?"<>|]/g, '_').trim();
   }
 
   async findAll(
@@ -91,12 +94,24 @@ export class EmployeesService {
     where.status = { notIn: ['Ожидает', 'Отклонён'] };
 
     if (search) {
-      const variants = searchVariants(search);
-      where.OR = variants.flatMap((v) => [
-        { firstName: { contains: v } },
-        { lastName: { contains: v } },
-        { patronymic: { contains: v } },
-      ]);
+      const words = search.trim().split(/\s+/).filter(Boolean);
+      const wordConditions = words.map((word) => {
+        const variants = searchVariants(word);
+        return {
+          OR: variants.flatMap((v) => [
+            { firstName: { contains: v } },
+            { lastName: { contains: v } },
+            { patronymic: { contains: v } },
+            { latinFirstName: { contains: v } },
+            { latinLastName: { contains: v } },
+          ]),
+        };
+      });
+      if (wordConditions.length === 1) {
+        where.OR = wordConditions[0].OR;
+      } else {
+        where.AND = [...(where.AND as any[] || []), ...wordConditions];
+      }
     }
 
     const [data, total] = await this.prisma.$transaction([
@@ -110,12 +125,24 @@ export class EmployeesService {
           company: true,
           documents: { select: { type: true } },
         },
-        orderBy: { id: 'desc' },
+        orderBy: [
+          { department: { sortOrder: 'asc' } },
+          { sortOrder: 'asc' },
+          { id: 'asc' },
+        ],
       }),
       this.prisma.employee.count({ where }),
     ]);
 
     return { data, total };
+  }
+
+  async reorderEmployees(items: { id: number; sortOrder: number }[]): Promise<void> {
+    await this.prisma.$transaction(
+      items.map(({ id, sortOrder }) =>
+        this.prisma.employee.update({ where: { id }, data: { sortOrder } }),
+      ),
+    );
   }
 
   async findOne(id: number, user?: RequestUser): Promise<EmployeeWithRelations | null> {
@@ -186,7 +213,7 @@ export class EmployeesService {
     if (!employee) throw new NotFoundException('Сотрудник не найден');
 
     // Создаём целевую папку
-    const companyFolder = this.sanitizeCompany(employee.company?.name || 'unknown');
+    const companyFolder = EmployeesService.sanitizeCompany(employee.company?.name || 'unknown');
     const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir);
     await fs.mkdir(targetDir, { recursive: true });
@@ -353,13 +380,25 @@ export class EmployeesService {
     const where: Prisma.EmployeeWhereInput = {};
 
     if (search) {
-      const variants = searchVariants(search);
-      where.OR = variants.flatMap((v) => [
-        { firstName: { contains: v } },
-        { lastName: { contains: v } },
-        { patronymic: { contains: v } },
-        { company: { name: { contains: v } } },
-      ]);
+      const words = search.trim().split(/\s+/).filter(Boolean);
+      const wordConditions = words.map((word) => {
+        const variants = searchVariants(word);
+        return {
+          OR: variants.flatMap((v) => [
+            { firstName: { contains: v } },
+            { lastName: { contains: v } },
+            { patronymic: { contains: v } },
+            { latinFirstName: { contains: v } },
+            { latinLastName: { contains: v } },
+            { company: { name: { contains: v } } },
+          ]),
+        };
+      });
+      if (wordConditions.length === 1) {
+        where.OR = wordConditions[0].OR;
+      } else {
+        where.AND = [...(where.AND as any[] || []), ...wordConditions];
+      }
     }
 
     const [data, total] = await this.prisma.$transaction([
@@ -373,7 +412,11 @@ export class EmployeesService {
           company: true,
           documents: { select: { type: true } },
         },
-        orderBy: { id: 'desc' },
+        orderBy: [
+          { department: { sortOrder: 'asc' } },
+          { sortOrder: 'asc' },
+          { id: 'asc' },
+        ],
       }),
       this.prisma.employee.count({ where }),
     ]);

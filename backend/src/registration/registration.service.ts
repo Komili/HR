@@ -72,7 +72,7 @@ export class RegistrationService {
     photo: Express.Multer.File,
     companyName: string,
   ) {
-    const companyFolder = companyName.replace(/[/\\:*?"<>|]/g, '_').trim();
+    const companyFolder = EmployeesService.sanitizeCompany(companyName);
     const employeeDir = EmployeesService.employeeDirName(employee);
     const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir);
     await fs.mkdir(targetDir, { recursive: true });

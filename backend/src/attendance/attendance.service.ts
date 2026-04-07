@@ -75,7 +75,11 @@ export class AttendanceService implements OnModuleInit {
           },
         },
       },
-      orderBy: { employee: { lastName: 'asc' } },
+      orderBy: [
+        { employee: { department: { sortOrder: 'asc' } } },
+        { employee: { sortOrder: 'asc' } },
+        { employee: { lastName: 'asc' } },
+      ],
     });
 
     return attendances.map((a) => this.mapAttendance(a));
@@ -99,7 +103,12 @@ export class AttendanceService implements OnModuleInit {
           },
         },
       },
-      orderBy: [{ employee: { lastName: 'asc' } }, { date: 'asc' }],
+      orderBy: [
+        { employee: { department: { sortOrder: 'asc' } } },
+        { employee: { sortOrder: 'asc' } },
+        { employee: { lastName: 'asc' } },
+        { date: 'asc' },
+      ],
     });
 
     return attendances.map((a) => this.mapAttendance(a));
