@@ -30,3 +30,6 @@ skud.sql
 storage/
 backups/
 *.tmp_token.json
+hrms_export.sql
+hrms_migrate_*.tar.gz
+docker/nginx/certs/
