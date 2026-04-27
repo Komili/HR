@@ -28,4 +28,5 @@ coverage/
 ### project specific
 skud.sql
 storage/
+backups/
 *.tmp_token.json
