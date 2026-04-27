@@ -19,6 +19,37 @@ const path = require('path');
 
 const prisma = new PrismaClient();
 
+// Транслитерация кириллица → латиница (копия из common/transliterate.ts)
+const CYR_TO_LAT = [
+  [/а/g,'a'],[/А/g,'A'],[/б/g,'b'],[/Б/g,'B'],[/в/g,'v'],[/В/g,'V'],
+  [/г/g,'g'],[/Г/g,'G'],[/д/g,'d'],[/Д/g,'D'],[/е/g,'e'],[/Е/g,'E'],
+  [/ё/g,'yo'],[/Ё/g,'Yo'],[/ж/g,'zh'],[/Ж/g,'Zh'],[/з/g,'z'],[/З/g,'Z'],
+  [/и/g,'i'],[/И/g,'I'],[/й/g,'y'],[/Й/g,'Y'],[/к/g,'k'],[/К/g,'K'],
+  [/л/g,'l'],[/Л/g,'L'],[/м/g,'m'],[/М/g,'M'],[/н/g,'n'],[/Н/g,'N'],
+  [/о/g,'o'],[/О/g,'O'],[/п/g,'p'],[/П/g,'P'],[/р/g,'r'],[/Р/g,'R'],
+  [/с/g,'s'],[/С/g,'S'],[/т/g,'t'],[/Т/g,'T'],[/у/g,'u'],[/У/g,'U'],
+  [/ф/g,'f'],[/Ф/g,'F'],[/х/g,'kh'],[/Х/g,'Kh'],[/ц/g,'ts'],[/Ц/g,'Ts'],
+  [/ч/g,'ch'],[/Ч/g,'Ch'],[/ш/g,'sh'],[/Ш/g,'Sh'],[/щ/g,'sch'],[/Щ/g,'Sch'],
+  [/ъ/g,''],[/Ъ/g,''],[/ы/g,'y'],[/Ы/g,'Y'],[/ь/g,''],[/Ь/g,''],
+  [/э/g,'e'],[/Э/g,'E'],[/ю/g,'yu'],[/Ю/g,'Yu'],[/я/g,'ya'],[/Я/g,'Ya'],
+  [/ғ/g,'gh'],[/Ғ/g,'Gh'],[/қ/g,'q'],[/Қ/g,'Q'],[/ҳ/g,'h'],[/Ҳ/g,'H'],
+  [/ӣ/g,'i'],[/Ӣ/g,'I'],[/ӯ/g,'u'],[/Ӯ/g,'U'],[/ҷ/g,'j'],[/Ҷ/g,'J'],
+];
+
+function toFolderName(value) {
+  if (!value) return 'unknown';
+  let result = value;
+  for (const [pattern, replacement] of CYR_TO_LAT) {
+    result = result.replace(pattern, replacement);
+  }
+  return result
+    .replace(/\s+/g, '_')
+    .replace(/[/\\:*?"<>|]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .trim() || 'unknown';
+}
+
 // Парсер SQL (из import-skud.js)
 function parseSqlInsert(sql, tableName) {
   const insertRegex = new RegExp(
@@ -174,7 +205,7 @@ async function main() {
 
     // Создаём путь: storage/companies/{CompanyName}/employees/{id}/
     // Папка = только ID сотрудника — никогда не дублируется при смене имени
-    const companyName = (hrEmp.company?.name || 'unknown').replace(/[/\\:*?"<>|]/g, '_').trim();
+    const companyName = toFolderName(hrEmp.company?.name || 'unknown');
     const empFolder = String(hrEmp.id);
     const destDir = path.join(process.cwd(), 'storage', 'companies', companyName, 'employees', empFolder);
     const docsDir = path.join(destDir, 'docs');

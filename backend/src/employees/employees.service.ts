@@ -6,7 +6,7 @@ import { createReadStream, existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import sharp = require('sharp');
 import { RequestUser } from '../auth/jwt.strategy';
-import { searchVariants } from '../common/transliterate';
+import { searchVariants, toFolderName } from '../common/transliterate';
 
 type EmployeeWithRelations = Prisma.EmployeeGetPayload<{
   include: { department: true; position: true; company: true; documents: { select: { type: true } } };
@@ -60,9 +60,9 @@ export class EmployeesService {
     return String(employee.id);
   }
 
-  /** Санитизация имени компании для файловой системы. */
+  /** Санитизация имени компании для файловой системы: транслитерация + безопасные символы. */
   static sanitizeCompany(value: string): string {
-    return (value || 'unknown').replace(/[/\\:*?"<>|]/g, '_').trim();
+    return toFolderName(value || 'unknown');
   }
 
   private async createEmployeeFolder(employee: EmployeeWithRelations): Promise<string> {

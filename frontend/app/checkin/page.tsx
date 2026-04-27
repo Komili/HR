@@ -28,6 +28,7 @@ function CheckinContent() {
   const [direction, setDirection] = React.useState<"IN" | "OUT">("IN")
   const [errorMsg, setErrorMsg] = React.useState("")
   const [result, setResult] = React.useState<{ employeeName: string; timestamp: string; direction: string } | null>(null)
+  const [countdown, setCountdown] = React.useState(0)
 
   const videoRef = React.useRef<HTMLVideoElement>(null)
   const canvasRef = React.useRef<HTMLCanvasElement>(null)
@@ -115,12 +116,27 @@ function CheckinContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.message || "Ошибка")
       setResult(data)
+      setCountdown(4)
       setStep("success")
     } catch (e: any) {
       setErrorMsg(e.message || "Ошибка сервера")
       setStep("fail")
     }
   }
+
+  // Автовозврат к списку после успешной отметки
+  React.useEffect(() => {
+    if (step !== "success") return
+    if (countdown <= 0) {
+      setStep("select")
+      setSelected(null)
+      setSearch("")
+      setResult(null)
+      return
+    }
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [step, countdown])
 
   // Отфильтрованные сотрудники
   const filtered = employees.filter(e => {
@@ -154,6 +170,12 @@ function CheckinContent() {
         {new Date(result.timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false })}
       </p>
       <p className="text-slate-400 text-sm mt-4">{officeName}</p>
+      <button
+        onClick={() => setCountdown(0)}
+        className="mt-6 px-6 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold text-sm active:scale-95 transition-transform"
+      >
+        Готово ({countdown})
+      </button>
     </Screen>
   )
 
