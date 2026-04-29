@@ -3,19 +3,25 @@
  * Запускать с локального ПК где работает relay-агент (доступ к 192.168.0.x).
  *
  * Использование:
- *   node configure-isup.js <ip> <login> <password> [server_ip] [server_port]
+ *   node configure-isup.js <ip> <login> <password> [server_ip] [server_port] [enc_key]
  *
- * Пример:
- *   node configure-isup.js 192.168.0.160 admin Admin@123 185.177.0.140 7660
+ * Пример (только посмотреть конфиг):
+ *   node configure-isup.js 192.168.0.160 admin qwerty321.
+ *
+ * Пример (обновить IP + отключить шифрование):
+ *   node configure-isup.js 192.168.0.160 admin qwerty321. 185.177.0.140 7660 ""
+ *
+ * Пример (обновить IP, сохранить ключ):
+ *   node configure-isup.js 192.168.0.160 admin qwerty321. 185.177.0.140 7660 qwerty321.
  */
 
 const http = require('http');
 const crypto = require('crypto');
 
-const [,, DEVICE_IP, DEVICE_LOGIN, DEVICE_PASSWORD, SERVER_IP, SERVER_PORT] = process.argv;
+const [,, DEVICE_IP, DEVICE_LOGIN, DEVICE_PASSWORD, SERVER_IP, SERVER_PORT, NEW_ENC_KEY] = process.argv;
 
 if (!DEVICE_IP || !DEVICE_LOGIN || !DEVICE_PASSWORD) {
-  console.error('Использование: node configure-isup.js <ip> <login> <password> [server_ip] [server_port]');
+  console.error('Использование: node configure-isup.js <ip> <login> <password> [server_ip] [server_port] [enc_key]');
   process.exit(1);
 }
 
@@ -54,6 +60,7 @@ function request(method, path, body, authHeader) {
         ...(authHeader ? { Authorization: authHeader } : {}),
         ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}),
       },
+      timeout: 8000,
     };
     const req = http.request(opts, res => {
       let data = '';
@@ -61,20 +68,17 @@ function request(method, path, body, authHeader) {
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
     });
     req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
     if (body) req.write(body);
     req.end();
   });
 }
 
 async function apiCall(method, path, body) {
-  // Первый запрос — получаем WWW-Authenticate
   const first = await request(method, path, body, null);
-  if (first.status !== 401) {
-    return first;
-  }
+  if (first.status !== 401) return first;
   const wwwAuth = first.headers['www-authenticate'] || '';
   if (!wwwAuth) return first;
-
   const authHeader = digestAuth(wwwAuth, method, path, DEVICE_LOGIN, DEVICE_PASSWORD);
   return request(method, path, body, authHeader);
 }
@@ -82,72 +86,84 @@ async function apiCall(method, path, body) {
 // ─── Основная логика ──────────────────────────────────────────────────────────
 
 async function main() {
-  const endpoints = [
-    '/ISAPI/System/Network/EHome',
-    '/ISAPI/System/Network/Mobilelink',
-    '/ISAPI/AccessControl/RemoteControl/configuration',
-  ];
-
   console.log(`\n═══ Hikvision ISUP/EHome конфигуратор ═══`);
   console.log(`Устройство: ${DEVICE_IP} (логин: ${DEVICE_LOGIN})\n`);
 
-  let found = null;
+  // Все известные эндпоинты ISUP/EHome на DS-K устройствах
+  const endpoints = [
+    '/ISAPI/System/Network/EHome',
+    '/ISAPI/System/Network/EHome/1',
+    '/ISAPI/System/Network/EHomeList',
+    '/ISAPI/System/Network/Mobilelink',
+    '/ISAPI/System/Network/remoteAccessConf',
+  ];
+
+  const found = [];
   for (const ep of endpoints) {
-    console.log(`→ Пробуем GET ${ep} ...`);
-    const res = await apiCall('GET', ep, null);
-    console.log(`  Ответ: HTTP ${res.status}`);
-    if (res.status === 200) {
-      console.log(`  ✅ Найден! Текущая конфигурация:\n`);
-      console.log(res.body);
-      found = ep;
-      break;
-    } else if (res.status !== 404) {
-      console.log(`  Тело: ${res.body.slice(0, 200)}`);
+    try {
+      const res = await apiCall('GET', ep, null);
+      if (res.status === 200) {
+        console.log(`✅ GET ${ep} → HTTP 200`);
+        console.log(res.body);
+        console.log('─'.repeat(60));
+        found.push({ ep, xml: res.body });
+      } else if (res.status !== 404) {
+        console.log(`⚠️  GET ${ep} → HTTP ${res.status}: ${res.body.slice(0, 120)}`);
+      }
+    } catch (e) {
+      // Тихо пропускаем недоступные эндпоинты
     }
   }
 
-  if (!found) {
-    console.log('\n❌ Не удалось найти ISUP/EHome конфигурацию.');
-    console.log('Попробуйте через веб-интерфейс устройства или SADP.');
+  if (found.length === 0) {
+    console.log('❌ Ни один ISUP эндпоинт не найден.');
     return;
   }
 
   if (!SERVER_IP) {
-    console.log('\nЧтобы обновить настройки, запустите с параметрами server_ip и server_port:');
-    console.log(`  node configure-isup.js ${DEVICE_IP} ${DEVICE_LOGIN} ${DEVICE_PASSWORD} 185.177.0.140 7660`);
+    console.log('\nЧтобы обновить настройки, запустите:');
+    console.log(`  node configure-isup.js ${DEVICE_IP} ${DEVICE_LOGIN} ${DEVICE_PASSWORD} 185.177.0.140 7660 ""`);
+    console.log('\n  Последний аргумент "" = отключить шифрование');
+    console.log('  Или укажи текущий ключ: ... 7660 qwerty321.');
     return;
   }
 
-  // Определяем правильный XML для отключения шифрования
-  let newXml;
-  const cur = (await apiCall('GET', found, null)).body;
+  const encKey = NEW_ENC_KEY !== undefined ? NEW_ENC_KEY : DEVICE_PASSWORD;
+  const targetPort = SERVER_PORT || '7660';
 
-  if (found === '/ISAPI/System/Network/EHome') {
-    // Пробуем разные варианты XML для DS-K серии
-    newXml = cur
-      .replace(/<serverAddr>[^<]*<\/serverAddr>/, `<serverAddr>${SERVER_IP}</serverAddr>`)
-      .replace(/<portNo>[^<]*<\/portNo>/, `<portNo>${SERVER_PORT || 7660}</portNo>`)
-      .replace(/<encryptType>[^<]*<\/encryptType>/, '<encryptType>none</encryptType>')
-      .replace(/<enable_encrypt>[^<]*<\/enable_encrypt>/, '<enable_encrypt>false</enable_encrypt>')
-      .replace(/<secretKey>[^<]*<\/secretKey>/, '<secretKey/>')
-      .replace(/<EncryptKey>[^<]*<\/EncryptKey>/, '<EncryptKey/>')
-      .replace(/<key>[^<]*<\/key>/, '<key/>');
-  } else {
-    newXml = cur;
-  }
+  // Обновляем каждый найденный эндпоинт
+  for (const { ep, xml } of found) {
+    console.log(`\n→ Обновляем ${ep} ...`);
+    console.log(`  IP: ${SERVER_IP}:${targetPort}, key: "${encKey}"`);
 
-  console.log(`\n→ Отправляем обновлённую конфигурацию на PUT ${found} ...`);
-  console.log('Новый XML:\n', newXml);
+    // Собираем новый XML — сохраняем deviceID из текущего ответа
+    const deviceIDMatch = xml.match(/<deviceID>([^<]*)<\/deviceID>/);
+    const deviceID = deviceIDMatch ? deviceIDMatch[1] : 'FAVZInside';
 
-  const putRes = await apiCall('PUT', found, newXml);
-  console.log(`\nОтвет: HTTP ${putRes.status}`);
-  console.log(putRes.body.slice(0, 500));
+    const newXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Ehome version="2.0" xmlns="http://www.isapi.org/ver20/XMLSchema">
+<enabled>true</enabled>
+<addressingFormatType>ipaddress</addressingFormatType>
+<ipAddress>${SERVER_IP}</ipAddress>
+<portNo>${targetPort}</portNo>
+<deviceID>${deviceID}</deviceID>
+<key>${encKey}</key>
+</Ehome>`;
 
-  if (putRes.status === 200 || putRes.status === 201) {
-    console.log('\n✅ Конфигурация обновлена! Устройство должно переподключиться к серверу без шифрования.');
-    console.log('Следите за логами: docker logs hrms_backend -f | grep ISUP');
-  } else {
-    console.log('\n⚠️  Не удалось обновить. Попробуйте вручную через веб-интерфейс устройства.');
+    console.log('\nОтправляем XML:');
+    console.log(newXml);
+
+    const putRes = await apiCall('PUT', ep, newXml);
+    console.log(`\nОтвет: HTTP ${putRes.status}`);
+    console.log(putRes.body.slice(0, 500));
+
+    if (putRes.status === 200 || putRes.status === 201) {
+      console.log(`\n✅ ${ep} обновлён успешно!`);
+      console.log('Устройство должно переподключиться через несколько секунд.');
+      console.log(`Следите: docker logs hrms_backend -f | findstr ISUP`);
+    } else {
+      console.log(`\n⚠️  Ошибка обновления ${ep}.`);
+    }
   }
 }
 
