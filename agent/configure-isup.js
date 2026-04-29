@@ -9,10 +9,10 @@
  *   node configure-isup.js 192.168.0.160 admin qwerty321.
  *
  * Пример (обновить IP + отключить шифрование):
- *   node configure-isup.js 192.168.0.160 admin qwerty321. 185.177.0.140 7660 ""
+ *   node configure-isup.js 192.168.0.160 admin qwerty321. 185.125.200.112 7660 ""
  *
  * Пример (обновить IP, сохранить ключ):
- *   node configure-isup.js 192.168.0.160 admin qwerty321. 185.177.0.140 7660 qwerty321.
+ *   node configure-isup.js 192.168.0.160 admin qwerty321. 185.125.200.112 7660 qwerty321.
  */
 
 const http = require('http');
@@ -122,7 +122,7 @@ async function main() {
 
   if (!SERVER_IP) {
     console.log('\nЧтобы обновить настройки, запустите:');
-    console.log(`  node configure-isup.js ${DEVICE_IP} ${DEVICE_LOGIN} ${DEVICE_PASSWORD} 185.177.0.140 7660 qwerty321.`);
+    console.log(`  node configure-isup.js ${DEVICE_IP} ${DEVICE_LOGIN} ${DEVICE_PASSWORD} 185.125.200.112 7660 qwerty321.`);
     console.log('\n  ВАЖНО: Hikvision DS-K не принимает пустой ключ — всегда указывай ключ шифрования!');
     console.log('  Ключ должен совпадать с ISUP_ENC_KEY в .env на сервере.');
     return;
