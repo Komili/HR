@@ -122,13 +122,21 @@ async function main() {
 
   if (!SERVER_IP) {
     console.log('\nЧтобы обновить настройки, запустите:');
-    console.log(`  node configure-isup.js ${DEVICE_IP} ${DEVICE_LOGIN} ${DEVICE_PASSWORD} 185.177.0.140 7660 ""`);
-    console.log('\n  Последний аргумент "" = отключить шифрование');
-    console.log('  Или укажи текущий ключ: ... 7660 qwerty321.');
+    console.log(`  node configure-isup.js ${DEVICE_IP} ${DEVICE_LOGIN} ${DEVICE_PASSWORD} 185.177.0.140 7660 qwerty321.`);
+    console.log('\n  ВАЖНО: Hikvision DS-K не принимает пустой ключ — всегда указывай ключ шифрования!');
+    console.log('  Ключ должен совпадать с ISUP_ENC_KEY в .env на сервере.');
     return;
   }
 
   const encKey = NEW_ENC_KEY !== undefined ? NEW_ENC_KEY : DEVICE_PASSWORD;
+
+  if (!encKey) {
+    console.log('\n⚠️  ВНИМАНИЕ: Пустой ключ шифрования!');
+    console.log('  Hikvision DS-K серия требует непустой ключ — PUT скорее всего завершится ошибкой.');
+    console.log('  Используй текущий ключ устройства, например:');
+    console.log(`  node configure-isup.js ${DEVICE_IP} ${DEVICE_LOGIN} ${DEVICE_PASSWORD} ${SERVER_IP} ${SERVER_PORT || '7660'} qwerty321.`);
+    console.log('  Продолжаем попытку...\n');
+  }
   const targetPort = SERVER_PORT || '7660';
 
   // Обновляем каждый найденный эндпоинт

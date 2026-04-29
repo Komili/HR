@@ -451,21 +451,35 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
       `✅ EHome зарегистрировано: serial=${deviceId} model=${model} isupId=${isupId} IP=${state.remoteAddr}`,
     );
 
-    // Register ACK с AES-шифрованием (EHome2.0 аутентификация)
-    // Ключ: ISUP_ENC_KEY из env (напр. "qwerty321."), дополненный до 16 байт
+    // EHome2.0 Register ACK
+    // С ключом: AES-128-ECB(challenge32, key) — доказываем знание ключа
+    // Без ключа: plain timestamp
     const encKeyStr = process.env.ISUP_ENC_KEY || '';
     let ack: Buffer;
-    if (false) {
-      // Заглушка: место для правильной реализации шифрования EHome2.0
-      // Требует Hikvision EHome SDK документацию для корректного алгоритма
+
+    if (encKeyStr && offset >= 42 && data.length >= offset + 32) {
+      // Ключ дополняем до 16 байт нулями (стандарт Hikvision)
+      const keyBuf = Buffer.alloc(16);
+      Buffer.from(encKeyStr).copy(keyBuf);
+      // 32 байта challenge (после парсинга ISUP ID)
+      const challenge32 = data.slice(offset, offset + 32);
+      const cipher = crypto.createCipheriv('aes-128-ecb', keyBuf, null);
+      cipher.setAutoPadding(false);
+      const response = Buffer.concat([cipher.update(challenge32), cipher.final()]);
+      // type=0x01, sub=0x02 (server response), data_len=32, [32 bytes AES]
+      ack = Buffer.alloc(4 + 32);
+      ack[0] = 0x01; ack[1] = 0x02;
+      ack.writeUInt16BE(32, 2);
+      response.copy(ack, 4);
+      this.logger.debug(`EHome ACK AES-ECB key="${encKeyStr}" challenge=${challenge32.toString('hex').slice(0,20)}...`);
     } else {
-      // Без ключа — простой ACK
+      // Без шифрования: timestamp
       ack = Buffer.alloc(8);
-      ack[0] = 0x01; ack[1] = 0x00;
+      ack[0] = 0x01; ack[1] = 0x02;
       ack.writeUInt16BE(4, 2);
       ack.writeUInt32BE(Math.floor(Date.now() / 1000), 4);
+      this.logger.debug(`EHome ACK plain timestamp: ${ack.toString('hex')}`);
     }
-    this.logger.debug(`EHome ACK (${encKeyStr ? 'AES' : 'plain'}): ${ack.toString('hex')}`);
     try { state.socket.write(ack); } catch {}
 
     // Периодический heartbeat от сервера (keep-alive, каждые 30 секунд)
