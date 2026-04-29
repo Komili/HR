@@ -308,6 +308,28 @@ export type Door = {
   grantedAt?: string | null;
 };
 
+export type HikvisionDevice = {
+  id: number;
+  macAddress: string;
+  lastSeenIp: string;
+  externalIp: string | null;
+  deviceName: string | null;
+  status: 'pending' | 'active';
+  companyId: number | null;
+  company?: { id: number; name: string; shortName: string | null } | null;
+  officeName: string | null;
+  direction: 'IN' | 'OUT' | null;
+  login: string | null;
+  // password is never returned from API
+  lastSeenAt: string;
+  createdAt: string;
+  updatedAt: string;
+  // set when fetched via getEmployeeDevices
+  hasAccess?: boolean;
+  grantedBy?: string | null;
+  grantedAt?: string | null;
+};
+
 export type HoldingStats = {
   totalCompanies: number;
   totalEmployees: number;

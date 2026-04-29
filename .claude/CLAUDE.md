@@ -34,6 +34,7 @@ Multi-tenant HR management web application for a holding company with 9 companie
 - Frontend: 7373 (external) / 7070 (internal)
 - Nginx HTTP: **7474**
 - Nginx HTTPS: **7443**
+- ISUP/EHome TCP: **7660** (Hikvision устройства → сервер, напрямую)
 
 ## Test Credentials
 
@@ -89,8 +90,12 @@ HR/
 │   │   ├── salary/            # (скрыто в UI) Salary calculation
 │   │   ├── registration/      # Self-registration tokens + approval
 │   │   ├── checkin/           # QR Check-in (без Face ID оборудования)
-│   │   ├── doors/             # Управление дверями Hikvision
-│   │   ├── hikvision/         # Webhook от Hikvision устройств
+│   │   ├── doors/             # Управление дверями Hikvision (relay-агент)
+│   │   ├── hikvision/         # Webhook + ISUP сервер + управление устройствами
+│   │   │   ├── hikvision.service.ts        # Бизнес-логика СКУД
+│   │   │   ├── hikvision.controller.ts     # REST API
+│   │   │   ├── hikvision-isup.service.ts   # TCP сервер ISUP5.0/EHome2.0 (:7660)
+│   │   │   └── hikvision.module.ts
 │   │   ├── agent/             # Relay-агент для Face ID команд
 │   │   ├── telegram/          # Telegram уведомления
 │   │   ├── users/             # User management
@@ -131,6 +136,11 @@ HR/
 │       ├── types.ts           # TypeScript типы
 │       └── utils.ts           # Утилиты
 └── docker/nginx/              # Nginx config (HTTP + HTTPS)
+agent/
+├── relay-agent.js             # Relay-агент (polling + ISAPI к устройствам)
+├── configure-isup.js          # Скрипт настройки ISUP/EHome на устройстве
+├── test-connection.js         # Тест подключения к устройствам
+└── package.json
 ```
 
 ## Database Models (Prisma)
@@ -151,6 +161,9 @@ HR/
 - **Door** — конфигурация дверей Hikvision (ip, port, deviceSerial)
 - **DoorAccess** — доступы сотрудников к дверям
 - **DoorCommand** — очередь команд для relay-агента (GRANT/REVOKE)
+- **HikvisionDevice** — обнаруженные Hikvision устройства (mac, ip, lastSeenAt, companyId)
+- **HikvisionAccess** — доступы сотрудников к HikvisionDevice (employeeId, deviceId)
+- **HikvisionCommand** — очередь команд relay-агента для устройств (action: GRANT|REVOKE, status: pending|processing|done|failed)
 - **Salary** — (скрыто в UI) расчёт зарплаты по месяцам
 - **AuditLog** — журнал всех операций в системе
 
@@ -229,7 +242,7 @@ All endpoints prefixed with `/api`:
 - POST /api/checkin/event — Записать событие check-in/out
 - GET /api/checkin/admin/qr — QR данные для офиса (JWT required)
 
-### Doors (СКУД Hikvision)
+### Doors (СКУД — relay-агент, старый подход)
 - GET /api/doors?companyId=X — Список дверей
 - POST /api/doors — Создать дверь
 - PATCH /api/doors/:id — Обновить
@@ -239,14 +252,28 @@ All endpoints prefixed with `/api`:
 - POST /api/doors/:id/sync-all — Синхронизировать всех пользователей
 
 ### Agent (Relay-агент для Hikvision)
-- GET /api/agent/commands — Получить команды (агент polling)
-- PATCH /api/agent/commands/:id — Отчёт о выполнении
+- GET /api/agent/commands — Получить DoorCommand команды (агент polling)
+- PATCH /api/agent/commands/:id — Отчёт о выполнении DoorCommand
+- GET /api/agent/hik-commands — Получить HikvisionCommand (GRANT/REVOKE устройств)
+- PATCH /api/agent/hik-commands/:id — Отчёт о выполнении HikvisionCommand
 - GET /api/agent/photo/:employeeId — Фото для Face ID
 - GET /api/agent/doors — Список дверей агента
 - GET /api/agent/status — Статус агента
 
-### Hikvision Webhook
-- POST /api/hikvision/event — Webhook от устройств (без JWT, IP whitelist)
+### Hikvision (устройства + ISUP)
+- POST /api/hikvision/event — Webhook от устройств (без JWT, ?token=)
+- GET /api/hikvision/devices — Список обнаруженных устройств (суперадмин)
+- GET /api/hikvision/devices/active?companyId=X — Активные устройства компании
+- PATCH /api/hikvision/devices/:id/bind — Привязать устройство к компании
+- PATCH /api/hikvision/devices/:id/unbind — Отвязать устройство
+- DELETE /api/hikvision/devices/:id — Удалить устройство
+- GET /api/hikvision/devices/employee/:employeeId — Устройства сотрудника
+- POST /api/hikvision/devices/:id/grant/:employeeId — Выдать доступ
+- DELETE /api/hikvision/devices/:id/revoke/:employeeId — Отозвать доступ
+- GET /api/hikvision/devices/:id/ping — Пинг устройства
+- GET /api/hikvision/devices/:id/check/:employeeId — Проверить доступ + статус синхронизации
+- GET /api/hikvision/isup/status — Статус ISUP/EHome подключений (суперадмин)
+- GET /api/hikvision/test?token= — Тест Telegram уведомления
 
 ### Users (суперадмин only)
 - GET /api/users — Список пользователей
@@ -354,12 +381,58 @@ NEXT_PUBLIC_API_URL=http://backend:7070
 TELEGRAM_TOKEN=...
 TELEGRAM_CHAT_IDS=...   # через запятую
 
-# Hikvision СКУД (JSON массив устройств)
-HIKVISION_DEVICES=[{"name":"...","ip":"...","port":80,"username":"admin","password":"..."}]
+# Hikvision СКУД webhook
+HIKVISION_WEBHOOK_TOKEN=...   # токен для webhook от устройств (?token=)
 
-# Relay-агент (Face ID команды)
+# Hikvision ISUP/EHome TCP сервер (порт 7660)
+ISUP_PORT=7660
+ISUP_ENC_KEY=...    # ключ шифрования ISUP (если настроен на устройстве)
+
+# Relay-агент (Face ID команды через локальную сеть)
 AGENT_SECRET_TOKEN=...  # токен для аутентификации агента
 ```
+
+## Hikvision СКУД — Архитектура
+
+### Два подхода к управлению устройствами
+
+**1. Relay-агент (работает, основной)**
+- ПК в локальной сети запускает `agent/relay-agent.js`
+- Агент polling-ит `/api/agent/hik-commands` каждые 5 секунд
+- Сервер создаёт `HikvisionCommand` (action=GRANT|REVOKE, status=pending)
+- Агент выполняет ISAPI вызовы напрямую к устройству (192.168.0.x)
+- Отчитывается через `PATCH /api/agent/hik-commands/:id`
+
+**2. ISUP/EHome TCP сервер (порт 7660, WIP)**
+- `HikvisionIsupService` — TCP сервер, слушает на :7660
+- Устройство само подключается к серверу (обходит NAT)
+- Поддерживает: ISUP5.0 (magic 0x20) и EHome2.0 (0x01 0x01, DS-K серия)
+- Проблема: DS-K1T342MFX-E1 требует проприетарный EHome2.0 challenge-response
+  (шифрование с "Ключ шифрования") — протокол не задокументирован публично
+- Для включения ISUP без шифрования: запустить `agent/configure-isup.js`
+
+### configure-isup.js
+```bash
+# На локальном ПК с relay-агентом:
+# Посмотреть текущий конфиг ISUP на устройстве
+node configure-isup.js 192.168.0.160 admin <пароль>
+
+# Попробовать отключить шифрование + обновить адрес сервера
+node configure-isup.js 192.168.0.160 admin <пароль> 185.177.0.140 7660
+```
+
+### Поток данных посещаемости
+```
+Hikvision устройство → HTTP Webhook → POST /api/hikvision/event
+                     → HikvisionService.handleEvent()
+                     → AttendanceEvent (source=HIKVISION)
+                     → Telegram уведомление (опоздание, ранний уход)
+```
+
+### HikvisionDevice vs Door
+- **Door** — старая модель (ip, port, login, password). Relay-агент через `/api/agent/commands`
+- **HikvisionDevice** — новая модель (mac, lastSeenIp, companyId). Через `/api/agent/hik-commands`
+- HikvisionDevice автоматически создаётся при первом webhook от устройства
 
 ## Important Notes
 - Next.js 15 uses Promise-based params — use `React.use(params)` in client components

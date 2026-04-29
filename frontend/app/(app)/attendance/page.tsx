@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import {
   getAttendance,
+  getAttendanceLatestDate,
   getAttendanceRange,
   correctAttendance,
   registerAttendanceEvent,
@@ -105,6 +106,7 @@ export default function AttendancePage() {
     const now = new Date()
     return now.toISOString().split("T")[0]
   })
+  const [latestDate, setLatestDate] = React.useState<string | null>(null)
 
   // Correction dialog
   const [correcting, setCorrecting] = React.useState<AttendanceSummary | null>(null)
@@ -159,6 +161,12 @@ export default function AttendancePage() {
   React.useEffect(() => {
     loadData()
   }, [loadData])
+
+  React.useEffect(() => {
+    getAttendanceLatestDate()
+      .then((r) => { if (r.date) setLatestDate(r.date) })
+      .catch(() => {})
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filtered data by search
   const filteredData = React.useMemo(() => {
@@ -728,9 +736,19 @@ export default function AttendancePage() {
                   {filteredData.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="py-12 text-center">
-                        <div className="flex flex-col items-center text-muted-foreground">
-                          <Clock className="h-12 w-12 text-gray-300 mb-3" />
+                        <div className="flex flex-col items-center text-muted-foreground gap-2">
+                          <Clock className="h-12 w-12 text-gray-300 mb-1" />
                           <span className="text-sm">Нет данных за выбранную дату</span>
+                          {latestDate && latestDate !== selectedDate && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-1 text-xs"
+                              onClick={() => setSelectedDate(latestDate)}
+                            >
+                              Перейти к последним данным ({new Date(latestDate + "T00:00:00").toLocaleDateString("ru-RU")})
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

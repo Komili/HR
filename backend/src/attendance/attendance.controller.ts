@@ -34,6 +34,16 @@ export class AttendanceController {
     return this.attendanceService.getDailyAttendance(date, req!.user, requestedCompanyId);
   }
 
+  @Get('latest-date')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер')
+  getLatestDate(
+    @Query('companyId') companyId?: string,
+    @Request() req?: { user: RequestUser },
+  ) {
+    const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
+    return this.attendanceService.getLatestDate(req!.user, requestedCompanyId);
+  }
+
   @Get('range')
   @Roles('Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер')
   getRangeAttendance(

@@ -249,6 +249,104 @@ export class AgentController {
   }
 
   /**
+   * GET /api/agent/hik-commands?companyId=X
+   * Pending HikvisionCommand записи для relay-агента.
+   * Агент получает их, выполняет ISAPI и отчитывается.
+   */
+  @Get('hik-commands')
+  async getHikCommands(
+    @Headers('x-agent-token') token: string,
+    @Query('companyId') companyIdStr: string,
+  ) {
+    this.checkToken(token);
+    const companyId = parseInt(companyIdStr);
+    if (!companyId) throw new ForbiddenException('companyId обязателен');
+
+    const commands = await this.prisma.hikvisionCommand.findMany({
+      where: {
+        status: 'pending',
+        device: { companyId },
+      },
+      include: {
+        device: {
+          select: {
+            id: true, officeName: true, direction: true, companyId: true,
+            lastSeenIp: true, login: true, password: true,
+          },
+        },
+        employee: {
+          select: { id: true, firstName: true, lastName: true, photoPath: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (commands.length > 0) {
+      await this.prisma.hikvisionCommand.updateMany({
+        where: { id: { in: commands.map(c => c.id) } },
+        data: { status: 'processing' },
+      });
+    }
+
+    return commands.map(c => ({
+      id: c.id,
+      action: c.action,
+      device: c.device,
+      employee: {
+        id: c.employee.id,
+        firstName: c.employee.firstName,
+        lastName: c.employee.lastName,
+        hasPhoto: !!c.employee.photoPath,
+      },
+    }));
+  }
+
+  /**
+   * PATCH /api/agent/hik-commands/:id
+   * Relay-агент отчитывается о результате ISAPI команды.
+   * Body: { status: 'done' | 'failed', error?: string }
+   */
+  @Patch('hik-commands/:id')
+  async updateHikCommand(
+    @Headers('x-agent-token') token: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { status: 'done' | 'failed'; error?: string },
+  ) {
+    this.checkToken(token);
+
+    const cmd = await this.prisma.hikvisionCommand.findUnique({
+      where: { id },
+      include: {
+        device: { select: { officeName: true, direction: true } },
+        employee: { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    const updated = await this.prisma.hikvisionCommand.update({
+      where: { id },
+      data: { status: body.status, error: body.error ?? null },
+    });
+
+    if (cmd) {
+      const empName = `${cmd.employee.lastName} ${cmd.employee.firstName}`;
+      const devLabel = `${cmd.device.officeName} (${cmd.device.direction === 'IN' ? 'Вход' : 'Выход'})`;
+      if (body.status === 'done') {
+        const actionText = cmd.action === 'grant' ? '✅ Face ID добавлен на устройство' : '✅ Face ID удалён с устройства';
+        this.telegram.sendMessage(
+          `${actionText}\n👤 Сотрудник: ${empName}\n🚪 Устройство: ${devLabel}\n🤖 Выполнено relay-агентом`,
+        ).catch(() => {});
+      } else {
+        const actionText = cmd.action === 'grant' ? 'добавить Face ID' : 'удалить Face ID';
+        this.telegram.sendMessage(
+          `❌ Ошибка — не удалось ${actionText}\n👤 Сотрудник: ${empName}\n🚪 Устройство: ${devLabel}\n⚠️ ${body.error || 'неизвестно'}`,
+        ).catch(() => {});
+      }
+    }
+
+    return updated;
+  }
+
+  /**
    * GET /api/agent/status?companyId=X
    * Статистика команд — для мониторинга в агенте.
    */

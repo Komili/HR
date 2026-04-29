@@ -28,6 +28,8 @@ services:
     env_file: .env
     environment:
       PORT: 7070
+      ISUP_PORT: 7660
+      ISUP_ENC_KEY: ${ISUP_ENC_KEY:-}
       TZ: Asia/Dushanbe
     depends_on:
       db:
@@ -46,6 +48,7 @@ services:
       retries: 5
     ports:
       - "7272:7070"
+      - "7660:7660"   # ISUP5.0 — Hikvision устройства подключаются сюда напрямую
 
   frontend:
     build: ./frontend

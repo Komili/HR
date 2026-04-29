@@ -38,6 +38,7 @@ model Company {
   salaries             Salary[]
   registrationTokens   RegistrationToken[]
   doors                Door[]
+  hikvisionDevices     HikvisionDevice[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 }
@@ -102,9 +103,11 @@ model Employee {
   attendances      Attendance[]
   salaries         Salary[]
   positionHistory  PositionHistory[]
-  doorAccesses     DoorAccess[]
-  doorCommands     DoorCommand[]
-  managerId        Int?
+  doorAccesses       DoorAccess[]
+  doorCommands       DoorCommand[]
+  hikvisionAccesses  HikvisionAccess[]
+  hikvisionCommands  HikvisionCommand[]
+  managerId          Int?
   manager          Employee?          @relation("EmployeeHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
   subordinates     Employee[]         @relation("EmployeeHierarchy")
   sortOrder        Int                @default(0)
@@ -372,4 +375,60 @@ model AuditLog {
 
   @@index([companyId])
   @@index([userId])
+}
+
+// Автообнаруженные Hikvision устройства (по MAC-адресу)
+model HikvisionDevice {
+  id          Int      @id @default(autoincrement())
+  macAddress  String   @unique
+  lastSeenIp  String
+  externalIp  String?
+  deviceName  String?
+  status      String   @default("pending") // "pending" | "active"
+  company     Company? @relation(fields: [companyId], references: [id])
+  companyId   Int?
+  officeName  String?
+  direction   String?                    // "IN" | "OUT"
+  login       String?  @default("admin")
+  password    String?
+  lastSeenAt  DateTime @default(now())
+  accesses    HikvisionAccess[]
+  commands    HikvisionCommand[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+
+// Очередь ISAPI-команд для relay-агента (Face ID: добавить/удалить пользователя)
+model HikvisionCommand {
+  id         Int             @id @default(autoincrement())
+  device     HikvisionDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId   Int
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId Int
+  action     String          // "grant" | "revoke"
+  status     String          @default("pending") // pending | processing | done | failed
+  error      String?         @db.Text
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([status, deviceId])
+  @@index([employeeId])
+}
+
+// Доступ сотрудника к HikvisionDevice (Face ID)
+model HikvisionAccess {
+  id         Int             @id @default(autoincrement())
+  device     HikvisionDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId   Int
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId Int
+  grantedBy  String
+  createdAt  DateTime        @default(now())
+
+  @@unique([deviceId, employeeId])
+  @@index([employeeId])
+  @@index([deviceId])
 }

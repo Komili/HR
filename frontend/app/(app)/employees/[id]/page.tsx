@@ -87,8 +87,13 @@ import {
   checkEmployeeOnDevice,
   type DeviceCheckResult,
   deleteDocument,
+  getActiveHikvisionDevices,
+  getEmployeeHikvisionDevices,
+  grantHikvisionAccess,
+  revokeHikvisionAccess,
+  checkHikvisionAccess,
 } from "@/lib/hrms-api";
-import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door } from "@/lib/types";
+import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice } from "@/lib/types";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { StatusBadge } from "@/components/status-badge";
 import { useAuth } from "@/app/contexts/AuthContext";
@@ -161,7 +166,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   });
   const [savingHistory, setSavingHistory] = useState(false);
 
-  // Doors state
+  // Relay-agent doors state
   const [employeeDoors, setEmployeeDoors] = useState<Door[]>([]);
   const [doorsLoading, setDoorsLoading] = useState(false);
   const [doorsError, setDoorsError] = useState<string | null>(null);
@@ -169,6 +174,14 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [doorResults, setDoorResults] = useState<Record<number, { ok: boolean; message: string; isWarning?: boolean } | null>>({});
   const [checkingDevices, setCheckingDevices] = useState(false);
   const [deviceChecks, setDeviceChecks] = useState<Record<number, DeviceCheckResult | { error: string } | null>>({});
+
+  // Hikvision devices state
+  const [hikDevices, setHikDevices] = useState<HikvisionDevice[]>([]);
+  const [hikLoading, setHikLoading] = useState(false);
+  const [togglingHikId, setTogglingHikId] = useState<number | null>(null);
+  const [hikResults, setHikResults] = useState<Record<number, { ok: boolean; message: string } | null>>({});
+  const [checkingHikId, setCheckingHikId] = useState<number | null>(null);
+  const [hikChecks, setHikChecks] = useState<Record<number, any>>({});
 
   const { user } = useAuth();
 
@@ -259,6 +272,23 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     loadDoors();
   }, [employeeId, loadDoors]);
 
+  const loadHikDevices = useCallback(async () => {
+    if (!Number.isFinite(employeeId)) return;
+    setHikLoading(true);
+    try {
+      const devs = await getEmployeeHikvisionDevices(employeeId);
+      setHikDevices(devs);
+    } catch {
+      setHikDevices([]);
+    } finally {
+      setHikLoading(false);
+    }
+  }, [employeeId]);
+
+  useEffect(() => {
+    loadHikDevices();
+  }, [loadHikDevices]);
+
   // Загрузка фото сотрудника через авторизованный fetch
   useEffect(() => {
     if (!employee?.photoPath) {
@@ -335,6 +365,38 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
       }),
     );
     setCheckingDevices(false);
+  };
+
+  const handleToggleHik = async (dev: HikvisionDevice) => {
+    setTogglingHikId(dev.id);
+    setHikResults(prev => ({ ...prev, [dev.id]: null }));
+    try {
+      let result: { ok: boolean; message: string };
+      if (dev.hasAccess) {
+        result = await revokeHikvisionAccess(dev.id, employeeId);
+      } else {
+        result = await grantHikvisionAccess(dev.id, employeeId);
+      }
+      setHikResults(prev => ({ ...prev, [dev.id]: result }));
+      await loadHikDevices();
+    } catch (e: any) {
+      setHikResults(prev => ({ ...prev, [dev.id]: { ok: false, message: e.message || 'Ошибка' } }));
+    } finally {
+      setTogglingHikId(null);
+    }
+  };
+
+  const handleCheckHik = async (dev: HikvisionDevice) => {
+    setCheckingHikId(dev.id);
+    setHikChecks(prev => ({ ...prev, [dev.id]: null }));
+    try {
+      const result = await checkHikvisionAccess(dev.id, employeeId);
+      setHikChecks(prev => ({ ...prev, [dev.id]: result }));
+    } catch (e: any) {
+      setHikChecks(prev => ({ ...prev, [dev.id]: { checked: false, message: e.message || 'Ошибка' } }));
+    } finally {
+      setCheckingHikId(null);
+    }
   };
 
   const handleUpload = async (file: File, documentType: string) => {
@@ -754,9 +816,9 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               <DoorOpen className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Доступ к дверям</span>
               <span className="sm:hidden">Двери</span>
-              {employeeDoors.filter(d => d.hasAccess).length > 0 && (
+              {(employeeDoors.filter(d => d.hasAccess).length + hikDevices.filter(d => d.hasAccess).length) > 0 && (
                 <span className="ml-1 sm:ml-2 flex h-4 sm:h-5 min-w-4 sm:min-w-5 items-center justify-center rounded-full bg-white/20 px-1 sm:px-1.5 text-[10px] sm:text-xs">
-                  {employeeDoors.filter(d => d.hasAccess).length}
+                  {employeeDoors.filter(d => d.hasAccess).length + hikDevices.filter(d => d.hasAccess).length}
                 </span>
               )}
             </TabsTrigger>
@@ -1383,18 +1445,150 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 )}
               </div>
             </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+            <CardContent className="p-4 sm:p-6 space-y-6">
+              {/* ── Hikvision устройства ── */}
+              {hikLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-blue-400" /></div>
+              ) : hikDevices.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Устройства Hikvision (Face ID)</p>
+                  <div className="space-y-3">
+                    {hikDevices.map(dev => {
+                      const isToggling = togglingHikId === dev.id;
+                      const isChecking = checkingHikId === dev.id;
+                      const result = hikResults[dev.id];
+                      const check = hikChecks[dev.id];
+                      return (
+                        <div key={dev.id} className={`rounded-2xl border overflow-hidden transition-all ${dev.hasAccess ? "border-emerald-200 shadow-sm shadow-emerald-100" : "border-slate-200"}`}>
+                          <div className={`flex items-center justify-between px-4 py-3.5 ${dev.hasAccess ? "bg-emerald-50/60" : "bg-white"}`}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`shrink-0 p-2.5 rounded-xl ${dev.hasAccess ? "bg-emerald-100" : "bg-slate-100"}`}>
+                                <DoorOpen className={`h-5 w-5 ${dev.hasAccess ? "text-emerald-600" : "text-slate-400"}`} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-semibold text-sm truncate">{dev.officeName}</div>
+                                <div className="text-xs text-slate-400">{dev.direction === 'IN' ? '🟢 Вход (снаружи)' : dev.direction === 'OUT' ? '🔴 Выход (внутри)' : '—'}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => handleCheckHik(dev)}
+                                disabled={isChecking || isToggling}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors disabled:opacity-40"
+                                title="Проверить на устройстве"
+                              >
+                                {isChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
+                              </button>
+                              <button
+                                onClick={() => handleToggleHik(dev)}
+                                disabled={isToggling || isChecking}
+                                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none disabled:opacity-40 ${dev.hasAccess ? "bg-emerald-500" : "bg-slate-200"}`}
+                                title={dev.hasAccess ? "Закрыть доступ" : "Открыть доступ"}
+                              >
+                                {isToggling ? (
+                                  <Loader2 className="absolute inset-0 m-auto h-4 w-4 animate-spin text-white" />
+                                ) : (
+                                  <span className={`inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform ${dev.hasAccess ? "translate-x-6" : "translate-x-1"}`} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Статус доступа */}
+                          <div className={`flex items-center gap-1.5 px-4 py-2 border-t text-xs ${dev.hasAccess ? "bg-emerald-50/40 border-emerald-100 text-emerald-700" : "bg-slate-50 border-slate-100 text-slate-400"}`}>
+                            {dev.hasAccess ? (
+                              <>
+                                <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                                <span>Доступ разрешён</span>
+                                {dev.grantedBy && <span className="text-emerald-500">· {dev.grantedBy}</span>}
+                                {dev.grantedAt && <span className="text-emerald-400">{new Date(dev.grantedAt).toLocaleDateString("ru-RU")}</span>}
+                              </>
+                            ) : (
+                              <>
+                                <ShieldOff className="h-3.5 w-3.5 shrink-0" />
+                                <span>Нет доступа</span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Результат проверки статуса */}
+                          {check && (
+                            <div className="border-t border-violet-100 bg-violet-50/60 px-4 py-3 text-xs space-y-1.5">
+                              {check.checked === false ? (
+                                <span className="text-slate-500">{check.message || 'Ошибка проверки'}</span>
+                              ) : (
+                                <>
+                                  <div className="flex flex-wrap gap-3">
+                                    <span className={`flex items-center gap-1 font-medium ${check.hasAccess ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                      {check.hasAccess ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
+                                      {check.hasAccess ? 'Доступ в системе' : 'Нет в системе'}
+                                    </span>
+                                    <span className={`flex items-center gap-1 ${check.isupConnected ? 'text-emerald-600' : check.deviceOnline ? 'text-amber-500' : 'text-slate-400'}`}>
+                                      <Wifi className="h-3.5 w-3.5" />
+                                      {check.isupConnected ? '⚡ ISUP подключён' : check.deviceOnline ? `Сигнал есть (${check.secondsAgo < 3600 ? Math.floor(check.secondsAgo / 60) + ' мин' : Math.floor(check.secondsAgo / 3600) + ' ч'} назад)` : 'Нет сигнала'}
+                                    </span>
+                                  </div>
+                                  {/* Статус синхронизации relay-агента */}
+                                  {check.syncStatus && (
+                                    <div className={`flex items-center gap-1.5 font-medium ${
+                                      check.syncStatus === 'done' ? 'text-emerald-600' :
+                                      check.syncStatus === 'failed' ? 'text-red-600' :
+                                      'text-amber-500'
+                                    }`}>
+                                      {check.syncStatus === 'done' && <UserCheck className="h-3.5 w-3.5" />}
+                                      {check.syncStatus === 'failed' && <UserX className="h-3.5 w-3.5" />}
+                                      {(check.syncStatus === 'pending' || check.syncStatus === 'processing') && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                      {check.syncStatus === 'done' && check.syncAction === 'grant' && 'Записан на устройство (Face ID)'}
+                                      {check.syncStatus === 'done' && check.syncAction === 'revoke' && 'Удалён с устройства'}
+                                      {check.syncStatus === 'failed' && `Ошибка синхр.: ${check.syncError || 'неизвестно'}`}
+                                      {check.syncStatus === 'pending' && 'Ожидает relay-агент...'}
+                                      {check.syncStatus === 'processing' && 'Выполняется...'}
+                                    </div>
+                                  )}
+                                  {!check.syncStatus && check.hasAccess && (
+                                    <div className="text-amber-500 flex items-center gap-1">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Relay-агент ещё не запущен — запусти агент на локальном ПК
+                                    </div>
+                                  )}
+                                  {check.grantedBy && (
+                                    <div className="text-slate-400">Выдан: {check.grantedBy}{check.grantedAt ? ` · ${new Date(check.grantedAt).toLocaleDateString('ru-RU')}` : ''}</div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Результат последнего действия */}
+                          {result && (
+                            <div className={`flex items-start gap-2 px-4 py-2.5 border-t text-xs ${result.ok ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-red-50 border-red-100 text-red-700"}`}>
+                              <span className="shrink-0 font-bold">{result.ok ? "✓" : "✗"}</span>
+                              <span>{result.message}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* ── Relay-агент двери ── */}
               {doorsLoading ? (
                 <div className="flex justify-center py-12">
                   <Loader2 className="h-7 w-7 animate-spin text-emerald-500" />
                 </div>
-              ) : employeeDoors.length === 0 ? (
+              ) : employeeDoors.length === 0 && hikDevices.length === 0 && !hikLoading ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <DoorOpen className="h-12 w-12 mx-auto mb-3 text-slate-300" />
                   <p className="font-medium">Нет настроенных дверей</p>
-                  <p className="text-sm mt-1">Суперадмин должен сначала добавить двери</p>
+                  <p className="text-sm mt-1">Суперадмин должен сначала добавить и привязать устройства</p>
                 </div>
-              ) : (
+              ) : employeeDoors.length > 0 ? (
+                <div>
+                  {hikDevices.length > 0 && (
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Relay-агент (Face ID)</p>
+                  )}
                 <div className="space-y-3">
                   {employeeDoors.map(door => {
                     const isToggling = togglingDoorId === door.id;
@@ -1528,7 +1722,8 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                     );
                   })}
                 </div>
-              )}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>

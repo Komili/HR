@@ -20,6 +20,7 @@ import type {
   PendingEmployee,
   OrgChartNode,
   Door,
+  HikvisionDevice,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -318,6 +319,11 @@ export async function deleteOffice(id: number): Promise<void> {
 
 // ============ ATTENDANCE ============
 
+export async function getAttendanceLatestDate(): Promise<{ date: string | null }> {
+  const params = withCompanyId(new URLSearchParams());
+  return apiFetch(`/attendance/latest-date?${params.toString()}`);
+}
+
 export async function getAttendance(date: string): Promise<AttendanceSummary[]> {
   const params = withCompanyId(new URLSearchParams({ date }));
   return apiFetch(`/attendance?${params.toString()}`);
@@ -491,6 +497,57 @@ export async function updateDoor(id: number, data: Partial<{
 
 export async function deleteDoor(id: number): Promise<void> {
   await apiFetch(`/doors/${id}`, { method: "DELETE" });
+}
+
+// ============ HIKVISION DEVICES ============
+
+export async function getHikvisionDevices(): Promise<HikvisionDevice[]> {
+  return apiFetch("/hikvision/devices");
+}
+
+export async function unbindHikvisionDevice(id: number): Promise<HikvisionDevice> {
+  return apiFetch(`/hikvision/devices/${id}/unbind`, { method: "PATCH" });
+}
+
+export async function deleteHikvisionDevice(id: number): Promise<void> {
+  await apiFetch(`/hikvision/devices/${id}`, { method: "DELETE" });
+}
+
+export async function getActiveHikvisionDevices(companyId: number): Promise<import("./types").HikvisionDevice[]> {
+  return apiFetch(`/hikvision/devices/active?companyId=${companyId}`);
+}
+
+export async function pingHikvisionDevice(id: number): Promise<{
+  online: boolean; message: string;
+  lastSeenAt?: string | null; secondsAgo?: number | null;
+}> {
+  return apiFetch(`/hikvision/devices/${id}/ping`);
+}
+
+export async function getEmployeeHikvisionDevices(employeeId: number): Promise<import("./types").HikvisionDevice[]> {
+  return apiFetch(`/hikvision/devices/employee/${employeeId}`);
+}
+
+export async function grantHikvisionAccess(deviceId: number, employeeId: number): Promise<{ ok: boolean; message: string }> {
+  return apiFetch(`/hikvision/devices/${deviceId}/grant/${employeeId}`, { method: "POST" });
+}
+
+export async function revokeHikvisionAccess(deviceId: number, employeeId: number): Promise<{ ok: boolean; message: string }> {
+  return apiFetch(`/hikvision/devices/${deviceId}/revoke/${employeeId}`, { method: "DELETE" });
+}
+
+export async function checkHikvisionAccess(deviceId: number, employeeId: number): Promise<{
+  checked: boolean; message?: string;
+  ip?: string; userFound?: boolean; faceFound?: boolean; userName?: string | null; error?: string;
+}> {
+  return apiFetch(`/hikvision/devices/${deviceId}/check/${employeeId}`);
+}
+
+export async function bindHikvisionDevice(
+  id: number,
+  data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string }
+): Promise<import("./types").HikvisionDevice> {
+  return apiFetch(`/hikvision/devices/${id}/bind`, { method: "PATCH", body: data });
 }
 
 export async function getEmployeeDoors(employeeId: number): Promise<Door[]> {

@@ -392,7 +392,7 @@ async function checkDevices() {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Выполнение команды
+//  Выполнение Door-команды (relay-агент, два устройства на дверь)
 // ─────────────────────────────────────────────────────────────
 
 async function executeCommand(cmd) {
@@ -402,10 +402,9 @@ async function executeCommand(cmd) {
     { ip: door.outDeviceIp, port: door.outDevicePort, label: 'OUT' },
   ];
 
-  info(`▶ Команда #${id} [${action.toUpperCase()}] сотрудник ${employee.lastName} ${employee.firstName} → дверь "${door.name}"`);
+  info(`▶ Door-команда #${id} [${action.toUpperCase()}] сотрудник ${employee.lastName} ${employee.firstName} → дверь "${door.name}"`);
 
   if (action === 'grant') {
-    // Скачиваем фото один раз
     let photoBuffer = null;
     if (employee.hasPhoto) {
       try {
@@ -415,14 +414,12 @@ async function executeCommand(cmd) {
         warn(`  Не удалось скачать фото: ${e.message}`);
       }
     }
-
     for (const device of devices) {
       info(`  → Устройство ${device.label} (${device.ip}:${device.port})`);
       await hikvisionAddUser(device, door, employee);
       await hikvisionUploadFace(device, door, employee, photoBuffer);
       ok(`    ✓ ${device.label} — пользователь добавлен`);
     }
-
   } else if (action === 'revoke') {
     for (const device of devices) {
       info(`  → Устройство ${device.label} (${device.ip}:${device.port})`);
@@ -430,9 +427,54 @@ async function executeCommand(cmd) {
         await hikvisionDeleteUser(device, door, employee);
         ok(`    ✓ ${device.label} — пользователь удалён`);
       } catch (e) {
-        // Если пользователя уже нет на устройстве — не критично
         warn(`    ${device.label} — ${e.message} (пропускаем)`);
       }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Выполнение HikvisionCommand (одно устройство Face ID)
+// ─────────────────────────────────────────────────────────────
+
+async function executeHikCommand(cmd) {
+  const { id, action, device: dev, employee } = cmd;
+  // HikvisionDevice: одно устройство, порт 80
+  const device = { ip: dev.lastSeenIp, port: 80 };
+  const creds  = { login: dev.login || 'admin', password: dev.password || '' };
+
+  const label = `${dev.officeName} (${dev.direction === 'IN' ? 'Вход' : 'Выход'})`;
+  info(`▶ Hik-команда #${id} [${action.toUpperCase()}] ${employee.lastName} ${employee.firstName} → "${label}" (${device.ip})`);
+
+  if (action === 'grant') {
+    // 1. Удаляем старую запись (если была) — избегаем "employeeNoAlreadyExist"
+    try {
+      await hikvisionDeleteUser(device, creds, employee);
+    } catch (_) { /* не страшно — значит не было */ }
+
+    // 2. Добавляем пользователя
+    await hikvisionAddUser(device, creds, employee);
+    ok(`  ✓ Пользователь добавлен на ${device.ip}`);
+
+    // 3. Загружаем фото (Face ID)
+    if (employee.hasPhoto) {
+      try {
+        const photoBuffer = await downloadPhoto(employee.id);
+        if (photoBuffer) {
+          await hikvisionUploadFace(device, creds, employee, photoBuffer);
+          ok(`  ✓ Face ID загружен (${Math.round(photoBuffer.length / 1024)} KB)`);
+        }
+      } catch (e) {
+        warn(`  Фото: ${e.message} (доступ добавлен без Face ID)`);
+      }
+    }
+
+  } else if (action === 'revoke') {
+    try {
+      await hikvisionDeleteUser(device, creds, employee);
+      ok(`  ✓ Пользователь удалён с ${device.ip}`);
+    } catch (e) {
+      warn(`  Удаление: ${e.message} (пропускаем — возможно уже не было)`);
     }
   }
 }
@@ -445,6 +487,7 @@ let consecutiveErrors = 0;
 let running = true;
 
 async function pollOnce() {
+  // ── Door команды ──
   let commands;
   try {
     commands = await serverRequest('GET', `/api/agent/commands?companyId=${companyId}`);
@@ -457,21 +500,44 @@ async function pollOnce() {
     return;
   }
 
-  if (!Array.isArray(commands) || commands.length === 0) return;
+  if (Array.isArray(commands) && commands.length > 0) {
+    info(`📥 Door-команд: ${commands.length}`);
+    for (const cmd of commands) {
+      try {
+        await executeCommand(cmd);
+        await serverRequest('PATCH', `/api/agent/commands/${cmd.id}`, { status: 'done' });
+        ok(`✅ Door-команда #${cmd.id} выполнена`);
+      } catch (e) {
+        error(`❌ Door-команда #${cmd.id} ошибка: ${e.message}`);
+        await serverRequest('PATCH', `/api/agent/commands/${cmd.id}`, {
+          status: 'failed', error: e.message,
+        }).catch(() => {});
+      }
+    }
+  }
 
-  info(`📥 Получено ${commands.length} команд`);
+  // ── Hikvision Face ID команды ──
+  let hikCmds;
+  try {
+    hikCmds = await serverRequest('GET', `/api/agent/hik-commands?companyId=${companyId}`);
+  } catch (e) {
+    warn(`hik-commands: ${e.message}`);
+    return;
+  }
 
-  for (const cmd of commands) {
-    try {
-      await executeCommand(cmd);
-      await serverRequest('PATCH', `/api/agent/commands/${cmd.id}`, { status: 'done' });
-      ok(`✅ Команда #${cmd.id} выполнена`);
-    } catch (e) {
-      error(`❌ Команда #${cmd.id} ошибка: ${e.message}`);
-      await serverRequest('PATCH', `/api/agent/commands/${cmd.id}`, {
-        status: 'failed',
-        error: e.message,
-      }).catch(() => {});
+  if (Array.isArray(hikCmds) && hikCmds.length > 0) {
+    info(`📥 Hik Face ID команд: ${hikCmds.length}`);
+    for (const cmd of hikCmds) {
+      try {
+        await executeHikCommand(cmd);
+        await serverRequest('PATCH', `/api/agent/hik-commands/${cmd.id}`, { status: 'done' });
+        ok(`✅ Hik-команда #${cmd.id} выполнена`);
+      } catch (e) {
+        error(`❌ Hik-команда #${cmd.id} ошибка: ${e.message}`);
+        await serverRequest('PATCH', `/api/agent/hik-commands/${cmd.id}`, {
+          status: 'failed', error: e.message,
+        }).catch(() => {});
+      }
     }
   }
 }

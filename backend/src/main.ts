@@ -21,6 +21,14 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
+  // Захватываем raw body для Hikvision ДО всех body-parser'ов (multipart не парсится стандартно)
+  app.use('/api/hikvision/event', (req: any, _res: any, next: any) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => { req.rawBody = Buffer.concat(chunks); next(); });
+    req.on('error', next);
+  });
+
   // Заголовки безопасности
   app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // для фото сотрудников

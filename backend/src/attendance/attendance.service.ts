@@ -58,6 +58,18 @@ export class AttendanceService implements OnModuleInit {
 
   // ─────────── queries ───────────
 
+  async getLatestDate(user: RequestUser, requestedCompanyId?: number) {
+    const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
+    const where: any = {};
+    if (companyFilter) where.companyId = companyFilter;
+    const record = await this.prisma.attendance.findFirst({
+      where,
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+    return { date: record ? record.date.toISOString().split('T')[0] : null };
+  }
+
   async getDailyAttendance(date: string, user: RequestUser, requestedCompanyId?: number) {
     const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
     const targetDate = new Date(date + 'T00:00:00.000Z');
