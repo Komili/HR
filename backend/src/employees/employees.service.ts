@@ -1,5 +1,6 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from '../telegram/telegram.service';
 import { Prisma } from '@prisma/client';
 import * as fs from 'fs/promises';
 import { createReadStream, existsSync, readFileSync } from 'fs';
@@ -8,13 +9,21 @@ import sharp = require('sharp');
 import { RequestUser } from '../auth/jwt.strategy';
 import { searchVariants, toFolderName } from '../common/transliterate';
 
+// Статусы при которых Face ID автоматически отзывается
+const REVOKE_STATUSES = ['Уволен', 'Декрет', 'В отпуске', 'Больничный'];
+
 type EmployeeWithRelations = Prisma.EmployeeGetPayload<{
   include: { department: true; position: true; company: true; documents: { select: { type: true } } };
 }>;
 
 @Injectable()
 export class EmployeesService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(EmployeesService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private telegram: TelegramService,
+  ) {}
 
   private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
     // Суперадмин холдинга может выбрать любую компанию или видеть все
@@ -167,12 +176,19 @@ export class EmployeesService {
   }
 
   async update(id: number, data: Prisma.EmployeeUpdateInput, user?: RequestUser): Promise<EmployeeWithRelations> {
-    // Проверяем, что пользователь имеет доступ к этому сотруднику
     if (user) {
-      await this.findOne(id, user); // Это выбросит ошибку если нет доступа
+      await this.findOne(id, user);
     }
 
-    return this.prisma.employee.update({
+    // Перед обновлением читаем текущий статус
+    const newStatus = typeof data.status === 'string' ? data.status : null;
+    let oldStatus: string | null = null;
+    if (newStatus) {
+      const cur = await this.prisma.employee.findUnique({ where: { id }, select: { status: true } });
+      oldStatus = cur?.status ?? null;
+    }
+
+    const updated = await this.prisma.employee.update({
       where: { id },
       data,
       include: {
@@ -182,6 +198,59 @@ export class EmployeesService {
         documents: { select: { type: true } },
       },
     });
+
+    // Автоотзыв Face ID при переходе в неактивный статус
+    if (
+      newStatus &&
+      oldStatus !== newStatus &&
+      REVOKE_STATUSES.includes(newStatus) &&
+      !REVOKE_STATUSES.includes(oldStatus ?? '')
+    ) {
+      this.revokeHikvisionOnStatusChange(updated, newStatus).catch(e =>
+        this.logger.error(`Ошибка автоотзыва Face ID для сотрудника #${id}: ${e.message}`),
+      );
+    }
+
+    return updated;
+  }
+
+  private async revokeHikvisionOnStatusChange(
+    employee: { id: number; firstName: string; lastName: string },
+    newStatus: string,
+  ): Promise<void> {
+    // Находим все активные доступы сотрудника
+    const accesses = await this.prisma.hikvisionAccess.findMany({
+      where: { employeeId: employee.id },
+      include: { device: { select: { id: true, officeName: true, direction: true, companyId: true } } },
+    });
+
+    if (accesses.length === 0) return;
+
+    const fullName = `${employee.lastName} ${employee.firstName}`;
+    this.logger.log(`Автоотзыв Face ID: ${fullName} → "${newStatus}" (${accesses.length} устройств)`);
+
+    // Удаляем записи доступа и ставим команды на отзыв
+    await this.prisma.hikvisionAccess.deleteMany({ where: { employeeId: employee.id } });
+
+    await this.prisma.hikvisionCommand.createMany({
+      data: accesses.map(a => ({
+        deviceId: a.device.id,
+        employeeId: employee.id,
+        action: 'revoke',
+      })),
+    });
+
+    const deviceList = accesses
+      .map(a => `• ${a.device.officeName || `Устройство #${a.device.id}`} (${a.device.direction === 'IN' ? 'Вход' : 'Выход'})`)
+      .join('\n');
+
+    await this.telegram.sendMessage(
+      `🔒 <b>Face ID автоматически отозван</b>\n\n` +
+      `👤 <b>${fullName}</b>\n` +
+      `📋 Новый статус: <b>${newStatus}</b>\n\n` +
+      `🚪 Устройства (${accesses.length}):\n${deviceList}\n\n` +
+      `🤖 Relay-агент выполнит отзыв при следующем подключении`,
+    );
   }
 
   async remove(id: number, user?: RequestUser): Promise<EmployeeWithRelations> {

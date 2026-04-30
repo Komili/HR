@@ -92,10 +92,12 @@ import {
   grantHikvisionAccess,
   revokeHikvisionAccess,
   checkHikvisionAccess,
+  getAgentStatus,
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice } from "@/lib/types";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { StatusBadge } from "@/components/status-badge";
+import { AgentStatusBanner } from "@/components/agent-status-banner";
 import { useAuth } from "@/app/contexts/AuthContext";
 
 // Предопределённые типы документов для HR
@@ -182,6 +184,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [hikResults, setHikResults] = useState<Record<number, { ok: boolean; message: string } | null>>({});
   const [checkingHikId, setCheckingHikId] = useState<number | null>(null);
   const [hikChecks, setHikChecks] = useState<Record<number, any>>({});
+  const [agentStatus, setAgentStatus] = useState<{ online: boolean; secondsAgo: number | null; pendingCommands: number } | null>(null);
 
   const { user } = useAuth();
 
@@ -288,6 +291,15 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   useEffect(() => {
     loadHikDevices();
   }, [loadHikDevices]);
+
+  useEffect(() => {
+    const load = async () => {
+      try { setAgentStatus(await getAgentStatus()); } catch { /* ignore */ }
+    };
+    load();
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Загрузка фото сотрудника через авторизованный fetch
   useEffect(() => {
@@ -625,6 +637,12 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                   <Building2 className="h-3 w-3 sm:h-4 sm:w-4" />
                   {employee.department?.name || "—"}
                 </span>
+                {employee.company && (
+                  <span className="flex items-center gap-1 sm:gap-1.5 text-white/50">
+                    <span className="hidden sm:inline opacity-40">·</span>
+                    {employee.company.name}
+                  </span>
+                )}
               </div>
               <div className="mt-2 sm:mt-3 flex flex-wrap gap-2">
                 <StatusBadge status={employee.status} size="sm" />
@@ -1446,6 +1464,15 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-6">
+              {/* ── Agent status ── */}
+              <AgentStatusBanner
+                status={agentStatus}
+                onRefresh={async () => {
+                  try { setAgentStatus(await getAgentStatus()); } catch { /* ignore */ }
+                }}
+                compact
+              />
+
               {/* ── Hikvision устройства ── */}
               {hikLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-blue-400" /></div>

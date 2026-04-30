@@ -4,7 +4,7 @@ import * as React from "react"
 import {
   DoorOpen, Loader2, Eye, EyeOff,
   CheckCircle2, XCircle, Wifi, WifiOff, LinkIcon, Unlink,
-  AlertCircle, Pencil, Trash2, RefreshCw,
+  AlertCircle, Pencil, Trash2, RefreshCw, Users,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,8 +18,10 @@ import { useAuth } from "@/app/contexts/AuthContext"
 import {
   getCompanies, getHikvisionDevices, bindHikvisionDevice,
   unbindHikvisionDevice, deleteHikvisionDevice, pingHikvisionDevice,
+  getAgentStatus, grantAllHikvisionAccess,
 } from "@/lib/hrms-api"
 import type { Company, HikvisionDevice } from "@/lib/types"
+import { AgentStatusBanner } from "@/components/agent-status-banner"
 
 const EMPTY_BIND = { companyId: 0, officeName: "", direction: "IN" as "IN" | "OUT", login: "admin", password: "" }
 
@@ -46,10 +48,18 @@ export default function DoorsPage() {
   const [deleteDeviceId, setDeleteDeviceId] = React.useState<number | null>(null)
   const [deletingDevice, setDeletingDevice] = React.useState(false)
 
+  // Grant all
+  const [grantAllDeviceId, setGrantAllDeviceId] = React.useState<number | null>(null)
+  const [grantAllLoading, setGrantAllLoading] = React.useState(false)
+  const [grantAllResult, setGrantAllResult] = React.useState<{ granted: number; skipped: number; message: string } | null>(null)
+
   // Ping / status
   const [pingResults, setPingResults] = React.useState<Record<number, PingResult | null>>({})
   const [pingingId, setPingingId] = React.useState<number | null>(null)
   const [pingingAll, setPingingAll] = React.useState(false)
+
+  // Agent status
+  const [agentStatus, setAgentStatus] = React.useState<{ online: boolean; secondsAgo: number | null; pendingCommands: number } | null>(null)
 
   const isSuperAdmin = user?.isHoldingAdmin
 
@@ -68,7 +78,19 @@ export default function DoorsPage() {
     }
   }, [])
 
+  const loadAgentStatus = React.useCallback(async () => {
+    try {
+      const s = await getAgentStatus()
+      setAgentStatus(s)
+    } catch { /* ignore */ }
+  }, [])
+
   React.useEffect(() => { load() }, [load])
+  React.useEffect(() => {
+    loadAgentStatus()
+    const t = setInterval(loadAgentStatus, 15_000)
+    return () => clearInterval(t)
+  }, [loadAgentStatus])
 
   function openBind(device: HikvisionDevice) {
     setBindDevice(device)
@@ -145,6 +167,20 @@ export default function DoorsPage() {
     setPingingAll(false)
   }
 
+  async function handleGrantAll() {
+    if (!grantAllDeviceId) return
+    setGrantAllLoading(true)
+    setGrantAllResult(null)
+    try {
+      const result = await grantAllHikvisionAccess(grantAllDeviceId)
+      setGrantAllResult(result)
+    } catch (e: any) {
+      setGrantAllResult({ granted: 0, skipped: 0, message: e.message || "Ошибка" })
+    } finally {
+      setGrantAllLoading(false)
+    }
+  }
+
   if (!isSuperAdmin) {
     return <div className="p-8 text-center text-muted-foreground">Доступ только для Суперадмина</div>
   }
@@ -182,6 +218,9 @@ export default function DoorsPage() {
         )}
       </div>
 
+      {/* Agent status banner */}
+      <AgentStatusBanner status={agentStatus} onRefresh={loadAgentStatus} />
+
       {error && (
         <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{error}</div>
       )}
@@ -211,11 +250,11 @@ export default function DoorsPage() {
                         <div>
                           <div className="flex items-center gap-1.5">
                             <AlertCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
-                            <span className="text-sm font-semibold">Новое устройство</span>
+                            <span className="text-sm font-semibold">
+                              {device.deviceName || "Новое устройство"}
+                            </span>
                           </div>
-                          {device.deviceName && (
-                            <p className="text-xs text-muted-foreground pl-5 mt-0.5">{device.deviceName}</p>
-                          )}
+                          <p className="text-xs text-muted-foreground pl-5 mt-0.5">Ожидает привязки</p>
                         </div>
                         <Button
                           variant="ghost" size="sm"
@@ -225,25 +264,42 @@ export default function DoorsPage() {
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
-                      <div className="text-xs text-muted-foreground space-y-1">
+                      <div className="text-xs space-y-1.5">
                         <div className="flex justify-between">
-                          <span>MAC:</span>
+                          <span className="text-muted-foreground">MAC:</span>
                           <span className="font-mono text-slate-700">{device.macAddress}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Внутренний IP:</span>
+                          <span className="text-muted-foreground">Внутренний IP:</span>
                           <span className="font-mono text-slate-700">{device.lastSeenIp}</span>
                         </div>
                         {device.externalIp && (
                           <div className="flex justify-between">
-                            <span>Внешний IP:</span>
+                            <span className="text-muted-foreground">Внешний IP:</span>
                             <span className="font-mono text-slate-700">{device.externalIp}</span>
                           </div>
                         )}
                         <div className="flex justify-between">
-                          <span>Обнаружено:</span>
-                          <span>{new Date(device.createdAt).toLocaleDateString("ru-RU")}</span>
+                          <span className="text-muted-foreground">Обнаружено:</span>
+                          <span className="text-slate-700">{new Date(device.createdAt).toLocaleDateString("ru-RU")}</span>
                         </div>
+                        {device.lastSeenAt && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Последний сигнал:</span>
+                            <span className={`font-medium ${
+                              Date.now() - new Date(device.lastSeenAt).getTime() < 120_000
+                                ? "text-emerald-600"
+                                : "text-amber-600"
+                            }`}>
+                              {(() => {
+                                const s = Math.floor((Date.now() - new Date(device.lastSeenAt).getTime()) / 1000)
+                                if (s < 60) return `${s} сек назад`
+                                if (s < 3600) return `${Math.floor(s / 60)} мин назад`
+                                return `${Math.floor(s / 3600)} ч назад`
+                              })()}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <Button
                         size="sm"
@@ -274,21 +330,53 @@ export default function DoorsPage() {
                 {activeDevices.map(device => {
                   const ping = pingResults[device.id]
                   const isPinging = pingingId === device.id || pingingAll
-                  return (
-                    <Card key={device.id} className="border border-blue-200 bg-blue-50/20">
-                      <CardContent className="p-4 space-y-3">
 
+                  const secsAgo = Math.floor((Date.now() - new Date(device.lastSeenAt).getTime()) / 1000)
+                  const isOnline = secsAgo < 300          // < 5 мин — онлайн
+                  const isWarn   = secsAgo >= 300 && secsAgo < 1800  // 5–30 мин — предупреждение
+                  // > 30 мин — офлайн
+
+                  const timeAgo = secsAgo < 60
+                    ? `${secsAgo} сек`
+                    : secsAgo < 3600
+                      ? `${Math.floor(secsAgo / 60)} мин`
+                      : `${Math.floor(secsAgo / 3600)} ч`
+
+                  const deviceStatusColor = isOnline
+                    ? "border-emerald-200 bg-white"
+                    : isWarn
+                      ? "border-amber-200 bg-white"
+                      : "border-red-200 bg-white"
+
+                  return (
+                    <Card key={device.id} className={`border ${deviceStatusColor} shadow-sm`}>
+                      <CardContent className="p-0">
+
+                        {/* Статус-шапка */}
+                        <div className={`flex items-center justify-between px-3 py-2 rounded-t-lg text-xs font-medium ${
+                          isOnline ? "bg-emerald-500 text-white"
+                          : isWarn  ? "bg-amber-400 text-white"
+                          : "bg-red-500 text-white"
+                        }`}>
+                          <div className="flex items-center gap-1.5">
+                            <div className={`h-2 w-2 rounded-full ${isOnline ? "bg-white animate-pulse" : "bg-white/60"}`} />
+                            <span>{isOnline ? "Онлайн" : isWarn ? "Нет сигнала" : "Офлайн"}</span>
+                            <span className="opacity-75">· {timeAgo} назад</span>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-90">
+                            <span>{device.direction === "IN" ? "↑ Вход" : "↓ Выход"}</span>
+                          </div>
+                        </div>
+
+                        <div className="p-4 space-y-3">
                         {/* Заголовок */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`text-lg leading-none ${device.direction === "IN" ? "text-emerald-500" : "text-red-500"}`}>
-                                {device.direction === "IN" ? "🟢" : "🔴"}
-                              </span>
-                              <span className="text-sm font-semibold truncate">{device.officeName}</span>
-                            </div>
-                            <p className="text-xs text-muted-foreground pl-6 mt-0.5">
-                              {device.direction === "IN" ? "Вход (IN)" : "Выход (OUT)"} · {device.company?.shortName || device.company?.name}
+                            <p className="text-sm font-semibold truncate">
+                              {device.deviceName || device.officeName || "Устройство"}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {device.officeName} · {device.company?.shortName || device.company?.name}
                             </p>
                           </div>
                           <Button
@@ -307,32 +395,15 @@ export default function DoorsPage() {
                             <span className="font-mono text-slate-700">{device.macAddress}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span>Внутренний IP:</span>
+                            <span>IP (локальный):</span>
                             <span className="font-mono text-slate-700">{device.lastSeenIp}</span>
                           </div>
                           {device.externalIp && (
                             <div className="flex justify-between">
-                              <span>Внешний IP:</span>
+                              <span>IP (внешний):</span>
                               <span className="font-mono text-slate-700">{device.externalIp}</span>
                             </div>
                           )}
-                          <div className="flex justify-between">
-                            <span>Последний сигнал:</span>
-                            <span className={`font-medium ${
-                              Date.now() - new Date(device.lastSeenAt).getTime() < 120_000
-                                ? "text-emerald-600"
-                                : Date.now() - new Date(device.lastSeenAt).getTime() < 600_000
-                                  ? "text-amber-600"
-                                  : "text-red-500"
-                            }`}>
-                              {(() => {
-                                const s = Math.floor((Date.now() - new Date(device.lastSeenAt).getTime()) / 1000)
-                                if (s < 60) return `${s} сек назад`
-                                if (s < 3600) return `${Math.floor(s / 60)} мин назад`
-                                return `${Math.floor(s / 3600)} ч назад`
-                              })()}
-                            </span>
-                          </div>
                         </div>
 
                         {/* Статус пинга */}
@@ -386,7 +457,16 @@ export default function DoorsPage() {
                             <Unlink className="h-3 w-3" />
                           </Button>
                         </div>
+                        <Button
+                          size="sm" variant="outline"
+                          className="w-full h-8 text-xs gap-1.5 border-violet-200 text-violet-600 hover:bg-violet-50 hover:text-violet-700"
+                          onClick={() => { setGrantAllDeviceId(device.id); setGrantAllResult(null) }}
+                        >
+                          <Users className="h-3.5 w-3.5" />
+                          Выдать доступ всем активным сотрудникам
+                        </Button>
 
+                        </div>
                       </CardContent>
                     </Card>
                   )
@@ -419,6 +499,12 @@ export default function DoorsPage() {
           {bindDevice && (
             <div className="space-y-4 py-2">
               <div className="rounded-lg bg-slate-50 border p-3 text-xs space-y-1">
+                {bindDevice.deviceName && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Устройство:</span>
+                    <span className="font-medium text-slate-700">{bindDevice.deviceName}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">MAC:</span>
                   <span className="font-mono font-medium">{bindDevice.macAddress}</span>
@@ -528,6 +614,67 @@ export default function DoorsPage() {
               {deletingDevice && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Удалить
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Массовая выдача доступа ── */}
+      <Dialog open={!!grantAllDeviceId} onOpenChange={open => { if (!open) { setGrantAllDeviceId(null); setGrantAllResult(null) } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-violet-600" />
+              Выдать доступ всем
+            </DialogTitle>
+          </DialogHeader>
+          {!grantAllResult ? (
+            <>
+              <div className="py-2 space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Все активные сотрудники компании получат Face ID доступ к этому устройству.
+                </p>
+                <div className="rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-xs text-violet-700">
+                  Сотрудники со статусом "Уволен", "Декрет", "В отпуске", "Больничный" будут пропущены.
+                  Те, у кого уже есть доступ, тоже будут пропущены.
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setGrantAllDeviceId(null)}>Отмена</Button>
+                <Button onClick={handleGrantAll} disabled={grantAllLoading} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
+                  {grantAllLoading
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Users className="h-4 w-4" />
+                  }
+                  Выдать всем
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <div className="py-2 space-y-3">
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 space-y-2">
+                  <p className="text-sm font-semibold text-emerald-700">Готово!</p>
+                  <div className="text-sm text-emerald-600 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Выдано доступов:</span>
+                      <span className="font-bold">{grantAllResult.granted}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Пропущено (уже имели):</span>
+                      <span className="font-medium">{grantAllResult.skipped}</span>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Команды отправлены в очередь. Relay-агент выдаст доступы в течение нескольких секунд.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => { setGrantAllDeviceId(null); setGrantAllResult(null) }} className="w-full">
+                  Закрыть
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

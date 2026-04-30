@@ -92,15 +92,22 @@ export class DoorsService {
     const door = await this.prisma.door.findUnique({ where: { id } });
     if (!door) throw new NotFoundException('Дверь не найдена');
     const updated = await this.prisma.door.update({ where: { id }, data: dto });
-    if (dto.isActive !== undefined) {
-      const status = dto.isActive ? '✅ Включена' : '🔴 Отключена';
-      this.telegram.sendMessage(
-        `⚙️ *Дверь изменена*\n` +
-        `📍 Дверь: *${door.name}*\n` +
-        `${status}\n` +
-        `👤 Изменил: ${user.email}`,
-      ).catch(() => {});
-    }
+
+    const changes: string[] = [];
+    if (dto.name && dto.name !== door.name) changes.push(`📝 Название: ${door.name} → ${dto.name}`);
+    if (dto.inDeviceIp && dto.inDeviceIp !== door.inDeviceIp) changes.push(`📡 IN IP: ${door.inDeviceIp} → ${dto.inDeviceIp}`);
+    if (dto.outDeviceIp && dto.outDeviceIp !== door.outDeviceIp) changes.push(`📡 OUT IP: ${door.outDeviceIp} → ${dto.outDeviceIp}`);
+    if (dto.isActive !== undefined && dto.isActive !== door.isActive) changes.push(dto.isActive ? '✅ Включена' : '🔴 Отключена');
+    if (dto.login && dto.login !== door.login) changes.push(`🔑 Логин изменён`);
+    if (dto.password) changes.push(`🔑 Пароль изменён`);
+
+    this.telegram.sendMessage(
+      `⚙️ *Дверь изменена*\n` +
+      `📍 Дверь: *${dto.name ?? door.name}*\n` +
+      (changes.length ? changes.join('\n') + '\n' : '') +
+      `👤 Изменил: ${user.email}`,
+    ).catch(() => {});
+
     return updated;
   }
 

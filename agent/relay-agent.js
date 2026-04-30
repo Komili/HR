@@ -28,7 +28,7 @@ if (!fs.existsSync(CONFIG_PATH)) {
   process.exit(1);
 }
 
-const CONFIG = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+const CONFIG = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8').replace(/^﻿/, ''));
 
 const {
   serverUrl,
@@ -246,14 +246,14 @@ async function hikvisionAddUser(device, door, employee) {
       Valid: {
         enable: true,
         beginTime: '2020-01-01T00:00:00',
-        endTime: '2099-12-31T23:59:59',
+        endTime: '2037-12-31T23:59:59',
       },
       doorRight: '1',
       RightPlan: [{ doorNo: 1, planTemplateNo: '1' }],
     },
   });
 
-  await hikvisionRequest(device, door, 'PUT',
+  await hikvisionRequest(device, door, 'POST',
     '/ISAPI/AccessControl/UserInfo/Record?format=json', body, 'application/json');
 }
 
@@ -270,33 +270,26 @@ async function hikvisionDeleteUser(device, door, employee) {
 
 async function hikvisionUploadFace(device, door, employee, photoBuffer) {
   if (!photoBuffer) {
-    warn(`  Нет фото для сотрудника ${employee.id} — лицо не загружено`);
+    warn(`  No photo for employee ${employee.id} — face not uploaded`);
     return;
   }
 
+  const employeeNo = String(employee.id);
   const boundary = `----FormBoundary${crypto.randomBytes(8).toString('hex')}`;
-
-  const jsonPart = JSON.stringify({
-    FaceDataRecord: {
-      employeeNo: String(employee.id),
-      faceLibType: 'blackFD',
-      FDID: '1',
-      FPID: '1',
-    },
-  });
+  const jsonPart = JSON.stringify({ faceLibType: 'blackFD', FDID: '1', FPID: employeeNo });
 
   const bodyBuf = Buffer.concat([
     Buffer.from(
       `--${boundary}\r\nContent-Disposition: form-data; name="FaceDataRecord"\r\n` +
       `Content-Type: application/json\r\n\r\n${jsonPart}\r\n` +
-      `--${boundary}\r\nContent-Disposition: form-data; name="faceData"; filename="face.jpg"\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="img"; filename="face.jpg"\r\n` +
       `Content-Type: image/jpeg\r\n\r\n`
     ),
     photoBuffer,
     Buffer.from(`\r\n--${boundary}--\r\n`),
   ]);
 
-  await hikvisionRequest(device, door, 'PUT',
+  await hikvisionRequest(device, door, 'POST',
     '/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json',
     bodyBuf, `multipart/form-data; boundary=${boundary}`);
 }
@@ -346,7 +339,7 @@ async function sendDeviceAlert(ip, port, doorName, label, online) {
       companyId, ip, port, doorName, label, online,
     });
   } catch (e) {
-    warn(`Не удалось отправить алерт: ${e.message}`);
+    warn(`Failed to send device alert: ${e.message}`);
   }
 }
 
@@ -371,18 +364,17 @@ async function checkDevices() {
       if (!prev) {
         // Первая проверка — просто запоминаем, не шлём алерт
         deviceStates.set(key, { online: isOnline, doorName: door.name, label: dev.label, failedSince: isOnline ? null : new Date() });
-        info(`📡 ${door.name} [${dev.label}] ${dev.ip}:${dev.port} → ${isOnline ? '🟢 онлайн' : '🔴 офлайн'}`);
+        info(`[monitor] ${door.name} [${dev.label}] ${dev.ip}:${dev.port} -> ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
         continue;
       }
 
       if (prev.online !== isOnline) {
-        // Состояние изменилось
         deviceStates.set(key, { ...prev, online: isOnline, failedSince: isOnline ? null : new Date() });
 
         if (isOnline) {
-          ok(`🟢 Устройство ВОССТАНОВЛЕНО: ${door.name} [${dev.label}] ${dev.ip}:${dev.port}`);
+          ok(`[monitor] RESTORED: ${door.name} [${dev.label}] ${dev.ip}:${dev.port}`);
         } else {
-          error(`🔴 Устройство НЕДОСТУПНО: ${door.name} [${dev.label}] ${dev.ip}:${dev.port}`);
+          error(`[monitor] UNREACHABLE: ${door.name} [${dev.label}] ${dev.ip}:${dev.port}`);
         }
 
         await sendDeviceAlert(dev.ip, dev.port, door.name, dev.label, isOnline);
@@ -402,32 +394,32 @@ async function executeCommand(cmd) {
     { ip: door.outDeviceIp, port: door.outDevicePort, label: 'OUT' },
   ];
 
-  info(`▶ Door-команда #${id} [${action.toUpperCase()}] сотрудник ${employee.lastName} ${employee.firstName} → дверь "${door.name}"`);
+  info(`[door] cmd #${id} [${action.toUpperCase()}] ${employee.lastName} ${employee.firstName} -> "${door.name}"`);
 
   if (action === 'grant') {
     let photoBuffer = null;
     if (employee.hasPhoto) {
       try {
         photoBuffer = await downloadPhoto(employee.id);
-        info(`  Фото загружено (${photoBuffer ? Math.round(photoBuffer.length/1024) + ' KB' : 'нет'})`);
+        info(`  photo downloaded (${photoBuffer ? Math.round(photoBuffer.length/1024) + ' KB' : 'none'})`);
       } catch (e) {
-        warn(`  Не удалось скачать фото: ${e.message}`);
+        warn(`  photo download failed: ${e.message}`);
       }
     }
     for (const device of devices) {
-      info(`  → Устройство ${device.label} (${device.ip}:${device.port})`);
+      info(`  -> device ${device.label} (${device.ip}:${device.port})`);
       await hikvisionAddUser(device, door, employee);
       await hikvisionUploadFace(device, door, employee, photoBuffer);
-      ok(`    ✓ ${device.label} — пользователь добавлен`);
+      ok(`  [${device.label}] user added`);
     }
   } else if (action === 'revoke') {
     for (const device of devices) {
-      info(`  → Устройство ${device.label} (${device.ip}:${device.port})`);
+      info(`  -> device ${device.label} (${device.ip}:${device.port})`);
       try {
         await hikvisionDeleteUser(device, door, employee);
-        ok(`    ✓ ${device.label} — пользователь удалён`);
+        ok(`  [${device.label}] user removed`);
       } catch (e) {
-        warn(`    ${device.label} — ${e.message} (пропускаем)`);
+        warn(`  [${device.label}] ${e.message} (skipping)`);
       }
     }
   }
@@ -439,42 +431,38 @@ async function executeCommand(cmd) {
 
 async function executeHikCommand(cmd) {
   const { id, action, device: dev, employee } = cmd;
-  // HikvisionDevice: одно устройство, порт 80
-  const device = { ip: dev.lastSeenIp, port: 80 };
+  const device = { ip: dev.lastSeenIp, port: dev.directPort || 80 };
   const creds  = { login: dev.login || 'admin', password: dev.password || '' };
 
-  const label = `${dev.officeName} (${dev.direction === 'IN' ? 'Вход' : 'Выход'})`;
-  info(`▶ Hik-команда #${id} [${action.toUpperCase()}] ${employee.lastName} ${employee.firstName} → "${label}" (${device.ip})`);
+  const label = `${dev.officeName} (${dev.direction === 'IN' ? 'IN' : 'OUT'})`;
+  info(`[hik] cmd #${id} [${action.toUpperCase()}] ${employee.lastName} ${employee.firstName} -> "${label}" (${device.ip}:${device.port})`);
 
   if (action === 'grant') {
-    // 1. Удаляем старую запись (если была) — избегаем "employeeNoAlreadyExist"
     try {
       await hikvisionDeleteUser(device, creds, employee);
-    } catch (_) { /* не страшно — значит не было */ }
+    } catch (_) { /* not present — ok */ }
 
-    // 2. Добавляем пользователя
     await hikvisionAddUser(device, creds, employee);
-    ok(`  ✓ Пользователь добавлен на ${device.ip}`);
+    ok(`  user added on ${device.ip}`);
 
-    // 3. Загружаем фото (Face ID)
     if (employee.hasPhoto) {
       try {
         const photoBuffer = await downloadPhoto(employee.id);
         if (photoBuffer) {
           await hikvisionUploadFace(device, creds, employee, photoBuffer);
-          ok(`  ✓ Face ID загружен (${Math.round(photoBuffer.length / 1024)} KB)`);
+          ok(`  face uploaded (${Math.round(photoBuffer.length / 1024)} KB)`);
         }
       } catch (e) {
-        warn(`  Фото: ${e.message} (доступ добавлен без Face ID)`);
+        warn(`  face upload failed: ${e.message} (access granted without face)`);
       }
     }
 
   } else if (action === 'revoke') {
     try {
       await hikvisionDeleteUser(device, creds, employee);
-      ok(`  ✓ Пользователь удалён с ${device.ip}`);
+      ok(`  user removed from ${device.ip}`);
     } catch (e) {
-      warn(`  Удаление: ${e.message} (пропускаем — возможно уже не было)`);
+      warn(`  remove failed: ${e.message} (skipping)`);
     }
   }
 }
@@ -487,6 +475,9 @@ let consecutiveErrors = 0;
 let running = true;
 
 async function pollOnce() {
+  // Heartbeat — сервер видит что агент живой
+  serverRequest('POST', '/api/agent/ping', { companyId }).catch(() => {});
+
   // ── Door команды ──
   let commands;
   try {
@@ -495,20 +486,20 @@ async function pollOnce() {
   } catch (e) {
     consecutiveErrors++;
     if (consecutiveErrors === 1 || consecutiveErrors % 12 === 0) {
-      error(`Не могу достучаться до сервера: ${e.message}`);
+      error(`Cannot reach server: ${e.message}`);
     }
     return;
   }
 
   if (Array.isArray(commands) && commands.length > 0) {
-    info(`📥 Door-команд: ${commands.length}`);
+    info(`[door] ${commands.length} command(s) received`);
     for (const cmd of commands) {
       try {
         await executeCommand(cmd);
         await serverRequest('PATCH', `/api/agent/commands/${cmd.id}`, { status: 'done' });
-        ok(`✅ Door-команда #${cmd.id} выполнена`);
+        ok(`[door] cmd #${cmd.id} done`);
       } catch (e) {
-        error(`❌ Door-команда #${cmd.id} ошибка: ${e.message}`);
+        error(`[door] cmd #${cmd.id} failed: ${e.message}`);
         await serverRequest('PATCH', `/api/agent/commands/${cmd.id}`, {
           status: 'failed', error: e.message,
         }).catch(() => {});
@@ -516,24 +507,24 @@ async function pollOnce() {
     }
   }
 
-  // ── Hikvision Face ID команды ──
+  // Face ID commands
   let hikCmds;
   try {
     hikCmds = await serverRequest('GET', `/api/agent/hik-commands?companyId=${companyId}`);
   } catch (e) {
-    warn(`hik-commands: ${e.message}`);
+    warn(`hik-commands fetch failed: ${e.message}`);
     return;
   }
 
   if (Array.isArray(hikCmds) && hikCmds.length > 0) {
-    info(`📥 Hik Face ID команд: ${hikCmds.length}`);
+    info(`[hik] ${hikCmds.length} command(s) received`);
     for (const cmd of hikCmds) {
       try {
         await executeHikCommand(cmd);
         await serverRequest('PATCH', `/api/agent/hik-commands/${cmd.id}`, { status: 'done' });
-        ok(`✅ Hik-команда #${cmd.id} выполнена`);
+        ok(`[hik] cmd #${cmd.id} done`);
       } catch (e) {
-        error(`❌ Hik-команда #${cmd.id} ошибка: ${e.message}`);
+        error(`[hik] cmd #${cmd.id} failed: ${e.message}`);
         await serverRequest('PATCH', `/api/agent/hik-commands/${cmd.id}`, {
           status: 'failed', error: e.message,
         }).catch(() => {});
@@ -543,53 +534,46 @@ async function pollOnce() {
 }
 
 async function main() {
-  info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  info('==================================================');
   info('  HRMS Relay Agent v1.0');
-  info(`  Сервер     : ${serverUrl}`);
-  info(`  Компания ID: ${companyId}`);
-  info(`  Опрос команд: каждые ${pollIntervalMs / 1000} сек`);
-  info(`  Мониторинг устройств: каждые ${deviceCheckIntervalMs / 1000} сек`);
-  info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  info(`  Server    : ${serverUrl}`);
+  info(`  Company ID: ${companyId}`);
+  info(`  Poll interval  : ${pollIntervalMs / 1000}s`);
+  info(`  Device monitor : ${deviceCheckIntervalMs / 1000}s`);
+  info('==================================================');
 
-  // Проверка связи с сервером
   try {
     const status = await serverRequest('GET', `/api/agent/status?companyId=${companyId}`);
-    ok(`🟢 Сервер доступен. Команд в очереди: ${status.pending}, выполнено: ${status.done}, ошибок: ${status.failed}`);
+    ok(`Server OK. pending=${status.pending} done=${status.done} failed=${status.failed}`);
   } catch (e) {
-    warn(`⚠️  Сервер недоступен при старте: ${e.message}. Продолжаю попытки...`);
+    warn(`Server unreachable at startup: ${e.message}. Will keep retrying...`);
   }
 
-  // Первоначальная проверка устройств (без алертов — просто записываем состояние)
-  info('📡 Первичный опрос устройств...');
-  await checkDevices().catch(e => warn(`Ошибка опроса устройств: ${e.message}`));
+  info('Initial device scan...');
+  await checkDevices().catch(e => warn(`Device scan error: ${e.message}`));
 
-  // Цикл опроса команд
   const commandLoop = async () => {
     while (running) {
-      await pollOnce().catch(e => error(`Ошибка цикла команд: ${e.message}`));
+      await pollOnce().catch(e => error(`Poll loop error: ${e.message}`));
       await new Promise(r => setTimeout(r, pollIntervalMs));
     }
   };
 
-  // Цикл мониторинга устройств (независимый, с другим интервалом)
   const monitorLoop = async () => {
-    // Первая проверка уже была выше, ждём интервал перед следующей
     await new Promise(r => setTimeout(r, deviceCheckIntervalMs));
     while (running) {
-      await checkDevices().catch(e => warn(`Ошибка мониторинга: ${e.message}`));
+      await checkDevices().catch(e => warn(`Monitor error: ${e.message}`));
       await new Promise(r => setTimeout(r, deviceCheckIntervalMs));
     }
   };
 
-  // Запускаем оба цикла параллельно
   await Promise.all([commandLoop(), monitorLoop()]);
 }
 
-// Graceful shutdown
-process.on('SIGINT',  () => { info('Остановка агента (SIGINT)...');  running = false; setTimeout(() => process.exit(0), 1000); });
-process.on('SIGTERM', () => { info('Остановка агента (SIGTERM)...'); running = false; setTimeout(() => process.exit(0), 1000); });
+process.on('SIGINT',  () => { info('Stopping (SIGINT)...');  running = false; setTimeout(() => process.exit(0), 1000); });
+process.on('SIGTERM', () => { info('Stopping (SIGTERM)...'); running = false; setTimeout(() => process.exit(0), 1000); });
 
 main().catch(e => {
-  error(`Критическая ошибка: ${e.message}`);
+  error(`Fatal error: ${e.message}`);
   process.exit(1);
 });

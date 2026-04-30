@@ -53,10 +53,11 @@ model User {
   roleId         Int
   company        Company? @relation(fields: [companyId], references: [id])
   companyId      Int?     // null для суперадминов холдинга
-  isHoldingAdmin Boolean  @default(false) // Суперадмин холдинга
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isHoldingAdmin    Boolean           @default(false) // Суперадмин холдинга
+  isActive          Boolean           @default(true)
+  initiatedCommands HikvisionCommand[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 }
 
 model Role {
@@ -391,6 +392,7 @@ model HikvisionDevice {
   direction   String?                    // "IN" | "OUT"
   login       String?  @default("admin")
   password    String?
+  directPort  Int?                       // порт проброски роутера → устройство:80
   lastSeenAt  DateTime @default(now())
   accesses    HikvisionAccess[]
   commands    HikvisionCommand[]
@@ -403,16 +405,18 @@ model HikvisionDevice {
 
 // Очередь ISAPI-команд для relay-агента (Face ID: добавить/удалить пользователя)
 model HikvisionCommand {
-  id         Int             @id @default(autoincrement())
-  device     HikvisionDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  deviceId   Int
-  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeId Int
-  action     String          // "grant" | "revoke"
-  status     String          @default("pending") // pending | processing | done | failed
-  error      String?         @db.Text
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id              Int             @id @default(autoincrement())
+  device          HikvisionDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId        Int
+  employee        Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId      Int
+  initiatedBy     User?           @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
+  initiatedById   Int?
+  action          String          // "grant" | "revoke"
+  status          String          @default("pending") // pending | processing | done | failed
+  error           String?         @db.Text
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@index([status, deviceId])
   @@index([employeeId])

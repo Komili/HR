@@ -55,6 +55,7 @@ interface IsupSocket {
   remoteAddr: string;
   probeHandled?: boolean;
   heartbeatTimer?: NodeJS.Timeout;
+  encryptKey?: Buffer; // AES-128-ECB ключ если устройство использует шифрование
 }
 
 // ─── Сервис ──────────────────────────────────────────────────────────────────
@@ -131,11 +132,17 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
   // ─── Разбор входящих пакетов ───────────────────────────────────────────────
 
   private drain(state: IsupSocket) {
-    // Probe-пакет: Hikvision DS-K серия шлёт 2 байта перед основным пакетом.
-    // Нужно ответить теми же байтами, после чего устройство пришлёт регистрационный пакет.
+    // EHome2.0 probe: устройство шлёт [0x10, 0x58] = "заголовок, далее 88 байт".
+    // Эхо только если probe пришёл ОТДЕЛЬНО (без регистрации). Если вместе — молчим.
     if (!state.probeHandled && state.buf.length >= 2 && state.buf[0] === 0x10) {
-      this.logger.debug(`Probe (${state.buf.slice(0,2).toString('hex')}) от ${state.remoteAddr}`);
-      try { state.socket.write(Buffer.from([state.buf[0], state.buf[1]])); } catch {}
+      const probeLen = state.buf[1];
+      const probeAlone = state.buf.length === 2; // probe пришёл отдельно от регистрации
+      if (probeAlone) {
+        this.logger.debug(`Probe [10 ${probeLen.toString(16)}] ОТДЕЛЬНО от ${state.remoteAddr} — эхо`);
+        try { state.socket.write(Buffer.from([0x10, probeLen])); } catch {}
+      } else {
+        this.logger.debug(`Probe [10 ${probeLen.toString(16)}] ВМЕСТЕ с регистрацией от ${state.remoteAddr} — без эхо`);
+      }
       state.buf = state.buf.slice(2);
       state.probeHandled = true;
       if (state.buf.length === 0) return;
@@ -159,12 +166,24 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
         const payload    = state.buf.slice(HEADER_SIZE, HEADER_SIZE + payloadLen);
         state.buf = state.buf.slice(HEADER_SIZE + payloadLen);
 
+        let msgPayload: Buffer<ArrayBufferLike> = payload;
         if (encryptFlag !== 0x00) {
-          this.logger.warn(`⚠️  Зашифрованный ISUP5 пакет от ${state.remoteAddr} — нужно отключить "Ключ шифрования"`);
-          state.socket.destroy();
-          return;
+          const keyBuf = this.getIsupEncKey();
+          if (!keyBuf) {
+            this.logger.warn(`⚠️  Зашифрованный ISUP5 пакет от ${state.remoteAddr} — добавь ISUP_ENC_KEY в .env`);
+            state.socket.destroy();
+            return;
+          }
+          try {
+            msgPayload = this.decryptIsup(payload, keyBuf);
+            state.encryptKey = keyBuf;
+          } catch (e: any) {
+            this.logger.warn(`Ошибка дешифровки ISUP от ${state.remoteAddr}: ${e.message}`);
+            state.socket.destroy();
+            return;
+          }
         }
-        this.handleMsg(state, msgType, seqNum, payload);
+        this.handleMsg(state, msgType, seqNum, msgPayload);
         continue;
       }
 
@@ -196,7 +215,7 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
         break;
 
       case MSG_HEARTBEAT:
-        this.send(state.socket, MSG_HEARTBEAT_ACK, seq, Buffer.alloc(0));
+        this.send(state.socket, MSG_HEARTBEAT_ACK, seq, Buffer.alloc(0), state.encryptKey);
         break;
 
       case MSG_ISAPI_ACK:
@@ -206,14 +225,8 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
       case 0x05: // Data/event from device — ignore, handled by HTTP webhook
         break;
 
-      case 0x1A: // Key Exchange — устройство шлёт при включённом шифровании
-        this.logger.warn(
-          `⚠️  Устройство ${state.remoteAddr} требует ШИФРОВАНИЕ ISUP. ` +
-          `Отключи "Ключ шифрования" в настройках ISUP на устройстве (оставь поле пустым).`,
-        );
-        // Отвечаем нашим "key" — без реального шифрования это не сработает,
-        // но попробуем принять соединение с пустым ключом
-        this.send(state.socket, 0x1B, seq, Buffer.alloc(0));
+      case 0x1A: // Key Exchange (устройство шлёт при включённом шифровании)
+        this.send(state.socket, 0x1B, seq, Buffer.alloc(0), state.encryptKey);
         break;
 
       default:
@@ -252,7 +265,7 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
       statusString: 'OK',
       statusDescription: 'Success',
     }), 'utf8');
-    this.send(state.socket, MSG_REGISTER_ACK, seq, ack);
+    this.send(state.socket, MSG_REGISTER_ACK, seq, ack, state.encryptKey);
   }
 
   // ─── Ответ на ISAPI-команду ────────────────────────────────────────────────
@@ -285,17 +298,51 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
 
   // ─── Отправка пакета ───────────────────────────────────────────────────────
 
-  private send(socket: net.Socket, type: number, seq: number, payload: Buffer) {
+  private getIsupEncKey(): Buffer | undefined {
+    const encKey = process.env.ISUP_ENC_KEY || '';
+    if (!encKey) return undefined;
+    const keyBuf = Buffer.alloc(16, 0);
+    Buffer.from(encKey, 'utf8').copy(keyBuf, 0, 0, 16);
+    return keyBuf;
+  }
+
+  private decryptIsup(payload: Buffer, keyBuf: Buffer): Buffer {
+    if (payload.length === 0) return payload;
+    const alignedLen = Math.ceil(payload.length / 16) * 16;
+    const padded = Buffer.alloc(alignedLen, 0);
+    payload.copy(padded);
+    const decipher = crypto.createDecipheriv('aes-128-ecb', keyBuf, null);
+    decipher.setAutoPadding(false);
+    return Buffer.from(Buffer.concat([decipher.update(padded), decipher.final()]));
+  }
+
+  private encryptIsup(payload: Buffer, keyBuf: Buffer): Buffer {
+    if (payload.length === 0) return payload;
+    const alignedLen = Math.ceil(payload.length / 16) * 16;
+    const padded = Buffer.alloc(alignedLen, 0);
+    payload.copy(padded);
+    const cipher = crypto.createCipheriv('aes-128-ecb', keyBuf, null);
+    cipher.setAutoPadding(false);
+    return Buffer.from(Buffer.concat([cipher.update(padded), cipher.final()]));
+  }
+
+  private send(socket: net.Socket, type: number, seq: number, payload: Buffer, encryptKey?: Buffer) {
+    let outPayload = payload;
+    let encryptFlag = 0x00;
+    if (encryptKey && payload.length > 0) {
+      outPayload = this.encryptIsup(payload, encryptKey);
+      encryptFlag = 0x02;
+    }
     const hdr = Buffer.alloc(HEADER_SIZE);
     hdr[0] = ISUP_MAGIC;
     hdr[1] = ISUP_VER;
-    hdr[2] = 0x00; // без шифрования
+    hdr[2] = encryptFlag;
     hdr[3] = type;
     hdr.writeUInt32LE(seq, 4);
     hdr.writeUInt32LE(0, 8);               // sessionId = 0
-    hdr.writeUInt32LE(payload.length, 12);
+    hdr.writeUInt32LE(outPayload.length, 12);
     hdr.writeUInt32LE(0, 16);              // reserved
-    try { socket.write(Buffer.concat([hdr, payload])); } catch {}
+    try { socket.write(Buffer.concat([hdr, outPayload])); } catch {}
   }
 
   // ─── Публичный API ─────────────────────────────────────────────────────────
@@ -368,11 +415,92 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
       }, timeoutMs);
 
       state.pending.set(seq, { resolve, reject, timer });
-      this.send(state.socket, MSG_ISAPI_FORWARD, seq, payload);
+      this.send(state.socket, MSG_ISAPI_FORWARD, seq, payload, state.encryptKey);
     });
   }
 
   // ─── EHome протокол (DS-K серия: Face ID терминалы) ───────────────────────
+
+  /**
+   * EHome2.0 Register ACK.
+   *
+   * Пакет регистрации 88 байт:
+   *   offset 0-1:   cmd=0x01 sub=0x01
+   *   offset 2-3:   devIdLen (BE)
+   *   offset 4..:   serial, model, flags, isupId
+   *   offset 42-73: 32-байт случайный challenge (меняется каждое подключение)
+   *
+   * ACK без шифрования: [0x02][0x01][0x00][0x04] + timestamp_BE_4
+   * ACK с шифрованием:  [0x02][0x01][0x00][0x20] + AES-128-ECB(ch[0:16], key) + AES-128-ECB(ch[16:32], key)
+   */
+  private eHomeAckAttempt = 0;
+
+  private aes128ecb(data16: Buffer, keyBuf: Buffer): Buffer {
+    return Buffer.from(
+      crypto.createCipheriv('aes-128-ecb', keyBuf, null).setAutoPadding(false).update(data16),
+    );
+  }
+
+  private aes128ecbDec(data16: Buffer, keyBuf: Buffer): Buffer {
+    return Buffer.from(
+      crypto.createDecipheriv('aes-128-ecb', keyBuf, null).setAutoPadding(false).update(data16),
+    );
+  }
+
+  private buildEHomeAck(regPacket: Buffer): Buffer {
+    const encKey = process.env.ISUP_ENC_KEY || '';
+    const ts = Math.floor(Date.now() / 1000);
+    const tsBuf = Buffer.alloc(4);
+    tsBuf.writeUInt32BE(ts, 0);
+
+    // Без ключа — plain timestamp
+    if (!encKey || regPacket.length < 74) {
+      this.logger.log('EHome ACK: plain-ts (нет ISUP_ENC_KEY)');
+      return Buffer.concat([Buffer.from([0x02, 0x01, 0x00, 0x04]), tsBuf]);
+    }
+
+    // Ключ: первые 16 байт (UTF-8), дополнить нулями если короче
+    const keyBuf = Buffer.alloc(16, 0);
+    Buffer.from(encKey, 'utf8').copy(keyBuf, 0, 0, 16);
+
+    const ch = regPacket.slice(42, 42 + 32); // 32-байт challenge
+    const enc32 = Buffer.concat([this.aes128ecb(ch.slice(0, 16), keyBuf), this.aes128ecb(ch.slice(16, 32), keyBuf)]);
+    const enc16 = this.aes128ecb(ch.slice(0, 16), keyBuf);
+    const dec32 = Buffer.concat([this.aes128ecbDec(ch.slice(0, 16), keyBuf), this.aes128ecbDec(ch.slice(16, 32), keyBuf)]);
+    const dec16 = this.aes128ecbDec(ch.slice(0, 16), keyBuf);
+
+    // Производные ключи: MD5 и SHA256 — Hikvision в некоторых прошивках хэширует пароль
+    const md5Key  = crypto.createHash('md5').update(encKey, 'utf8').digest();                    // 16 bytes
+    const sha16   = crypto.createHash('sha256').update(encKey, 'utf8').digest().slice(0, 16);    // 16 bytes
+    // Ключ первые 10 символов + pad (старый формат некоторых DS-K)
+    const key10   = Buffer.alloc(16, 0);
+    Buffer.from(encKey, 'utf8').copy(key10, 0, 0, 10);
+
+    const HDR = [0x02, 0x01];
+    const v = (key: Buffer, ch16: Buffer) => this.aes128ecb(ch16, key);
+
+    const variants: Buffer[] = [
+      // ── raw key ────────────────────────────────────────────────────────────
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x10]), this.aes128ecb(ch.slice(0, 16), keyBuf)]),   // 0: enc16, raw key
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x20]), this.aes128ecb(ch.slice(0, 16), keyBuf), this.aes128ecb(ch.slice(16, 32), keyBuf)]), // 1: enc32, raw key
+      // ── MD5(key) ──────────────────────────────────────────────────────────
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x10]), v(md5Key, ch.slice(0, 16))]),               // 2: enc16, md5 key
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x20]), v(md5Key, ch.slice(0, 16)), v(md5Key, ch.slice(16, 32))]), // 3: enc32, md5 key
+      // ── SHA256(key)[0:16] ─────────────────────────────────────────────────
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x10]), v(sha16, ch.slice(0, 16))]),               // 4: enc16, sha key
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x20]), v(sha16, ch.slice(0, 16)), v(sha16, ch.slice(16, 32))]), // 5: enc32, sha key
+      // ── 10-byte key padded ─────────────────────────────────────────────────
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x10]), v(key10, ch.slice(0, 16))]),               // 6: enc16, key10
+      // ── decrypt variants with raw key ──────────────────────────────────────
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x10]), this.aes128ecbDec(ch.slice(0, 16), keyBuf)]), // 7: dec16, raw key
+      Buffer.concat([Buffer.from([...HDR, 0x00, 0x20]), this.aes128ecbDec(ch.slice(0, 16), keyBuf), this.aes128ecbDec(ch.slice(16, 32), keyBuf)]), // 8: dec32, raw key
+    ];
+
+    const attempt = this.eHomeAckAttempt++ % variants.length;
+    const ack = variants[attempt];
+    this.logger.log(`EHome ACK attempt=${attempt}/${variants.length} ch=${ch.slice(0, 4).toString('hex')}.. ack=${ack.toString('hex')}`);
+    return ack;
+  }
 
   private handleEHome(state: IsupSocket, data: Buffer) {
     if (data.length < 2) return;
@@ -452,42 +580,17 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
     );
 
     // EHome2.0 Register ACK
-    // С ключом: AES-128-ECB(challenge32, key) — доказываем знание ключа
-    // Без ключа: plain timestamp
-    const encKeyStr = process.env.ISUP_ENC_KEY || '';
-    let ack: Buffer;
-
-    if (encKeyStr && offset >= 42 && data.length >= offset + 32) {
-      // Ключ дополняем до 16 байт нулями (стандарт Hikvision)
-      const keyBuf = Buffer.alloc(16);
-      Buffer.from(encKeyStr).copy(keyBuf);
-      // 32 байта challenge (после парсинга ISUP ID)
-      const challenge32 = data.slice(offset, offset + 32);
-      const cipher = crypto.createCipheriv('aes-128-ecb', keyBuf, null);
-      cipher.setAutoPadding(false);
-      const response = Buffer.concat([cipher.update(challenge32), cipher.final()]);
-      // type=0x01, sub=0x02 (server response), data_len=32, [32 bytes AES]
-      ack = Buffer.alloc(4 + 32);
-      ack[0] = 0x01; ack[1] = 0x02;
-      ack.writeUInt16BE(32, 2);
-      response.copy(ack, 4);
-      this.logger.debug(`EHome ACK AES-ECB key="${encKeyStr}" challenge=${challenge32.toString('hex').slice(0,20)}...`);
-    } else {
-      // Без шифрования: timestamp
-      ack = Buffer.alloc(8);
-      ack[0] = 0x01; ack[1] = 0x02;
-      ack.writeUInt16BE(4, 2);
-      ack.writeUInt32BE(Math.floor(Date.now() / 1000), 4);
-      this.logger.debug(`EHome ACK plain timestamp: ${ack.toString('hex')}`);
-    }
+    const ack = this.buildEHomeAck(data);
+    this.logger.debug(`EHome → device ACK (${ack.length} bytes): ${ack.toString('hex')}`);
     try { state.socket.write(ack); } catch {}
+    void offset;
 
-    // Периодический heartbeat от сервера (keep-alive, каждые 30 секунд)
+    // Heartbeat каждые 5 секунд — устройство ожидает сигнал от сервера
     state.heartbeatTimer = setInterval(() => {
       if (state.socket.destroyed) { clearInterval(state.heartbeatTimer!); return; }
       try { state.socket.write(Buffer.from([0x03, 0x00, 0x00, 0x00])); } catch {
         clearInterval(state.heartbeatTimer!);
       }
-    }, 30_000);
+    }, 5_000);
   }
 }

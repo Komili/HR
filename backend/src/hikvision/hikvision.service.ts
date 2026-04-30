@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import * as fs from 'fs';
@@ -10,9 +10,17 @@ import { TelegramService } from '../telegram/telegram.service';
 import { HikvisionIsupService } from './hikvision-isup.service';
 import { RequestUser } from '../auth/jwt.strategy';
 
+// Устройство считается офлайн если нет heartbeat дольше этого времени
+const OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 минут
+// Как часто проверять доступность устройств
+const CHECK_INTERVAL_MS = 2 * 60 * 1000; // каждые 2 минуты
+
 @Injectable()
-export class HikvisionService {
+export class HikvisionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HikvisionService.name);
+  // MAC → true (онлайн) | false (офлайн) | undefined (первый запуск)
+  private readonly deviceOnlineState = new Map<string, boolean>();
+  private monitorTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -20,6 +28,74 @@ export class HikvisionService {
     private telegramService: TelegramService,
     private isup: HikvisionIsupService,
   ) {}
+
+  onModuleInit() {
+    // Первая проверка через 1 минуту после старта (чтобы БД успела подняться)
+    this.monitorTimer = setTimeout(() => this.runMonitorLoop(), 60_000);
+  }
+
+  onModuleDestroy() {
+    if (this.monitorTimer) clearTimeout(this.monitorTimer);
+  }
+
+  private async runMonitorLoop() {
+    try {
+      await this.checkDeviceAvailability();
+    } catch (e) {
+      this.logger.error(`Ошибка мониторинга устройств: ${e.message}`);
+    }
+    this.monitorTimer = setTimeout(() => this.runMonitorLoop(), CHECK_INTERVAL_MS);
+  }
+
+  private async checkDeviceAvailability() {
+    const devices = await this.prisma.hikvisionDevice.findMany({
+      where: { status: 'active' },
+      include: { company: { select: { shortName: true, name: true } } },
+    });
+
+    const now = Date.now();
+
+    for (const device of devices) {
+      const lastSeen = device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : 0;
+      const isOnline = lastSeen > 0 && (now - lastSeen) < OFFLINE_THRESHOLD_MS;
+      const prevState = this.deviceOnlineState.get(device.macAddress);
+
+      // Первый запуск — просто запоминаем состояние без уведомления
+      if (prevState === undefined) {
+        this.deviceOnlineState.set(device.macAddress, isOnline);
+        continue;
+      }
+
+      if (prevState === isOnline) continue; // состояние не изменилось
+
+      this.deviceOnlineState.set(device.macAddress, isOnline);
+      const companyName = (device as any).company?.shortName || (device as any).company?.name || '—';
+      const minsAgo = lastSeen ? Math.floor((now - lastSeen) / 60000) : null;
+
+      if (isOnline) {
+        this.logger.log(`🟢 Устройство восстановлено: ${device.officeName} (${device.macAddress})`);
+        this.telegramService.sendMessage(
+          `🟢 <b>Устройство восстановлено</b>\n` +
+          `🏛 Офис: ${device.officeName} (${device.direction === 'IN' ? 'Вход' : 'Выход'})\n` +
+          `🏢 Компания: ${companyName}\n` +
+          `📟 MAC: ${device.macAddress}\n` +
+          `🏠 IP: ${device.lastSeenIp}\n` +
+          `✅ Связь восстановлена`,
+        ).catch(() => {});
+      } else {
+        this.logger.warn(`🔴 Устройство недоступно: ${device.officeName} (${device.macAddress}), последний сигнал ${minsAgo} мин назад`);
+        this.telegramService.sendMessage(
+          `🔴 <b>Устройство недоступно</b>\n` +
+          `🏛 Офис: ${device.officeName} (${device.direction === 'IN' ? 'Вход' : 'Выход'})\n` +
+          `🏢 Компания: ${companyName}\n` +
+          `📟 MAC: ${device.macAddress}\n` +
+          `🏠 IP: ${device.lastSeenIp}\n` +
+          `⏰ Последний сигнал: ${minsAgo !== null ? `${minsAgo} мин назад` : 'никогда'}\n` +
+          `⚠️ Проверь питание и сеть устройства`,
+        ).catch(() => {});
+      }
+    }
+  }
 
   // ─────────── обработка входящего события ───────────
 
@@ -34,8 +110,8 @@ export class HikvisionService {
     let eventData: any;
     try {
       eventData = JSON.parse(jsonStr);
-    } catch {
-      this.logger.debug('Ошибка парсинга JSON от Hikvision');
+    } catch (e) {
+      this.logger.warn(`JSON parse error (body ${bodyStr.length} chars, jsonStr ${jsonStr.length} chars): ${e.message}`);
       return;
     }
 
@@ -104,9 +180,14 @@ export class HikvisionService {
       return;
     }
 
-    const employeeNo = accessEvent.employeeNo ? String(accessEvent.employeeNo) : null;
+    // DS-K series uses "employeeNoString", older devices use "employeeNo"
+    const employeeNo = accessEvent.employeeNoString
+      ? String(accessEvent.employeeNoString)
+      : accessEvent.employeeNo
+        ? String(accessEvent.employeeNo)
+        : null;
     if (!employeeNo) {
-      this.logger.debug('Событие без employeeNo — пропускаем');
+      this.logger.debug('Событие без employeeNo/employeeNoString — пропускаем');
       return;
     }
 
@@ -140,9 +221,10 @@ export class HikvisionService {
 
     const timestamp = eventData.dateTime ? new Date(eventData.dateTime) : new Date();
 
-    // Ищем сотрудника по skudId
+    // Ищем сотрудника: сначала по skudId (старый СКУД), затем по id (Face ID устройства)
+    const numericId = parseInt(employeeNo) || 0;
     const employee = await this.prisma.employee.findFirst({
-      where: { skudId: employeeNo },
+      where: { OR: [{ skudId: employeeNo }, { id: numericId }] },
       include: {
         company: { select: { name: true } },
         department: { select: { name: true } },
@@ -183,25 +265,48 @@ export class HikvisionService {
       timeZone: 'Asia/Dushanbe',
     });
 
-    await this.telegramService.sendMessage(
-      [
-        `${isIn ? '🟢' : '🔴'} ${isIn ? 'Вход сотрудника' : 'Выход сотрудника'}`,
-        ``,
-        `🏢 Офис: ${officeName}`,
-        `🚪 Дверь: ${isIn ? 'Вход (Снаружи)' : 'Выход (Внутри)'}`,
-        `👤 Сотрудник: ${fullName}`,
-        `⏰ Время: ${timeStr}`,
-      ].join('\n'),
+    const caption = [
+      `${isIn ? '🟢' : '🔴'} <b>${isIn ? 'Вход' : 'Выход'}</b>`,
+      ``,
+      `👤 <b>${fullName}</b>`,
+      employee.position?.name || employee.department?.name
+        ? `   ${[employee.position?.name, employee.department?.name].filter(Boolean).join(' · ')}`
+        : null,
+      ``,
+      `🏢 ${officeName}${employee.company?.name ? ` · ${employee.company.name}` : ''}`,
+      `⏰ ${timeStr}`,
+    ].filter(s => s !== null).join('\n');
+
+    const facePhoto = this.extractJpegFromMultipart(
+      typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody,
     );
+
+    if (facePhoto && facePhoto.length > 1000) {
+      await this.telegramService.sendPhoto(facePhoto, caption);
+    } else {
+      await this.telegramService.sendMessage(caption);
+    }
     this.logger.log(`${isIn ? 'Вход' : 'Выход'}: ${fullName} — ${officeName} (${timeStr})`);
   }
 
   // ─────────── автообнаружение устройства ───────────
 
+  private extractDeviceInfo(eventData: any) {
+    const acc = eventData.AccessControllerEvent || {};
+    return {
+      deviceName: acc.deviceName || acc.channelName || eventData.deviceName || eventData.channelName || null,
+      serialNo:   acc.serialNo || eventData.serialNo || null,
+      model:      acc.model    || eventData.model    || null,
+      firmware:   acc.firmwareVersion || eventData.firmwareVersion || null,
+    };
+  }
+
   private async upsertDevice(macAddress: string, ip: string, eventData: any, externalIp?: string) {
     const existing = await this.prisma.hikvisionDevice.findUnique({
       where: { macAddress },
     });
+
+    const { deviceName } = this.extractDeviceInfo(eventData);
 
     if (existing) {
       const updates: any = { lastSeenAt: new Date() };
@@ -213,20 +318,43 @@ export class HikvisionService {
         this.logger.log(`Hikvision MAC=${macAddress}: внешний IP изменился ${existing.externalIp} → ${externalIp}`);
         updates.externalIp = externalIp;
       }
+      // Обновляем имя если оно ещё не было известно
+      if (!existing.deviceName && deviceName) {
+        this.logger.log(`Hikvision MAC=${macAddress}: имя устройства определено → ${deviceName}`);
+        updates.deviceName = deviceName;
+      }
       await this.prisma.hikvisionDevice.update({ where: { macAddress }, data: updates });
-      return existing;
+      return { ...existing, ...updates };
     }
 
     // Новое устройство — создаём как pending
-    const deviceName = eventData.AccessControllerEvent?.deviceName || null;
+    const { serialNo, model, firmware } = this.extractDeviceInfo(eventData);
+    const eventType = eventData.eventType || null;
+
     const newDevice = await this.prisma.hikvisionDevice.create({
       data: { macAddress, lastSeenIp: ip, externalIp: externalIp || null, deviceName, status: 'pending' },
     });
 
-    this.logger.log(`🆕 Новое Hikvision устройство: MAC=${macAddress} IP=${ip}`);
-    await this.telegramService.sendMessage(
-      `🆕 Обнаружено новое устройство Hikvision\n\nMAC: ${macAddress}\nIP: ${ip}${deviceName ? `\nИмя: ${deviceName}` : ''}\n\nПривяжите его к компании в разделе «Управление дверями»`,
-    );
+    this.logger.log(`🆕 Новое Hikvision устройство: MAC=${macAddress} IP=${ip}${deviceName ? ` (${deviceName})` : ''}`);
+
+    const lines = [
+      `🆕 <b>Обнаружено новое устройство Hikvision</b>`,
+      ``,
+      `📟 MAC: \`${macAddress}\``,
+      `🏠 Внутренний IP: ${ip}`,
+      externalIp  ? `🌐 Внешний IP: ${externalIp}` : null,
+      deviceName  ? `📛 Имя устройства: ${deviceName}` : `📛 Имя устройства: определится при следующем событии`,
+      serialNo    ? `🔢 Серийный номер: ${serialNo}` : null,
+      model       ? `📦 Модель: ${model}` : null,
+      firmware    ? `⚙️ Прошивка: ${firmware}` : null,
+      eventType   ? `📡 Тип события: ${eventType}` : null,
+      ``,
+      `🔴 Статус: ожидает привязки`,
+      ``,
+      `👉 Привяжите устройство в разделе «Управление дверями»`,
+    ].filter(Boolean).join('\n');
+
+    await this.telegramService.sendMessage(lines);
 
     return newDevice;
   }
@@ -251,14 +379,19 @@ export class HikvisionService {
 
   async bindDevice(
     id: number,
-    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string },
+    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; directPort?: number },
     user: RequestUser,
   ) {
     if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
     const device = await this.prisma.hikvisionDevice.findUnique({ where: { id } });
     if (!device) throw new NotFoundException(`Устройство #${id} не найдено`);
 
-    return this.prisma.hikvisionDevice.update({
+    const company = await this.prisma.company.findUnique({
+      where: { id: data.companyId },
+      select: { name: true, shortName: true },
+    });
+
+    const updated = await this.prisma.hikvisionDevice.update({
       where: { id },
       data: {
         companyId: data.companyId,
@@ -266,28 +399,74 @@ export class HikvisionService {
         direction: data.direction,
         login: data.login ?? 'admin',
         password: data.password ?? null,
+        directPort: data.directPort ?? null,
         status: 'active',
       },
       include: { company: { select: { id: true, name: true, shortName: true } } },
     });
+
+    const companyName = company?.shortName || company?.name || `ID ${data.companyId}`;
+    this.telegramService.sendMessage(
+      `🔗 <b>Устройство привязано</b>\n` +
+      `📟 MAC: ${device.macAddress}\n` +
+      `🏠 Внутренний IP: ${device.lastSeenIp}\n` +
+      (device.externalIp ? `🌐 Внешний IP: ${device.externalIp}\n` : '') +
+      `🏢 Компания: ${companyName}\n` +
+      `🏛 Офис: ${data.officeName}\n` +
+      `🚪 Направление: ${data.direction === 'IN' ? 'Вход (IN)' : 'Выход (OUT)'}\n` +
+      `👤 Привязал: ${user.email}`,
+    ).catch(() => {});
+
+    return updated;
   }
 
   async unbindDevice(id: number, user: RequestUser) {
     if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
-    const device = await this.prisma.hikvisionDevice.findUnique({ where: { id } });
+    const device = await this.prisma.hikvisionDevice.findUnique({
+      where: { id },
+      include: { company: { select: { name: true, shortName: true } } },
+    });
     if (!device) throw new NotFoundException(`Устройство #${id} не найдено`);
 
-    return this.prisma.hikvisionDevice.update({
+    const updated = await this.prisma.hikvisionDevice.update({
       where: { id },
       data: { companyId: null, officeName: null, direction: null, status: 'pending' },
     });
+
+    const companyName = (device as any).company?.shortName || (device as any).company?.name || '—';
+    this.telegramService.sendMessage(
+      `🔌 <b>Устройство отвязано</b>\n` +
+      `📟 MAC: ${device.macAddress}\n` +
+      `🏠 Внутренний IP: ${device.lastSeenIp}\n` +
+      (device.externalIp ? `🌐 Внешний IP: ${device.externalIp}\n` : '') +
+      `🏛 Было: ${device.officeName || '—'} (${companyName})\n` +
+      `👤 Отвязал: ${user.email}`,
+    ).catch(() => {});
+
+    return updated;
   }
 
   async deleteDevice(id: number, user: RequestUser) {
     if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
-    const device = await this.prisma.hikvisionDevice.findUnique({ where: { id } });
+    const device = await this.prisma.hikvisionDevice.findUnique({
+      where: { id },
+      include: { company: { select: { name: true, shortName: true } } },
+    });
     if (!device) throw new NotFoundException(`Устройство #${id} не найдено`);
-    return this.prisma.hikvisionDevice.delete({ where: { id } });
+
+    await this.prisma.hikvisionDevice.delete({ where: { id } });
+
+    const companyName = (device as any).company?.shortName || (device as any).company?.name || '—';
+    this.telegramService.sendMessage(
+      `🗑 <b>Устройство удалено из системы</b>\n` +
+      `📟 MAC: ${device.macAddress}\n` +
+      `🏠 Внутренний IP: ${device.lastSeenIp}\n` +
+      (device.externalIp ? `🌐 Внешний IP: ${device.externalIp}\n` : '') +
+      `🏛 Офис: ${device.officeName || '—'} (${companyName})\n` +
+      `👤 Удалил: ${user.email}`,
+    ).catch(() => {});
+
+    return { ok: true };
   }
 
   // ─────────── управление доступом сотрудников ───────────
@@ -346,11 +525,94 @@ export class HikvisionService {
       return { ok: true, message: isupResult.message };
     }
 
+    // Пробуем через port forwarding (externalIp:directPort → устройство:80)
+    if (device.externalIp && (device as any).directPort) {
+      try {
+        const warn = await this.pushToDevice(
+          { lastSeenIp: device.externalIp, login: device.login, password: device.password, directPort: (device as any).directPort },
+          employee, 'grant',
+        );
+        return { ok: true, message: `✅ Записан на устройство напрямую (port forwarding)${warn ? '. ' + warn : ''}` };
+      } catch (e) {
+        this.logger.warn(`Port-forward grant failed: ${e.message}`);
+      }
+    }
+
     // Fallback: очередь команды для relay-агента
     await this.prisma.hikvisionCommand.create({
-      data: { deviceId, employeeId, action: 'grant' },
+      data: { deviceId, employeeId, action: 'grant', initiatedById: user.userId },
     });
     return { ok: true, message: 'Доступ выдан. Relay-агент запишет сотрудника на устройство.' };
+  }
+
+  async grantAllEmployees(deviceId: number, user: RequestUser) {
+    const device = await this.prisma.hikvisionDevice.findUnique({
+      where: { id: deviceId },
+      include: { company: { select: { name: true, shortName: true } } },
+    });
+    if (!device) throw new NotFoundException('Устройство не найдено');
+    if (device.status !== 'active') throw new ForbiddenException('Устройство не привязано к компании');
+    if (!user.isHoldingAdmin && user.companyId !== device.companyId) {
+      throw new ForbiddenException('Доступ только к устройствам своей компании');
+    }
+
+    const companyId = device.companyId!;
+
+    // Все активные сотрудники компании (не уволены, не в декрете и т.д.)
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        companyId,
+        status: { notIn: ['Уволен', 'Декрет', 'В отпуске', 'Больничный', 'Ожидает', 'Отклонён'] },
+      },
+      select: { id: true, firstName: true, lastName: true, photoPath: true },
+    });
+
+    if (employees.length === 0) {
+      return { granted: 0, skipped: 0, message: 'Нет активных сотрудников в компании' };
+    }
+
+    // Уже имеющие доступ
+    const existing = await this.prisma.hikvisionAccess.findMany({
+      where: { deviceId, employeeId: { in: employees.map(e => e.id) } },
+      select: { employeeId: true },
+    });
+    const existingIds = new Set(existing.map(a => a.employeeId));
+
+    const toGrant = employees.filter(e => !existingIds.has(e.id));
+    const skipped = employees.length - toGrant.length;
+
+    if (toGrant.length === 0) {
+      return { granted: 0, skipped, message: `Все ${skipped} сотрудников уже имеют доступ` };
+    }
+
+    // Записываем доступы и команды
+    await this.prisma.hikvisionAccess.createMany({
+      data: toGrant.map(e => ({ deviceId, employeeId: e.id, grantedBy: user.email })),
+      skipDuplicates: true,
+    });
+    await this.prisma.hikvisionCommand.createMany({
+      data: toGrant.map(e => ({ deviceId, employeeId: e.id, action: 'grant', initiatedById: user.userId })),
+    });
+
+    const companyName = (device as any).company?.shortName || (device as any).company?.name || '';
+    const devLabel = `${device.deviceName || device.officeName} (${device.direction === 'IN' ? 'Вход' : 'Выход'})`;
+
+    this.telegramService.sendMessage(
+      `👥 <b>Массовая выдача Face ID</b>\n\n` +
+      `🚪 ${devLabel}${companyName ? ` · ${companyName}` : ''}\n` +
+      `✅ Выдано: <b>${toGrant.length}</b> сотрудников\n` +
+      (skipped ? `⏭ Уже имели доступ: ${skipped}\n` : '') +
+      `\n🤖 Relay-агент запишет всех при следующем подключении\n` +
+      `👮 Инициатор: ${user.email}`,
+    ).catch(() => {});
+
+    this.logger.log(`Массовая выдача: ${toGrant.length} сотрудников на устройство #${deviceId} (${devLabel})`);
+
+    return {
+      granted: toGrant.length,
+      skipped,
+      message: `Выдано ${toGrant.length} сотрудникам. Relay-агент запишет их на устройство.`,
+    };
   }
 
   async revokeAccess(deviceId: number, employeeId: number, user: RequestUser) {
@@ -375,9 +637,22 @@ export class HikvisionService {
       return { ok: true, message: isupResult.message };
     }
 
+    // Пробуем через port forwarding
+    if (device.externalIp && (device as any).directPort) {
+      try {
+        await this.pushToDevice(
+          { lastSeenIp: device.externalIp, login: device.login, password: device.password, directPort: (device as any).directPort },
+          employee, 'revoke',
+        );
+        return { ok: true, message: '✅ Удалён с устройства напрямую (port forwarding)' };
+      } catch (e) {
+        this.logger.warn(`Port-forward revoke failed: ${e.message}`);
+      }
+    }
+
     // Fallback: очередь команды для relay-агента
     await this.prisma.hikvisionCommand.create({
-      data: { deviceId, employeeId, action: 'revoke' },
+      data: { deviceId, employeeId, action: 'revoke', initiatedById: user.userId },
     });
     return { ok: true, message: 'Доступ закрыт. Relay-агент удалит сотрудника с устройства.' };
   }
@@ -554,7 +829,7 @@ export class HikvisionService {
   // ─────────── Hikvision ISAPI helpers ───────────
 
   private async pushToDevice(
-    device: { lastSeenIp: string; login: string | null; password: string | null },
+    device: { lastSeenIp: string; login: string | null; password: string | null; directPort?: number | null },
     employee: { id: number; firstName: string; lastName: string; photoPath?: string | null },
     action: 'grant' | 'revoke',
   ): Promise<string | undefined> {
@@ -615,13 +890,13 @@ export class HikvisionService {
   }
 
   private async hikRequest(
-    device: { lastSeenIp: string; login: string | null; password: string | null },
+    device: { lastSeenIp: string; login: string | null; password: string | null; directPort?: number | null },
     method: string, urlPath: string, body: string | Buffer, contentType: string,
   ): Promise<string> {
     const login = device.login ?? 'admin';
     const password = device.password ?? '';
     const ip = device.lastSeenIp;
-    const port = 80;
+    const port = device.directPort ?? 80;
 
     const first = await this.rawHikRequest({ ip, port }, method, urlPath, body, contentType, null);
     if (first.status !== 401) {
@@ -720,10 +995,57 @@ export class HikvisionService {
     return message;
   }
 
+  // Extract face JPEG from Hikvision multipart event body.
+  // The device sends: --boundary / JSON part / --boundary / JPEG part / --boundary--
+  private extractJpegFromMultipart(raw: Buffer): Buffer | null {
+    try {
+      // Find JPEG content-type header
+      const jpegHeader = Buffer.from('Content-Type: image/jpeg');
+      const hPos = raw.indexOf(jpegHeader);
+      if (hPos === -1) return null;
+
+      // Find double CRLF = end of part headers
+      const crlf2 = Buffer.from('\r\n\r\n');
+      const dataStart = raw.indexOf(crlf2, hPos);
+      if (dataStart === -1) return null;
+      const imgStart = dataStart + 4;
+
+      // Find boundary at the beginning of the body (first line)
+      const firstCrlf = raw.indexOf(Buffer.from('\r\n'));
+      if (firstCrlf === -1) return null;
+      const boundary = raw.slice(0, firstCrlf); // e.g. "--MIME_boundary"
+
+      // Find the closing boundary after the image data
+      const endMarker = Buffer.concat([Buffer.from('\r\n'), boundary]);
+      const imgEnd = raw.indexOf(endMarker, imgStart);
+
+      return imgEnd === -1
+        ? raw.slice(imgStart)
+        : raw.slice(imgStart, imgEnd);
+    } catch {
+      return null;
+    }
+  }
+
   private extractJson(body: string): string | null {
     const start = body.indexOf('{');
-    const end = body.lastIndexOf('}');
-    if (start === -1 || end === -1 || end <= start) return null;
-    return body.substring(start, end + 1);
+    if (start === -1) return null;
+
+    // Count braces properly instead of lastIndexOf — needed when body contains
+    // binary JPEG data (multipart with face photo) that may contain '}' bytes.
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < body.length; i++) {
+      const ch = body[i];
+      if (escaped)            { escaped = false; continue; }
+      if (ch === '\\' && inString) { escaped = true;  continue; }
+      if (ch === '"')         { inString = !inString; continue; }
+      if (inString)           { continue; }
+      if (ch === '{')         { depth++; }
+      else if (ch === '}')    { depth--; if (depth === 0) return body.substring(start, i + 1); }
+    }
+    return null;
   }
 }

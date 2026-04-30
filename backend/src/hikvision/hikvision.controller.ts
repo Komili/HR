@@ -44,6 +44,17 @@ export class HikvisionController {
       ? (Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0]).trim()
       : (req.socket?.remoteAddress || req.ip || '').replace('::ffff:', '');
 
+    // Debug: log raw body to diagnose event processing
+    const bodyStr = (rawBody ?? Buffer.alloc(0)).toString('utf8');
+    const hasCE = bodyStr.includes('AccessControllerEvent');
+    if (hasCE) {
+      // Log full raw body of access events so we can see the structure
+      require('@nestjs/common').Logger.log(
+        `[webhook] AccessControllerEvent raw body (${bodyStr.length} bytes):\n${bodyStr.slice(0, 1500)}`,
+        'HikvisionController',
+      );
+    }
+
     await this.hikvisionService.handleEvent(body, externalIp);
   }
 
@@ -118,6 +129,16 @@ export class HikvisionController {
     @Request() req: { user: RequestUser },
   ) {
     return this.hikvisionService.grantAccess(deviceId, employeeId, req.user);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Суперадмин', 'Кадровик')
+  @Post('devices/:id/grant-all')
+  grantAll(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.hikvisionService.grantAllEmployees(id, req.user);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

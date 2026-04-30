@@ -550,8 +550,22 @@ export async function bindHikvisionDevice(
   return apiFetch(`/hikvision/devices/${id}/bind`, { method: "PATCH", body: data });
 }
 
+export async function grantAllHikvisionAccess(deviceId: number): Promise<{ granted: number; skipped: number; message: string }> {
+  return apiFetch(`/hikvision/devices/${deviceId}/grant-all`, { method: "POST" });
+}
+
 export async function getEmployeeDoors(employeeId: number): Promise<Door[]> {
   return apiFetch(`/doors/employee/${employeeId}`);
+}
+
+export async function getAgentStatus(): Promise<{
+  online: boolean;
+  secondsAgo: number | null;
+  pendingCommands: number;
+  lastPingAt: string | null;
+}> {
+  const params = withCompanyId(new URLSearchParams());
+  return apiFetch(`/agent/public-status?${params}`);
 }
 
 export async function grantDoorAccess(doorId: number, employeeId: number): Promise<void> {

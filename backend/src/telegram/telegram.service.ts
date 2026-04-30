@@ -34,14 +34,28 @@ export class TelegramService implements OnModuleInit, OnApplicationBootstrap, On
     await this.sendMessage(`🛑 Сервер КАДРЫ остановлен\n⏰ ${now}`);
   }
 
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(text: string, parseMode: 'HTML' | 'Markdown' | 'MarkdownV2' | null = 'HTML'): Promise<void> {
     if (!this.bot || this.chatIds.length === 0) return;
 
     for (const chatId of this.chatIds) {
       try {
-        await this.bot.sendMessage(chatId, text);
+        await this.bot.sendMessage(chatId, text, parseMode ? { parse_mode: parseMode } : {});
       } catch (err) {
         this.logger.error(`Ошибка Telegram (chatId=${chatId}): ${err.message}`);
+      }
+    }
+  }
+
+  async sendPhoto(photo: Buffer, caption: string): Promise<void> {
+    if (!this.bot || this.chatIds.length === 0) return;
+
+    for (const chatId of this.chatIds) {
+      try {
+        await this.bot.sendPhoto(chatId, photo, { caption, parse_mode: 'HTML' });
+      } catch (err) {
+        // Fallback: если фото не отправилось — отправляем текст
+        this.logger.warn(`sendPhoto failed (chatId=${chatId}): ${err.message}, sending text`);
+        await this.bot.sendMessage(chatId, caption, { parse_mode: 'HTML' }).catch(() => {});
       }
     }
   }

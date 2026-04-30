@@ -1,8 +1,9 @@
 import {
   Controller, Get, Patch, Post, Param, ParseIntPipe,
   Body, Query, Headers, UnauthorizedException, ForbiddenException,
-  StreamableFile, NotFoundException,
+  StreamableFile, NotFoundException, UseGuards, Request,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import * as fs from 'fs';
@@ -16,6 +17,9 @@ import * as crypto from 'crypto';
  */
 @Controller('agent')
 export class AgentController {
+  // in-memory heartbeat: companyId -> lastPingAt
+  private readonly heartbeats = new Map<number, Date>();
+
   constructor(
     private prisma: PrismaService,
     private telegram: TelegramService,
@@ -143,7 +147,7 @@ export class AgentController {
       } else {
         const actionText = cmd.action === 'grant' ? 'добавить доступ' : 'удалить доступ';
         this.telegram.sendMessage(
-          `❌ *Ошибка СКУД — не удалось ${actionText}*\n` +
+          `❌ <b>Ошибка СКУД — не удалось ${actionText}</b>\n` +
           `👤 Сотрудник: *${empName}*\n` +
           `🚪 Дверь: *${doorName}*\n` +
           `⚠️ Ошибка: ${body.error || 'неизвестно'}\n` +
@@ -229,7 +233,7 @@ export class AgentController {
 
     if (body.online) {
       await this.telegram.sendMessage(
-        `🟢 *Устройство ВОССТАНОВЛЕНО*\n` +
+        `🟢 <b>Устройство ВОССТАНОВЛЕНО</b>\n` +
         `🚪 Дверь: *${body.doorName}* [${body.label}]\n` +
         `🏢 Компания: ${companyName}\n` +
         `📡 Адрес: ${body.ip}:${body.port}\n` +
@@ -237,7 +241,7 @@ export class AgentController {
       );
     } else {
       await this.telegram.sendMessage(
-        `🔴 *УСТРОЙСТВО НЕДОСТУПНО*\n` +
+        `🔴 <b>УСТРОЙСТВО НЕДОСТУПНО</b>\n` +
         `🚪 Дверь: *${body.doorName}* [${body.label}]\n` +
         `🏢 Компания: ${companyName}\n` +
         `📡 Адрес: ${body.ip}:${body.port}\n` +
@@ -271,7 +275,7 @@ export class AgentController {
         device: {
           select: {
             id: true, officeName: true, direction: true, companyId: true,
-            lastSeenIp: true, login: true, password: true,
+            lastSeenIp: true, directPort: true, login: true, password: true,
           },
         },
         employee: {
@@ -317,8 +321,23 @@ export class AgentController {
     const cmd = await this.prisma.hikvisionCommand.findUnique({
       where: { id },
       include: {
-        device: { select: { officeName: true, direction: true } },
-        employee: { select: { firstName: true, lastName: true } },
+        device: {
+          select: {
+            officeName: true, direction: true, deviceName: true,
+            lastSeenIp: true, externalIp: true, directPort: true,
+            company: { select: { name: true, shortName: true } },
+          },
+        },
+        employee: {
+          select: {
+            firstName: true, lastName: true,
+            position: { select: { name: true } },
+            department: { select: { name: true } },
+          },
+        },
+        initiatedBy: {
+          select: { firstName: true, lastName: true, email: true },
+        },
       },
     });
 
@@ -329,17 +348,55 @@ export class AgentController {
 
     if (cmd) {
       const empName = `${cmd.employee.lastName} ${cmd.employee.firstName}`;
-      const devLabel = `${cmd.device.officeName} (${cmd.device.direction === 'IN' ? 'Вход' : 'Выход'})`;
+      const position = cmd.employee.position?.name || '';
+      const department = cmd.employee.department?.name || '';
+      const empInfo = [position, department].filter(Boolean).join(' · ');
+
+      const devName = cmd.device.deviceName || cmd.device.officeName || 'Устройство';
+      const dirLabel = cmd.device.direction === 'IN' ? 'Вход ↑' : 'Выход ↓';
+      const ipLabel = cmd.device.directPort
+        ? `${cmd.device.lastSeenIp}:${cmd.device.directPort}`
+        : cmd.device.lastSeenIp;
+      const externalIpLabel = cmd.device.externalIp || null;
+      const companyName = cmd.device.company?.shortName || cmd.device.company?.name || '';
+
+      const now = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Dushanbe', hour12: false });
+
+      const initiator = cmd.initiatedBy
+        ? [cmd.initiatedBy.lastName, cmd.initiatedBy.firstName].filter(Boolean).join(' ') || cmd.initiatedBy.email
+        : 'Система';
+
       if (body.status === 'done') {
-        const actionText = cmd.action === 'grant' ? '✅ Face ID добавлен на устройство' : '✅ Face ID удалён с устройства';
-        this.telegram.sendMessage(
-          `${actionText}\n👤 Сотрудник: ${empName}\n🚪 Устройство: ${devLabel}\n🤖 Выполнено relay-агентом`,
-        ).catch(() => {});
+        const header = cmd.action === 'grant'
+          ? '✅ <b>Face ID добавлен</b>'
+          : '🗑 <b>Face ID удалён</b>';
+        const lines: string[] = [header, ''];
+        lines.push(`👤 <b>${empName}</b>`);
+        if (empInfo) lines.push(`   ${empInfo}`);
+        if (companyName) lines.push(`   ${companyName}`);
+        lines.push('');
+        lines.push(`🚪 <b>${devName}</b>  ·  ${dirLabel}`);
+        lines.push(`   🔗 <code>${ipLabel}</code>`);
+        if (externalIpLabel) lines.push(`   🌐 <code>${externalIpLabel}</code>`);
+        lines.push('');
+        lines.push(`👮 ${initiator}`);
+        lines.push(`🕐 ${now}  ·  Relay-агент`);
+        this.telegram.sendMessage(lines.join('\n')).catch(() => {});
       } else {
         const actionText = cmd.action === 'grant' ? 'добавить Face ID' : 'удалить Face ID';
-        this.telegram.sendMessage(
-          `❌ Ошибка — не удалось ${actionText}\n👤 Сотрудник: ${empName}\n🚪 Устройство: ${devLabel}\n⚠️ ${body.error || 'неизвестно'}`,
-        ).catch(() => {});
+        const lines: string[] = [`❌ <b>Ошибка — не удалось ${actionText}</b>`, ''];
+        lines.push(`👤 <b>${empName}</b>`);
+        if (empInfo) lines.push(`   ${empInfo}`);
+        if (companyName) lines.push(`   ${companyName}`);
+        lines.push('');
+        lines.push(`🚪 <b>${devName}</b>  ·  ${dirLabel}`);
+        lines.push(`   🔗 <code>${ipLabel}</code>`);
+        if (externalIpLabel) lines.push(`   🌐 <code>${externalIpLabel}</code>`);
+        lines.push('');
+        lines.push(`⚠️ ${body.error || 'неизвестно'}`);
+        lines.push(`👮 ${initiator}`);
+        lines.push(`🕐 ${now}`);
+        this.telegram.sendMessage(lines.join('\n')).catch(() => {});
       }
     }
 
@@ -366,5 +423,50 @@ export class AgentController {
     ]);
 
     return { pending, done, failed };
+  }
+
+  /**
+   * POST /api/agent/ping
+   * Агент вызывает каждые N секунд — фиксируем время последней активности.
+   */
+  @Post('ping')
+  agentPing(
+    @Headers('x-agent-token') token: string,
+    @Body() body: { companyId: number },
+  ) {
+    this.checkToken(token);
+    const cid = Number(body.companyId);
+    if (cid) this.heartbeats.set(cid, new Date());
+    return { ok: true };
+  }
+
+  /**
+   * GET /api/agent/public-status?companyId=X
+   * Для фронтенда (JWT) — статус relay-агента компании.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('public-status')
+  async getPublicStatus(
+    @Query('companyId') companyIdStr: string,
+    @Request() req: any,
+  ) {
+    const user = req.user;
+    const companyId = user.isHoldingAdmin
+      ? parseInt(companyIdStr)
+      : user.companyId;
+
+    if (!companyId) return { online: false, secondsAgo: null, pendingCommands: 0 };
+
+    const lastPing = this.heartbeats.get(companyId);
+    const secondsAgo = lastPing
+      ? Math.floor((Date.now() - lastPing.getTime()) / 1000)
+      : null;
+    const online = secondsAgo !== null && secondsAgo < 120;
+
+    const pendingCommands = await this.prisma.hikvisionCommand.count({
+      where: { status: { in: ['pending', 'processing'] }, device: { companyId } },
+    });
+
+    return { online, secondsAgo, pendingCommands, lastPingAt: lastPing ?? null };
   }
 }
