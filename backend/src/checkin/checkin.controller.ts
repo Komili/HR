@@ -1,12 +1,17 @@
 import {
   Controller, Get, Post, Query, Body, UseGuards, Request,
-  ParseIntPipe,
+  ParseIntPipe, UseInterceptors, UploadedFile, BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { Throttle } from '@nestjs/throttler';
 import { CheckinService } from './checkin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RequestUser } from '../auth/jwt.strategy';
+
+const ALLOWED_MIME = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 // ── Публичные эндпоинты (без JWT) ──
 
@@ -41,6 +46,34 @@ export class CheckinController {
       body.direction,
       body.selfie,
     );
+  }
+
+  // Поиск сотрудника по номеру телефона — строгий лимит против перебора
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Get('lookup')
+  lookupByPhone(@Query('phone') phone: string) {
+    if (!phone?.trim()) throw new BadRequestException('Укажите номер телефона');
+    return this.checkinService.lookupByPhone(phone.trim());
+  }
+
+  // Чекин по номеру телефона (публичный, без JWT)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Post('phone')
+  @UseInterceptors(FileInterceptor('photo', {
+    storage: diskStorage({ destination: 'storage/tmp' }),
+    limits: { fileSize: 8 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (ALLOWED_MIME.includes(file.mimetype)) cb(null, true);
+      else cb(new BadRequestException('Допустимы только JPEG/PNG/WebP'), false);
+    },
+  }))
+  async phoneCheckin(
+    @Body('phone') phone: string,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    if (!phone?.trim()) throw new BadRequestException('Укажите номер телефона');
+    if (!photo) throw new BadRequestException('Фото обязательно для отметки');
+    return this.checkinService.phoneCheckin(phone.trim(), photo);
   }
 }
 

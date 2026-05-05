@@ -1,4 +1,5 @@
 import { Injectable, ForbiddenException, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { existsSync, readFileSync } from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { RequestUser } from '../auth/jwt.strategy';
@@ -133,14 +134,54 @@ export class AttendanceService implements OnModuleInit {
       throw new ForbiddenException('Access denied to this employee');
 
     const startDate = new Date(Date.UTC(year, month - 1, 1));
-    const endDate = new Date(Date.UTC(year, month, 0));
+    const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59));
 
-    const attendances = await this.prisma.attendance.findMany({
-      where: { employeeId, date: { gte: startDate, lte: endDate } },
-      orderBy: { date: 'asc' },
+    const [attendances, selfieEvents] = await Promise.all([
+      this.prisma.attendance.findMany({
+        where: { employeeId, date: { gte: startDate, lte: endDate } },
+        orderBy: { date: 'asc' },
+      }),
+      this.prisma.attendanceEvent.findMany({
+        where: {
+          employeeId,
+          timestamp: { gte: startDate, lte: endDate },
+          selfiePath: { not: null },
+        },
+        select: { id: true, timestamp: true },
+        orderBy: { timestamp: 'asc' },
+      }),
+    ]);
+
+    // Group selfie event IDs by UTC date key (YYYY-MM-DD)
+    const selfiesByDate = new Map<string, number[]>();
+    for (const ev of selfieEvents) {
+      const key = ev.timestamp.toISOString().split('T')[0];
+      const arr = selfiesByDate.get(key) || [];
+      arr.push(ev.id);
+      selfiesByDate.set(key, arr);
+    }
+
+    return attendances.map((a) => ({
+      ...this.mapAttendance(a),
+      selfieEventIds: selfiesByDate.get(a.date.toISOString().split('T')[0]) || [],
+    }));
+  }
+
+  async getSelfiePhoto(eventId: number, user: RequestUser): Promise<{ buffer: Buffer; mimeType: string }> {
+    const event = await this.prisma.attendanceEvent.findUnique({
+      where: { id: eventId },
+      select: { selfiePath: true, companyId: true },
     });
+    if (!event || !event.selfiePath) throw new NotFoundException('Фото не найдено');
+    if (!user.isHoldingAdmin && event.companyId !== user.companyId)
+      throw new ForbiddenException('Нет доступа');
 
-    return attendances.map((a) => this.mapAttendance(a));
+    const fullPath = event.selfiePath.startsWith('storage')
+      ? event.selfiePath
+      : `storage/${event.selfiePath}`;
+
+    if (!existsSync(fullPath)) throw new NotFoundException('Файл не найден');
+    return { buffer: readFileSync(fullPath), mimeType: 'image/jpeg' };
   }
 
   // ─────────── correction ───────────
@@ -385,9 +426,7 @@ export class AttendanceService implements OnModuleInit {
     const officeName = inEvents.length > 0 && inEvents[0].office ? inEvents[0].office.name : null;
 
     let status = 'present';
-    if (lastExit && firstEntry) {
-      if (events[events.length - 1].direction === 'OUT') status = 'left';
-    }
+    if (events[events.length - 1].direction === 'OUT') status = 'left';
 
     let isLate = false;
     let isEarlyLeave = false;

@@ -28,6 +28,7 @@ import {
   UserPlus2,
   DoorOpen,
   QrCode,
+  Smartphone,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -60,6 +61,7 @@ const menuItems = [
   { name: "Оргструктура", path: "/org-structure", icon: Network, description: "Иерархия" },
   { name: "Регистрации", path: "/registrations", icon: UserPlus2, description: "Заявки" },
   { name: "QR Check-in", path: "/qr", icon: QrCode, description: "Без оборудования" },
+  { name: "Чекин по телефону", path: "/checkin/phone", icon: Smartphone, description: "Удалённая отметка" },
 ];
 
 const settingsNav = { name: "Настройки", path: "/settings", icon: Settings, description: "Конфиг" };

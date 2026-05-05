@@ -9,12 +9,18 @@ import {
   Plus,
   Trash2,
   Loader2,
-  Eye,
   CheckCircle,
   XCircle,
   Printer,
   Copy,
   Check,
+  Phone,
+  Mail,
+  CalendarDays,
+  Building2,
+  Briefcase,
+  Info,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,10 +61,10 @@ export default function RegistrationsPage() {
   const [tab, setTab] = useState<Tab>("pending");
   const [pending, setPending] = useState<PendingEmployee[]>([]);
   const [tokens, setTokens] = useState<RegistrationToken[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailEmployee, setDetailEmployee] = useState<PendingEmployee | null>(null);
+  const [modalDepartments, setModalDepartments] = useState<Department[]>([]);
+  const [modalPositions, setModalPositions] = useState<Position[]>([]);
   const [approveData, setApproveData] = useState<{ departmentId?: number; positionId?: number }>({});
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [creatingToken, setCreatingToken] = useState(false);
@@ -66,20 +72,31 @@ export default function RegistrationsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, t, d, pos] = await Promise.all([
+      const [p, t] = await Promise.all([
         getPendingRegistrations(),
         getRegistrationTokens(),
-        getDepartments(),
-        getPositions(),
       ]);
       setPending(p);
       setTokens(t);
-      setDepartments(d);
-      setPositions(pos);
     } catch {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const handleView = useCallback(async (emp: PendingEmployee) => {
+    setDetailEmployee(emp);
+    setApproveData({});
+    setModalDepartments([]);
+    setModalPositions([]);
+    try {
+      const [d, pos] = await Promise.all([
+        getDepartments(emp.companyId),
+        getPositions(emp.companyId),
+      ]);
+      setModalDepartments(d);
+      setModalPositions(pos);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -206,8 +223,7 @@ export default function RegistrationsPage() {
       ) : tab === "pending" ? (
         <PendingTab
           pending={pending}
-          onView={setDetailEmployee}
-          onApprove={handleApprove}
+          onView={handleView}
           onReject={handleReject}
           actionLoading={actionLoading}
         />
@@ -225,8 +241,8 @@ export default function RegistrationsPage() {
       {detailEmployee && (
         <DetailModal
           employee={detailEmployee}
-          departments={departments}
-          positions={positions}
+          departments={modalDepartments}
+          positions={modalPositions}
           approveData={approveData}
           setApproveData={setApproveData}
           onApprove={() => handleApprove(detailEmployee.id, approveData)}
@@ -242,13 +258,11 @@ export default function RegistrationsPage() {
 function PendingTab({
   pending,
   onView,
-  onApprove,
   onReject,
   actionLoading,
 }: {
   pending: PendingEmployee[];
   onView: (e: PendingEmployee) => void;
-  onApprove: (id: number) => void;
   onReject: (id: number) => void;
   actionLoading: number | null;
 }) {
@@ -286,29 +300,23 @@ function PendingTab({
               {emp.createdAt && new Date(emp.createdAt).toLocaleDateString("ru-RU")}
             </div>
           </div>
-          <div className="flex gap-2 flex-shrink-0">
-            <Button size="sm" variant="outline" onClick={() => onView(emp)} className="gap-1">
-              <Eye className="h-4 w-4" />
-              <span className="hidden sm:inline">Детали</span>
-            </Button>
+          <div className="flex flex-col gap-2 flex-shrink-0">
             <Button
               size="sm"
-              onClick={() => onApprove(emp.id)}
-              disabled={actionLoading === emp.id}
-              className="gap-1 bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => onView(emp)}
+              className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               <UserCheck className="h-4 w-4" />
-              <span className="hidden sm:inline">Одобрить</span>
+              Рассмотреть
             </Button>
             <Button
               size="sm"
-              variant="destructive"
               onClick={() => onReject(emp.id)}
               disabled={actionLoading === emp.id}
-              className="gap-1"
+              className="gap-1 bg-red-600 hover:bg-red-700 text-white"
             >
-              <UserX className="h-4 w-4" />
-              <span className="hidden sm:inline">Отклонить</span>
+              {actionLoading === emp.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserX className="h-4 w-4" />}
+              Отклонить
             </Button>
           </div>
         </div>
@@ -449,6 +457,7 @@ function TokenCard({ token, onDelete }: { token: RegistrationToken; onDelete: ()
 
 function EmployeePhotoPortrait({ employeeId }: { employeeId: number }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const photoUrl = getEmployeePhotoUrl(employeeId, false);
 
   useEffect(() => {
@@ -456,20 +465,29 @@ function EmployeePhotoPortrait({ employeeId }: { employeeId: number }) {
     let revoked = false;
     fetch(photoUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(res => res.ok ? res.blob() : null)
-      .then(blob => { if (blob && !revoked) setBlobUrl(URL.createObjectURL(blob)); })
-      .catch(() => {});
+      .then(blob => {
+        if (revoked) return;
+        if (blob) setBlobUrl(URL.createObjectURL(blob));
+        else setFailed(true);
+      })
+      .catch(() => { if (!revoked) setFailed(true); });
     return () => {
       revoked = true;
       setBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
     };
   }, [photoUrl]);
 
-  if (!blobUrl) return null;
-  return (
-    <div className="flex justify-center">
-      <div className="w-36 h-48 rounded-2xl overflow-hidden border-2 border-gray-200">
+  if (blobUrl) {
+    return (
+      <div className="mx-auto w-28 h-36 rounded-2xl overflow-hidden ring-4 ring-gray-100 shadow-md">
         <img src={blobUrl} alt="Фото" className="w-full h-full object-cover" />
       </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-28 h-36 rounded-2xl bg-gray-100 ring-4 ring-gray-100 shadow-md flex items-center justify-center">
+      <User className="h-14 w-14 text-gray-400" />
     </div>
   );
 }
@@ -495,92 +513,138 @@ function DetailModal({
   onClose: () => void;
   actionLoading: boolean;
 }) {
+  const fullName = [employee.lastName, employee.firstName, employee.patronymic].filter(Boolean).join(" ");
+  const canApprove = !!approveData.departmentId && !!approveData.positionId;
+
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Заявка на регистрацию</DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto p-0 gap-0">
 
-        <div className="space-y-4">
-          {/* Фото */}
-          {employee.photoPath && (
-            <EmployeePhotoPortrait employeeId={employee.id} />
-          )}
-
-          {/* Данные */}
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <Field label="Фамилия" value={employee.lastName} />
-            <Field label="Имя" value={employee.firstName} />
-            <Field label="Отчество" value={employee.patronymic} />
-            <Field label="Дата рождения" value={employee.birthDate ? new Date(employee.birthDate).toLocaleDateString("ru-RU") : null} />
-            <Field label="Телефон" value={employee.phone} />
-            <Field label="Email" value={employee.email} />
-            <Field label="Адрес" value={employee.address} full />
-            <Field label="Серия паспорта" value={employee.passportSerial} />
-            <Field label="Номер паспорта" value={employee.passportNumber} />
-            <Field label="Кем выдан" value={employee.passportIssuedBy} full />
-            <Field label="Дата выдачи" value={employee.passportIssueDate ? new Date(employee.passportIssueDate).toLocaleDateString("ru-RU") : null} />
-            <Field label="ИНН" value={employee.inn} />
-          </div>
-
-          {/* Назначение */}
-          <div className="space-y-3 border-t pt-4">
-            <h3 className="text-sm font-semibold text-gray-700">Назначение (при одобрении)</h3>
-            <div>
-              <Label>Отдел</Label>
-              <Select
-                value={approveData.departmentId ? String(approveData.departmentId) : ""}
-                onValueChange={(v) => setApproveData({ ...approveData, departmentId: v ? parseInt(v) : undefined })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите отдел" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Должность</Label>
-              <Select
-                value={approveData.positionId ? String(approveData.positionId) : ""}
-                onValueChange={(v) => setApproveData({ ...approveData, positionId: v ? parseInt(v) : undefined })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите должность" />
-                </SelectTrigger>
-                <SelectContent>
-                  {positions.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        {/* ── Шапка ── */}
+        <div className="px-6 pt-7 pb-6 text-center space-y-3 border-b border-gray-100">
+          <EmployeePhotoPortrait employeeId={employee.id} />
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-gray-900 leading-tight">{fullName}</h2>
+            {employee.company?.name && (
+              <p className="text-emerald-600 text-sm font-medium">{employee.company.name}</p>
+            )}
+            <span className="inline-block mt-1 bg-gray-100 text-gray-500 text-xs rounded-full px-3 py-0.5">
+              Заявка от {employee.createdAt ? new Date(employee.createdAt).toLocaleDateString("ru-RU") : "—"}
+            </span>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            variant="destructive"
-            onClick={onReject}
-            disabled={actionLoading}
-            className="gap-1"
-          >
-            <XCircle className="h-4 w-4" />
-            Отклонить
-          </Button>
-          <Button
-            onClick={onApprove}
-            disabled={actionLoading}
-            className="gap-1 bg-emerald-600 hover:bg-emerald-700"
-          >
-            {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-            Одобрить
-          </Button>
-        </DialogFooter>
+        <div className="px-5 pt-5 pb-6 space-y-5">
+
+          {/* ── Контакты ── */}
+          {(employee.phone || employee.email || employee.birthDate) && (
+            <div className="bg-gray-50 rounded-2xl px-4 py-3 space-y-2.5">
+              {employee.phone && (
+                <div className="flex items-center gap-3 text-sm">
+                  <Phone className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span className="font-medium text-gray-900">{employee.phone}</span>
+                </div>
+              )}
+              {employee.email && (
+                <div className="flex items-center gap-3 text-sm">
+                  <Mail className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span className="font-medium text-gray-900">{employee.email}</span>
+                </div>
+              )}
+              {employee.birthDate && (
+                <div className="flex items-center gap-3 text-sm">
+                  <CalendarDays className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span className="font-medium text-gray-900">
+                    {new Date(employee.birthDate).toLocaleDateString("ru-RU")}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Назначение ── */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                <Briefcase className="h-4 w-4 text-emerald-600" />
+              </div>
+              <span className="text-sm font-semibold text-gray-900">Назначение</span>
+            </div>
+
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500 pl-0.5">Отдел</Label>
+                <Select
+                  value={approveData.departmentId ? String(approveData.departmentId) : ""}
+                  onValueChange={(v) => setApproveData({ ...approveData, departmentId: v ? parseInt(v) : undefined })}
+                >
+                  <SelectTrigger className="h-10 rounded-xl">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Building2 className="h-4 w-4 text-gray-400 shrink-0" />
+                      <SelectValue placeholder="Выберите отдел" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    {departments.map((d) => (
+                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500 pl-0.5">Должность</Label>
+                <Select
+                  value={approveData.positionId ? String(approveData.positionId) : ""}
+                  onValueChange={(v) => setApproveData({ ...approveData, positionId: v ? parseInt(v) : undefined })}
+                >
+                  <SelectTrigger className="h-10 rounded-xl">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Briefcase className="h-4 w-4 text-gray-400 shrink-0" />
+                      <SelectValue placeholder="Выберите должность" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    {positions.map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {!canApprove && (
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                <span>Заполните отдел и должность, чтобы одобрить заявку</span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Кнопки ── */}
+          <div className="flex flex-col gap-2 pt-1">
+            <Button
+              onClick={onApprove}
+              disabled={actionLoading || !canApprove}
+              className="h-11 gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white w-full rounded-xl"
+            >
+              {actionLoading
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <CheckCircle className="h-4 w-4" />}
+              Одобрить заявку
+            </Button>
+            <Button
+              onClick={onReject}
+              disabled={actionLoading}
+              variant="outline"
+              className="h-11 gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 w-full rounded-xl"
+            >
+              <XCircle className="h-4 w-4" />
+              Отклонить
+            </Button>
+          </div>
+
+        </div>
       </DialogContent>
     </Dialog>
   );

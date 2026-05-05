@@ -126,8 +126,10 @@ export async function getOrgChart(): Promise<OrgChartNode[]> {
 
 // ============ DEPARTMENTS ============
 
-export async function getDepartments(): Promise<Department[]> {
-  const params = withCompanyId(new URLSearchParams());
+export async function getDepartments(companyId?: number): Promise<Department[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
   const query = params.toString();
   return apiFetch(`/departments${query ? `?${query}` : ""}`);
 }
@@ -150,8 +152,10 @@ export async function deleteDepartment(id: number): Promise<void> {
 
 // ============ POSITIONS ============
 
-export async function getPositions(): Promise<Position[]> {
-  const params = withCompanyId(new URLSearchParams());
+export async function getPositions(companyId?: number): Promise<Position[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
   const query = params.toString();
   return apiFetch(`/positions${query ? `?${query}` : ""}`);
 }
@@ -343,6 +347,11 @@ export async function getEmployeeAttendance(
   year: number,
 ): Promise<AttendanceSummary[]> {
   return apiFetch(`/attendance/employee/${employeeId}?month=${month}&year=${year}`);
+}
+
+export function getAttendanceSelfieUrl(eventId: number): string {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+  return `${API_URL}/attendance/events/${eventId}/selfie`;
 }
 
 export async function correctAttendance(
@@ -545,13 +554,17 @@ export async function checkHikvisionAccess(deviceId: number, employeeId: number)
 
 export async function bindHikvisionDevice(
   id: number,
-  data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string }
+  data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; externalIp?: string }
 ): Promise<import("./types").HikvisionDevice> {
   return apiFetch(`/hikvision/devices/${id}/bind`, { method: "PATCH", body: data });
 }
 
 export async function grantAllHikvisionAccess(deviceId: number): Promise<{ granted: number; skipped: number; message: string }> {
   return apiFetch(`/hikvision/devices/${deviceId}/grant-all`, { method: "POST" });
+}
+
+export async function revokeAllHikvisionAccess(deviceId: number): Promise<{ revoked: number; message: string }> {
+  return apiFetch(`/hikvision/devices/${deviceId}/revoke-all`, { method: "POST" });
 }
 
 export async function getEmployeeDoors(employeeId: number): Promise<Door[]> {
@@ -562,10 +575,32 @@ export async function getAgentStatus(): Promise<{
   online: boolean;
   secondsAgo: number | null;
   pendingCommands: number;
-  lastPingAt: string | null;
+  agentName: string | null;
 }> {
   const params = withCompanyId(new URLSearchParams());
   return apiFetch(`/agent/public-status?${params}`);
+}
+
+export async function getAgents(): Promise<import('./types').AgentRecord[]> {
+  return apiFetch('/agent/agents');
+}
+
+export async function assignAgentCompany(id: number, companyId: number | null): Promise<import('./types').AgentRecord> {
+  return apiFetch(`/agent/agents/${id}/assign`, {
+    method: 'PATCH',
+    body: { companyId },
+  });
+}
+
+export async function deleteAgent(id: number): Promise<void> {
+  await apiFetch(`/agent/agents/${id}/delete`, { method: 'PATCH' });
+}
+
+export async function assignAgentToDevice(deviceId: number, agentId: number | null): Promise<void> {
+  await apiFetch(`/hikvision/devices/${deviceId}/assign-agent`, {
+    method: 'PATCH',
+    body: { agentId },
+  });
 }
 
 export async function grantDoorAccess(doorId: number, employeeId: number): Promise<void> {
