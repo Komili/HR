@@ -15,6 +15,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import * as net from 'net';
 import * as crypto from 'crypto';
+import { PrismaService } from '../prisma/prisma.service';
 
 // ─── ISUP5.0 константы ───────────────────────────────────────────────────────
 
@@ -64,6 +65,8 @@ interface IsupSocket {
 export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('ISUP');
   private server: net.Server | null = null;
+
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Подключённые устройства: MAC (lowercase) → состояние сокета */
   private readonly sockets = new Map<string, IsupSocket>();
@@ -259,6 +262,10 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.log(`✅ ISUP зарегистрировано: ${deviceId || '?'} MAC=${state.mac} IP=${state.remoteAddr}`);
 
+    // Обновляем IP в БД (async, не блокируем ответ)
+    const extraKeys = deviceId ? [deviceId] : [];
+    this.updateDeviceIp(state.mac, state.remoteAddr, extraKeys).catch(() => {});
+
     // Отправляем подтверждение
     const ack = Buffer.from(JSON.stringify({
       statusCode: 200,
@@ -348,6 +355,37 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
   // ─── Публичный API ─────────────────────────────────────────────────────────
 
   /** Проверить — подключено ли устройство (по MAC, ISUP ID или серийнику) */
+  /** Обновить externalIp и lastSeenAt устройства в БД при ISUP подключении */
+  private async updateDeviceIp(
+    macOrKey: string,
+    remoteAddr: string,
+    extraKeys: string[] = [],
+  ): Promise<void> {
+    const externalIp = remoteAddr.replace(/^::ffff:/, '').split(':')[0];
+    if (!externalIp) return;
+
+    // Собираем все возможные ключи для поиска в macAddress
+    const keys = [macOrKey, ...extraKeys]
+      .map(k => k.toLowerCase())
+      .filter(Boolean);
+
+    const device = await this.prisma.hikvisionDevice.findFirst({
+      where: { macAddress: { in: keys } },
+      select: { id: true, macAddress: true, externalIp: true },
+    });
+
+    if (!device) return;
+
+    const updates: any = { lastSeenAt: new Date() };
+    if (device.externalIp !== externalIp) {
+      this.logger.log(
+        `[ISUP] MAC=${device.macAddress}: внешний IP ${device.externalIp || 'нет'} → ${externalIp}`,
+      );
+      updates.externalIp = externalIp;
+    }
+    await this.prisma.hikvisionDevice.update({ where: { id: device.id }, data: updates });
+  }
+
   isConnected(identifier: string): boolean {
     const key = identifier.toLowerCase();
     let s = this.sockets.get(key);
@@ -578,6 +616,11 @@ export class HikvisionIsupService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `✅ EHome зарегистрировано: serial=${deviceId} model=${model} isupId=${isupId} IP=${state.remoteAddr}`,
     );
+
+    // Обновляем IP в БД (async, не блокируем ответ)
+    // Ищем по всем возможным ключам: isupId, serial, key
+    const ehomeKeys = [key, isupId, deviceId].filter(Boolean) as string[];
+    this.updateDeviceIp(key, state.remoteAddr, ehomeKeys).catch(() => {});
 
     // EHome2.0 Register ACK
     const ack = this.buildEHomeAck(data);

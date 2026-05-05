@@ -50,7 +50,8 @@ function RegisterForm() {
   const [companyName, setCompanyName] = useState("");
   const [tokenError, setTokenError] = useState("");
 
-  const [form, setForm] = useState({ firstName: "", lastName: "", patronymic: "", phone: "" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", patronymic: "", phone: "", email: "", birthDate: "" });
+  const PHONE_PREFIX = "+992";
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -65,9 +66,17 @@ function RegisterForm() {
 
   const handlePhotoCapture = useCallback((blob: Blob) => { setPhotoBlob(blob); }, []);
 
+  const canSubmit =
+    form.firstName.trim() &&
+    form.lastName.trim() &&
+    form.phone.length === 9 &&
+    form.email.trim() &&
+    form.birthDate &&
+    photoBlob;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.firstName.trim() || !form.lastName.trim()) return;
+    if (!canSubmit) return;
 
     setSubmitting(true);
     setSubmitError("");
@@ -77,7 +86,9 @@ function RegisterForm() {
       fd.append("firstName", form.firstName.trim());
       fd.append("lastName", form.lastName.trim());
       if (form.patronymic) fd.append("patronymic", form.patronymic.trim());
-      if (form.phone) fd.append("phone", form.phone.trim());
+      fd.append("phone", PHONE_PREFIX + form.phone.trim());
+      fd.append("email", form.email.trim());
+      fd.append("birthDate", form.birthDate);
       if (photoBlob) fd.append("photo", photoBlob, "photo.jpg");
       await submitRegistration(fd);
       setSubmitted(true);
@@ -159,14 +170,58 @@ function RegisterForm() {
               <Input id="patronymic" value={form.patronymic} onChange={(e) => setForm(f => ({ ...f, patronymic: e.target.value }))} placeholder="Ваше отчество" className="mt-1" />
             </div>
             <div>
-              <Label htmlFor="phone">Телефон</Label>
-              <Input id="phone" type="tel" value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+992 ..." className="mt-1" />
+              <Label htmlFor="birthDate">Дата рождения *</Label>
+              <Input
+                id="birthDate"
+                type="date"
+                value={form.birthDate}
+                onChange={(e) => setForm(f => ({ ...f, birthDate: e.target.value }))}
+                required
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+                required
+                placeholder="example@mail.com"
+                className="mt-1"
+                inputMode="email"
+              />
+            </div>
+            <div>
+              <Label htmlFor="phone">Телефон *</Label>
+              <div className="flex mt-1">
+                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground select-none">
+                  +992
+                </span>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 9);
+                    setForm(f => ({ ...f, phone: digits }));
+                  }}
+                  placeholder="XX XXX XXXX"
+                  className="rounded-l-none"
+                  inputMode="numeric"
+                  required
+                />
+              </div>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>Фото для пропуска</Label>
-            <PhotoCapture onCapture={handlePhotoCapture} />
+            <Label>Фото для пропуска <span className="text-red-500">*</span></Label>
+            <PhotoCapture onCapture={handlePhotoCapture} hideUpload={true} />
+            {!photoBlob && (
+              <p className="text-xs text-red-500">Сфотографируйтесь — фото обязательно</p>
+            )}
           </div>
 
           {submitError && (
@@ -175,7 +230,7 @@ function RegisterForm() {
 
           <Button
             type="submit"
-            disabled={submitting || !form.firstName.trim() || !form.lastName.trim()}
+            disabled={submitting || !canSubmit}
             className="w-full h-12 text-base bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 rounded-xl shadow-lg"
           >
             {submitting ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Отправка...</> : "Отправить заявку"}

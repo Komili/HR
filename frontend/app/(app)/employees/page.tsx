@@ -19,6 +19,7 @@ import {
   getDepartments,
   getPositions,
   getEmployeeInventory,
+  getEmployeePhotoUrl,
 } from "@/lib/hrms-api"
 import { StatusBadge, ALL_STATUSES } from "@/components/status-badge"
 import {
@@ -50,6 +51,8 @@ import {
   Copy,
   Briefcase,
   X,
+  LayoutList,
+  LayoutGrid,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -59,6 +62,66 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+
+function GalleryCard({ employee }: { employee: Employee }) {
+  const [blobUrl, setBlobUrl] = React.useState<string | null>(null)
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = React.useState(false)
+  const name = `${employee.lastName} ${employee.firstName}`
+  const initials = `${employee.firstName?.charAt(0) || ""}${employee.lastName?.charAt(0) || ""}`.toUpperCase()
+
+  React.useEffect(() => {
+    if (!employee.photoPath || !ref.current) return
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setVisible(true); obs.disconnect() }
+    }, { rootMargin: "300px" })
+    obs.observe(ref.current)
+    return () => obs.disconnect()
+  }, [employee.photoPath])
+
+  React.useEffect(() => {
+    if (!visible || !employee.photoPath) return
+    let revoked = false
+    const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null
+    fetch(getEmployeePhotoUrl(employee.id, false), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.ok ? r.blob() : null)
+      .then(blob => { if (blob && !revoked) setBlobUrl(URL.createObjectURL(blob)) })
+      .catch(() => {})
+    return () => { revoked = true; setBlobUrl(p => { if (p) URL.revokeObjectURL(p); return null }) }
+  }, [visible, employee.photoPath, employee.id])
+
+  return (
+    <Link href={`/employees/${employee.id}`} className="group flex flex-col items-center gap-2 rounded-xl p-2 hover:bg-emerald-50 transition-colors">
+      <div
+        ref={ref}
+        className="w-24 h-32 rounded-xl overflow-hidden bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow"
+      >
+        {blobUrl ? (
+          <img src={blobUrl} alt={name} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-2xl font-bold text-emerald-600">{initials}</span>
+        )}
+      </div>
+      <div className="text-center w-24">
+        <div className="text-xs font-medium text-foreground group-hover:text-emerald-600 transition-colors leading-tight line-clamp-2">{name}</div>
+        <div className="text-[10px] text-muted-foreground mt-0.5">ID: {employee.id}</div>
+      </div>
+    </Link>
+  )
+}
+
+function EmployeeGallery({ employees }: { employees: Employee[] }) {
+  if (employees.length === 0) {
+    return <div className="py-16 text-center text-muted-foreground text-sm">Нет сотрудников</div>
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {employees.map(emp => <GalleryCard key={emp.id} employee={emp} />)}
+    </div>
+  )
+}
 
 export default function EmployeesPage() {
   const searchParams = useSearchParams()
@@ -106,6 +169,7 @@ export default function EmployeesPage() {
   const [filterStatus, setFilterStatus] = React.useState<string>("")
 
   const hasFilters = !!(filterDept || filterPosition || filterStatus)
+  const [viewMode, setViewMode] = React.useState<"table" | "gallery">("table")
 
   const filteredData = React.useMemo(() => {
     if (!hasFilters) return data
@@ -563,7 +627,7 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-<Button
+            <Button
               variant="outline"
               size="sm"
               onClick={() => setShowFilters((v) => !v)}
@@ -577,6 +641,23 @@ export default function EmployeesPage() {
                 </span>
               )}
             </Button>
+            {/* Переключатель вида */}
+            <div className="flex rounded-xl border border-emerald-200 overflow-hidden">
+              <button
+                onClick={() => setViewMode("table")}
+                className={`flex h-9 w-9 items-center justify-center transition-colors ${viewMode === "table" ? "bg-emerald-500 text-white" : "bg-white/80 text-muted-foreground hover:bg-emerald-50"}`}
+                title="Таблица"
+              >
+                <LayoutList className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("gallery")}
+                className={`flex h-9 w-9 items-center justify-center transition-colors ${viewMode === "gallery" ? "bg-emerald-500 text-white" : "bg-white/80 text-muted-foreground hover:bg-emerald-50"}`}
+                title="Галерея фотографий"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-2 sm:px-3 py-1 sm:py-1.5 text-emerald-700 font-medium text-xs sm:text-sm">
                 <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -649,7 +730,11 @@ export default function EmployeesPage() {
         )}
 
         <div className="p-3 sm:p-5">
-          <DataTable columns={columns} data={displayData} pagination={pagination} />
+          {viewMode === "table" ? (
+            <DataTable columns={columns} data={displayData} pagination={pagination} />
+          ) : (
+            <EmployeeGallery employees={displayData} />
+          )}
         </div>
       </div>
 

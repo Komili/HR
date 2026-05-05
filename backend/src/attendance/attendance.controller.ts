@@ -9,7 +9,10 @@ import {
   UseGuards,
   ParseIntPipe,
   Request,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AttendanceService } from './attendance.service';
 import { CorrectAttendanceDto } from './dto/correct-attendance.dto';
 import { RegisterEventDto } from './dto/register-event.dto';
@@ -89,5 +92,18 @@ export class AttendanceController {
     @Request() req: { user: RequestUser },
   ) {
     return this.attendanceService.registerEvent(dto, req.user);
+  }
+
+  @Get('events/:id/selfie')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер')
+  async getSelfie(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: RequestUser },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, mimeType } = await this.attendanceService.getSelfiePhoto(id, req.user);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return new StreamableFile(buffer);
   }
 }

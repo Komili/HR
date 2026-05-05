@@ -93,6 +93,7 @@ import {
   revokeHikvisionAccess,
   checkHikvisionAccess,
   getAgentStatus,
+  getAttendanceSelfieUrl,
 } from "@/lib/hrms-api";
 import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice } from "@/lib/types";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -158,6 +159,9 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().getMonth() + 1);
   const [attendanceYear, setAttendanceYear] = useState(() => new Date().getFullYear());
+  const [selfieModalEventId, setSelfieModalEventId] = useState<number | null>(null);
+  const [selfieBlobUrl, setSelfieBlobUrl] = useState<string | null>(null);
+  const [selfieLoading, setSelfieLoading] = useState(false);
 
   // Position history state
   const [positionHistory, setPositionHistory] = useState<PositionHistoryEntry[]>([]);
@@ -229,6 +233,29 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
       setAttendanceLoading(false);
     }
   }, [employeeId, attendanceMonth, attendanceYear]);
+
+  const openSelfieModal = useCallback(async (eventId: number) => {
+    setSelfieModalEventId(eventId);
+    setSelfieBlobUrl(null);
+    setSelfieLoading(true);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
+      const res = await fetch(getAttendanceSelfieUrl(eventId), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        setSelfieBlobUrl(URL.createObjectURL(blob));
+      }
+    } catch { /* ignore */ } finally {
+      setSelfieLoading(false);
+    }
+  }, []);
+
+  const closeSelfieModal = useCallback(() => {
+    setSelfieModalEventId(null);
+    setSelfieBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+  }, []);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -1477,10 +1504,31 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               {hikLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-blue-400" /></div>
               ) : hikDevices.length > 0 ? (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Устройства Hikvision (Face ID)</p>
-                  <div className="space-y-3">
-                    {hikDevices.map(dev => {
+                <div className="space-y-5">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Устройства Hikvision (Face ID)</p>
+                  {(() => {
+                    // Группируем по компании
+                    const groups: { companyId: number | null; companyName: string; devices: typeof hikDevices }[] = [];
+                    for (const dev of hikDevices) {
+                      const cId = dev.companyId ?? null;
+                      const cName = dev.company ? (dev.company.shortName || dev.company.name) : 'Без компании';
+                      let group = groups.find(g => g.companyId === cId);
+                      if (!group) { group = { companyId: cId, companyName: cName, devices: [] }; groups.push(group); }
+                      group.devices.push(dev);
+                    }
+                    const showGroupHeaders = user?.isHoldingAdmin && groups.length > 1;
+                    return groups.map(group => (
+                      <div key={group.companyId ?? 'none'}>
+                        {showGroupHeaders && (
+                          <div className="flex items-center gap-2 mb-2">
+                            <Building2 className="h-3.5 w-3.5 text-amber-500" />
+                            <span className="text-xs font-semibold text-amber-600 uppercase tracking-wider">{group.companyName}</span>
+                            <div className="flex-1 h-px bg-amber-100" />
+                            <span className="text-xs text-slate-400">{group.devices.filter(d => d.hasAccess).length}/{group.devices.length} доступов</span>
+                          </div>
+                        )}
+                        <div className="space-y-3">
+                    {group.devices.map(dev => {
                       const isToggling = togglingHikId === dev.id;
                       const isChecking = checkingHikId === dev.id;
                       const result = hikResults[dev.id];
@@ -1596,7 +1644,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                         </div>
                       );
                     })}
-                  </div>
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               ) : null}
 

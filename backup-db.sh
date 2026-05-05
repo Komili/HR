@@ -1,12 +1,15 @@
 #!/bin/bash
-# Ежедневный бэкап базы данных — отправляет в Telegram
+# Ежедневный бэкап базы данных — сохраняет в storage/backups и отправляет в Telegram
 set -e
 
 BOT_TOKEN="8474518444:AAFDPMDNKLtDJKqkkckrprKinhiO99edDcY"
 CHAT_ID="5409029684"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DATE_LABEL=$(date '+%d.%m.%Y %H:%M')
-BACKUP_FILE="/tmp/hrms_db_${TIMESTAMP}.sql.gz"
+BACKUP_DIR="/home/komil/projects/HR/storage/backups"
+BACKUP_FILE="$BACKUP_DIR/hrms_db_${TIMESTAMP}.sql.gz"
+
+mkdir -p "$BACKUP_DIR"
 
 echo "[$(date)] Начинаю бэкап БД..."
 
@@ -27,5 +30,4 @@ curl -s \
     "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" | \
     python3 -c "import sys,json; r=json.load(sys.stdin); print('✅ Отправлен' if r.get('ok') else '❌ Ошибка: '+str(r))"
 
-rm -f "$BACKUP_FILE"
-echo "[$(date)] Готово."
+echo "[$(date)] Готово. Файл сохранён: $BACKUP_FILE"

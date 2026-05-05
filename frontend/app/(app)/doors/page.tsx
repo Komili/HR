@@ -18,12 +18,13 @@ import { useAuth } from "@/app/contexts/AuthContext"
 import {
   getCompanies, getHikvisionDevices, bindHikvisionDevice,
   unbindHikvisionDevice, deleteHikvisionDevice, pingHikvisionDevice,
-  getAgentStatus, grantAllHikvisionAccess,
+  getAgentStatus, grantAllHikvisionAccess, revokeAllHikvisionAccess, getAgents, assignAgentCompany, deleteAgent,
+  assignAgentToDevice,
 } from "@/lib/hrms-api"
-import type { Company, HikvisionDevice } from "@/lib/types"
+import type { Company, HikvisionDevice, AgentRecord } from "@/lib/types"
 import { AgentStatusBanner } from "@/components/agent-status-banner"
 
-const EMPTY_BIND = { companyId: 0, officeName: "", direction: "IN" as "IN" | "OUT", login: "admin", password: "" }
+const EMPTY_BIND = { companyId: 0, officeName: "", direction: "IN" as "IN" | "OUT", login: "admin", password: "", externalIp: "" }
 
 type PingResult = {
   online: boolean; message: string;
@@ -53,13 +54,23 @@ export default function DoorsPage() {
   const [grantAllLoading, setGrantAllLoading] = React.useState(false)
   const [grantAllResult, setGrantAllResult] = React.useState<{ granted: number; skipped: number; message: string } | null>(null)
 
+  // Revoke all
+  const [revokeAllDeviceId, setRevokeAllDeviceId] = React.useState<number | null>(null)
+  const [revokeAllLoading, setRevokeAllLoading] = React.useState(false)
+  const [revokeAllResult, setRevokeAllResult] = React.useState<{ revoked: number; message: string } | null>(null)
+
   // Ping / status
   const [pingResults, setPingResults] = React.useState<Record<number, PingResult | null>>({})
   const [pingingId, setPingingId] = React.useState<number | null>(null)
   const [pingingAll, setPingingAll] = React.useState(false)
 
-  // Agent status
-  const [agentStatus, setAgentStatus] = React.useState<{ online: boolean; secondsAgo: number | null; pendingCommands: number } | null>(null)
+  // Agent status (per-company banner)
+  const [agentStatus, setAgentStatus] = React.useState<{ online: boolean; secondsAgo: number | null; pendingCommands: number; agentName: string | null } | null>(null)
+
+  // All agents (superadmin panel)
+  const [agents, setAgents] = React.useState<AgentRecord[]>([])
+  const [agentsLoading, setAgentsLoading] = React.useState(false)
+  const [assigningAgentId, setAssigningAgentId] = React.useState<number | null>(null)
 
   const isSuperAdmin = user?.isHoldingAdmin
 
@@ -79,11 +90,21 @@ export default function DoorsPage() {
   }, [])
 
   const loadAgentStatus = React.useCallback(async () => {
-    try {
-      const s = await getAgentStatus()
-      setAgentStatus(s)
-    } catch { /* ignore */ }
+    try { setAgentStatus(await getAgentStatus()) } catch { /* ignore */ }
   }, [])
+
+  const loadAgents = React.useCallback(async () => {
+    if (!isSuperAdmin) return
+    setAgentsLoading(true)
+    try {
+      const [data] = await Promise.all([
+        getAgents(),
+        new Promise(r => setTimeout(r, 600)),
+      ])
+      setAgents(data)
+    } catch { /* ignore */ }
+    finally { setAgentsLoading(false) }
+  }, [isSuperAdmin])
 
   React.useEffect(() => { load() }, [load])
   React.useEffect(() => {
@@ -91,6 +112,11 @@ export default function DoorsPage() {
     const t = setInterval(loadAgentStatus, 15_000)
     return () => clearInterval(t)
   }, [loadAgentStatus])
+  React.useEffect(() => {
+    loadAgents()
+    const t = setInterval(loadAgents, 20_000)
+    return () => clearInterval(t)
+  }, [loadAgents])
 
   function openBind(device: HikvisionDevice) {
     setBindDevice(device)
@@ -100,6 +126,7 @@ export default function DoorsPage() {
       direction: device.direction || "IN",
       login: device.login || "admin",
       password: "",
+      externalIp: device.externalIp || "",
     })
     setBindError(null)
     setShowPassword(false)
@@ -118,6 +145,7 @@ export default function DoorsPage() {
         direction: bindForm.direction,
         login: bindForm.login || "admin",
         password: bindForm.password,
+        externalIp: bindForm.externalIp || undefined,
       })
       setBindDevice(null); await load()
     } catch (e: any) {
@@ -181,6 +209,32 @@ export default function DoorsPage() {
     }
   }
 
+  async function handleRevokeAll() {
+    if (!revokeAllDeviceId) return
+    setRevokeAllLoading(true)
+    setRevokeAllResult(null)
+    try {
+      const result = await revokeAllHikvisionAccess(revokeAllDeviceId)
+      setRevokeAllResult(result)
+    } catch (e: any) {
+      setRevokeAllResult({ revoked: 0, message: e.message || "Ошибка" })
+    } finally {
+      setRevokeAllLoading(false)
+    }
+  }
+
+  async function handleAssignAgent(agentDbId: number, companyId: number | null) {
+    setAssigningAgentId(agentDbId)
+    try { await assignAgentCompany(agentDbId, companyId); await loadAgents() }
+    catch (e: any) { setError(e.message || "Ошибка назначения") }
+    finally { setAssigningAgentId(null) }
+  }
+
+  async function handleDeleteAgent(agentDbId: number) {
+    try { await deleteAgent(agentDbId); await loadAgents() }
+    catch (e: any) { setError(e.message || "Ошибка удаления агента") }
+  }
+
   if (!isSuperAdmin) {
     return <div className="p-8 text-center text-muted-foreground">Доступ только для Суперадмина</div>
   }
@@ -218,10 +272,96 @@ export default function DoorsPage() {
         )}
       </div>
 
-      {/* Agent status banner */}
-      <AgentStatusBanner status={agentStatus} onRefresh={loadAgentStatus} />
+      {/* ── Панель всех агентов (суперадмин) ── */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-700">Relay-агенты</span>
+            {agents.length > 0 && (
+              <Badge variant="outline" className="text-slate-500 border-slate-200 text-xs">
+                {agents.filter(a => a.online).length}/{agents.length} онлайн
+              </Badge>
+            )}
+          </div>
+          <button
+            onClick={loadAgents}
+            disabled={agentsLoading}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 transition-colors border border-slate-200"
+            title="Обновить"
+          >
+            {agentsLoading
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <RefreshCw className="h-3.5 w-3.5" />}
+            {agentsLoading ? "Обновление..." : "Обновить"}
+          </button>
+        </div>
 
-      {error && (
+        {agents.length === 0 && !agentsLoading && (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-400 text-center">
+            Нет зарегистрированных агентов — запустите AGENT.bat в офисе
+          </div>
+        )}
+
+        {agents.length > 0 && (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {agents.map(agent => {
+              const timeAgo = (s: number) =>
+                s < 60 ? `${s} сек` : s < 3600 ? `${Math.floor(s / 60)} мин` : `${Math.floor(s / 3600)} ч`
+
+              return (
+                <div
+                  key={agent.id}
+                  className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-xs ${
+                    agent.online
+                      ? "bg-emerald-50 border-emerald-200"
+                      : "bg-slate-50 border-slate-200"
+                  }`}
+                >
+                  <div className={`h-2 w-2 rounded-full shrink-0 ${agent.online ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-slate-800 truncate">{agent.name}</div>
+                    <div className="text-slate-400 mt-0.5">
+                      {agent.online && agent.secondsAgo !== null
+                        ? <span className="text-emerald-600">{timeAgo(agent.secondsAgo)} назад</span>
+                        : agent.lastSeenAt
+                          ? <span>
+                              {(() => {
+                                const s = Math.floor((Date.now() - new Date(agent.lastSeenAt).getTime()) / 1000)
+                                return `офлайн ${timeAgo(s)}`
+                              })()}
+                            </span>
+                          : <span>никогда не подключался</span>
+                      }
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <select
+                      value={agent.companyId ?? ""}
+                      onChange={e => handleAssignAgent(agent.id, e.target.value ? Number(e.target.value) : null)}
+                      disabled={assigningAgentId === agent.id}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400 max-w-[120px] disabled:opacity-50"
+                    >
+                      <option value="">Все компании</option>
+                      {companies.map(c => (
+                        <option key={c.id} value={c.id}>{c.shortName || c.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleDeleteAgent(agent.id)}
+                      className="p-1 rounded hover:bg-red-100 text-slate-300 hover:text-red-500 transition-colors"
+                      title="Удалить агент"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+{error && (
         <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{error}</div>
       )}
 
@@ -316,9 +456,17 @@ export default function DoorsPage() {
             </div>
           )}
 
-          {/* ── Привязанные устройства ── */}
-          {activeDevices.length > 0 && (
-            <div className="space-y-3">
+          {/* ── Привязанные устройства (по компаниям) ── */}
+          {activeDevices.length > 0 && (() => {
+            const grouped = activeDevices.reduce((acc, d) => {
+              const key = String(d.companyId ?? 0)
+              if (!acc[key]) acc[key] = { company: d.company, devices: [] }
+              acc[key].devices.push(d)
+              return acc
+            }, {} as Record<string, { company: typeof activeDevices[0]['company']; devices: typeof activeDevices }>)
+
+            return (
+            <div className="space-y-6">
               <div className="flex items-center gap-2">
                 <Wifi className="h-4 w-4 text-blue-500" />
                 <h2 className="text-sm font-semibold text-slate-700">Активные устройства</h2>
@@ -326,8 +474,20 @@ export default function DoorsPage() {
                   {activeDevices.length}
                 </Badge>
               </div>
+              {Object.values(grouped).map((group, gi) => (
+                <div key={gi} className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-100" />
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-2">
+                      {group.company?.shortName || group.company?.name || "Без компании"}
+                    </span>
+                    <Badge variant="outline" className="text-slate-400 border-slate-200 text-xs">
+                      {group.devices.length}
+                    </Badge>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {activeDevices.map(device => {
+                {group.devices.map(device => {
                   const ping = pingResults[device.id]
                   const isPinging = pingingId === device.id || pingingAll
 
@@ -422,6 +582,23 @@ export default function DoorsPage() {
                           </div>
                         )}
 
+                        {/* Агент */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground shrink-0">Агент:</span>
+                          <select
+                            value={device.agentId ?? ""}
+                            onChange={e => assignAgentToDevice(device.id, e.target.value ? Number(e.target.value) : null).then(load)}
+                            className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          >
+                            <option value="">—</option>
+                            {agents.map(a => (
+                              <option key={a.id} value={a.id}>
+                                {a.name}{a.online ? " ●" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
                         {/* Кнопки */}
                         <div className="flex gap-2">
                           <Button
@@ -457,14 +634,24 @@ export default function DoorsPage() {
                             <Unlink className="h-3 w-3" />
                           </Button>
                         </div>
-                        <Button
-                          size="sm" variant="outline"
-                          className="w-full h-8 text-xs gap-1.5 border-violet-200 text-violet-600 hover:bg-violet-50 hover:text-violet-700"
-                          onClick={() => { setGrantAllDeviceId(device.id); setGrantAllResult(null) }}
-                        >
-                          <Users className="h-3.5 w-3.5" />
-                          Выдать доступ всем активным сотрудникам
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm" variant="outline"
+                            className="flex-1 h-8 text-xs gap-1.5 border-violet-200 text-violet-600 hover:bg-violet-50 hover:text-violet-700"
+                            onClick={() => { setGrantAllDeviceId(device.id); setGrantAllResult(null) }}
+                          >
+                            <Users className="h-3.5 w-3.5" />
+                            Выдать всем
+                          </Button>
+                          <Button
+                            size="sm" variant="outline"
+                            className="flex-1 h-8 text-xs gap-1.5 border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600"
+                            onClick={() => { setRevokeAllDeviceId(device.id); setRevokeAllResult(null) }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Удалить всех
+                          </Button>
+                        </div>
 
                         </div>
                       </CardContent>
@@ -472,8 +659,11 @@ export default function DoorsPage() {
                   )
                 })}
               </div>
+                </div>
+              ))}
             </div>
-          )}
+            )
+          })()}
 
           {/* Пустое состояние */}
           {hikvDevices.length === 0 && (
@@ -591,6 +781,16 @@ export default function DoorsPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">Логин и пароль нужны для выдачи/отзыва Face ID доступа</p>
+
+              <div className="space-y-1">
+                <Label>Внешний IP устройства (опционально)</Label>
+                <Input
+                  value={bindForm.externalIp}
+                  onChange={e => setBindForm(f => ({ ...f, externalIp: e.target.value }))}
+                  placeholder="185.125.200.112"
+                />
+                <p className="text-xs text-muted-foreground">Публичный IP офиса устройства — для port forwarding. Обновляется автоматически при ISUP подключении.</p>
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -628,6 +828,23 @@ export default function DoorsPage() {
           </DialogHeader>
           {!grantAllResult ? (
             <>
+              {!hikvDevices.find(d => d.id === grantAllDeviceId)?.agentId ? (
+                <>
+                  <div className="py-2">
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-3 flex gap-2.5">
+                      <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                      <div className="text-sm text-red-700">
+                        <p className="font-semibold">Агент не назначен</p>
+                        <p className="mt-0.5 text-xs">Сначала выберите relay-агент для этого устройства, затем выдайте доступ.</p>
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={() => setGrantAllDeviceId(null)}>Закрыть</Button>
+                  </DialogFooter>
+                </>
+              ) : (
+              <>
               <div className="py-2 space-y-3">
                 <p className="text-sm text-muted-foreground">
                   Все активные сотрудники компании получат Face ID доступ к этому устройству.
@@ -647,6 +864,8 @@ export default function DoorsPage() {
                   Выдать всем
                 </Button>
               </DialogFooter>
+              </>
+              )}
             </>
           ) : (
             <>
@@ -677,6 +896,57 @@ export default function DoorsPage() {
           )}
         </DialogContent>
       </Dialog>
+      {/* ── Удалить всех ── */}
+      <Dialog open={!!revokeAllDeviceId} onOpenChange={open => { if (!open) { setRevokeAllDeviceId(null); setRevokeAllResult(null) } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              Удалить всех с устройства
+            </DialogTitle>
+          </DialogHeader>
+          {!revokeAllResult ? (
+            <>
+              <div className="py-2 space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Все сотрудники будут удалены с устройства. Relay-агент выполнит удаление.
+                </p>
+                <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                  Это действие нельзя отменить. После удаления сотрудники потеряют доступ к двери.
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRevokeAllDeviceId(null)}>Отмена</Button>
+                <Button onClick={handleRevokeAll} disabled={revokeAllLoading} className="bg-red-500 hover:bg-red-600 text-white gap-2">
+                  {revokeAllLoading
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Trash2 className="h-4 w-4" />
+                  }
+                  Удалить всех
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <div className="py-2">
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 space-y-1">
+                  <p className="text-sm font-semibold text-red-700">Готово!</p>
+                  <div className="flex justify-between text-sm text-red-600">
+                    <span>Удалено:</span>
+                    <span className="font-bold">{revokeAllResult.revoked}</span>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => { setRevokeAllDeviceId(null); setRevokeAllResult(null) }} className="w-full">
+                  Закрыть
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }

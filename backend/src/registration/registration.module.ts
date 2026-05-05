@@ -3,9 +3,10 @@ import { RegistrationController } from './registration.controller';
 import { RegistrationAdminController } from './registration-admin.controller';
 import { RegistrationService } from './registration.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { TelegramModule } from '../telegram/telegram.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, TelegramModule],
   controllers: [RegistrationController, RegistrationAdminController],
   providers: [RegistrationService],
 })

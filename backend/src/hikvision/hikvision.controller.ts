@@ -108,6 +108,17 @@ export class HikvisionController {
     return this.hikvisionService.deleteDevice(id, req.user);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Суперадмин')
+  @Patch('devices/:id/assign-agent')
+  assignAgent(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { agentId: number | null },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.hikvisionService.assignAgentToDevice(id, body.agentId, req.user);
+  }
+
   // ─── Доступ сотрудников к устройствам ───
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -139,6 +150,16 @@ export class HikvisionController {
     @Request() req: { user: RequestUser },
   ) {
     return this.hikvisionService.grantAllEmployees(id, req.user);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Суперадмин')
+  @Post('devices/:id/revoke-all')
+  revokeAll(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.hikvisionService.revokeAllEmployees(id, req.user);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -196,13 +217,7 @@ export class HikvisionController {
 
   @SkipThrottle()
   @Get('test')
-  async sendTest(
-    @Query('token') token?: string,
-  ): Promise<{ ok: boolean; message: string }> {
-    const expected = process.env.HIKVISION_WEBHOOK_TOKEN;
-    if (expected && token !== expected) {
-      throw new ForbiddenException('Добавьте ?token=... в URL');
-    }
+  async sendTest(): Promise<{ ok: boolean; message: string }> {
     const message = await this.hikvisionService.sendTestMessage();
     return { ok: true, message };
   }

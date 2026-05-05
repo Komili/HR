@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmployeesService } from '../employees/employees.service';
+import { TelegramService } from '../telegram/telegram.service';
 import { SelfRegisterDto } from './dto/self-register.dto';
 import { RequestUser } from '../auth/jwt.strategy';
 import * as crypto from 'crypto';
@@ -10,7 +11,10 @@ import sharp = require('sharp');
 
 @Injectable()
 export class RegistrationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private telegram: TelegramService,
+  ) {}
 
   async validateToken(token: string) {
     const regToken = await this.prisma.registrationToken.findUnique({
@@ -47,6 +51,8 @@ export class RegistrationService {
         lastName: dto.lastName,
         patronymic: dto.patronymic || null,
         phone: dto.phone || null,
+        email: dto.email || null,
+        birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
         status: 'Ожидает',
         company: { connect: { id: regToken.companyId } },
       },
@@ -63,6 +69,18 @@ export class RegistrationService {
       where: { id: regToken.id },
       data: { usageCount: { increment: 1 } },
     });
+
+    // Telegram уведомление кадровику
+    const companyName = regToken.company.shortName || regToken.company.name;
+    this.telegram.sendMessage(
+      `📋 <b>Новая заявка на регистрацию</b>\n\n` +
+      `👤 ${dto.lastName} ${dto.firstName}${dto.patronymic ? ' ' + dto.patronymic : ''}\n` +
+      `🏢 Компания: ${companyName}\n` +
+      `📞 Телефон: ${dto.phone || '—'}\n` +
+      `📧 Email: ${dto.email || '—'}\n` +
+      `🎂 Дата рождения: ${dto.birthDate ? new Date(dto.birthDate).toLocaleDateString('ru-RU') : '—'}\n\n` +
+      `👉 Войдите в систему → Регистрации → Заявки`,
+    ).catch(() => {});
 
     return { success: true, message: 'Заявка успешно отправлена' };
   }

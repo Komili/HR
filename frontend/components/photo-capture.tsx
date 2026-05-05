@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 interface PhotoCaptureProps {
   onCapture: (blob: Blob) => void;
   capturedPreview?: string | null;
+  hideUpload?: boolean;
 }
 
 type FaceStatus = "checking" | "found" | "not_found" | "unsupported";
 
-export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptureProps) {
+export default function PhotoCapture({ onCapture, capturedPreview, hideUpload }: PhotoCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,21 +65,25 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
     return () => { stopFaceDetection(); if (stream) stream.getTracks().forEach((t) => t.stop()); };
   }, [stream, stopFaceDetection]);
 
+  // После того как video-элемент отрисован — подключаем стрим
+  useEffect(() => {
+    if (cameraActive && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+      videoRef.current.onloadeddata = () => startFaceDetection();
+    }
+  }, [cameraActive, stream, startFaceDetection]);
+
   const startCamera = useCallback(async () => {
     setError(null);
     setPhotoWarning(null);
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } },
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 1280 } },
       });
       setStream(mediaStream);
       setCameraActive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        videoRef.current.onloadeddata = () => startFaceDetection();
-      }
     } catch (err: any) {
-      // Определяем причину ошибки
       const name = err?.name || "";
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         setError("permission_denied");
@@ -94,7 +99,7 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
     }
   }, [startFaceDetection]);
 
-  // Обработка файла из галереи/системной камеры
+
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -102,7 +107,6 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
     const url = URL.createObjectURL(file);
     setPreview(url);
     onCapture(file);
-    // Сбрасываем input чтобы можно было выбрать снова
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [onCapture]);
 
@@ -121,7 +125,7 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
     canvas.toBlob((blob) => {
       if (!blob) return;
       if (detectorRef.current && faceStatus === "not_found") {
-        setPhotoWarning("Лицо не обнаружено. Для СКУД нужно чёткое фото анфас. Рекомендуем переснять.");
+        setPhotoWarning("Лицо не обнаружено. Для СКУД нужно чёткое фото анфас.");
       } else {
         setPhotoWarning(null);
       }
@@ -135,7 +139,8 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
     setPreview(null);
     setPhotoWarning(null);
     setError(null);
-  }, []);
+    setTimeout(() => startCamera(), 100);
+  }, [startCamera]);
 
   const borderColor = faceStatus === "found" ? "border-emerald-400" : faceStatus === "not_found" ? "border-red-400" : "border-yellow-400";
   const outlineColor = faceStatus === "found" ? "rgba(52,211,153,0.9)" : faceStatus === "not_found" ? "rgba(248,113,113,0.9)" : "rgba(255,255,255,0.6)";
@@ -143,23 +148,23 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
   // Фото сделано
   if (preview) {
     return (
-      <div className="flex flex-col items-center gap-3">
-        <div className="relative w-full max-w-[320px] aspect-square rounded-2xl overflow-hidden border-2 border-emerald-300 shadow-lg">
+      <div className="flex flex-col items-center gap-4">
+        <div className="relative w-full aspect-square rounded-2xl overflow-hidden border-2 border-emerald-300 shadow-lg">
           <img src={preview} alt="Фото" className="w-full h-full object-cover" />
           {!photoWarning && (
-            <div className="absolute top-2 right-2 bg-emerald-500 text-white rounded-full p-1">
-              <Check className="h-4 w-4" />
+            <div className="absolute top-3 right-3 bg-emerald-500 text-white rounded-full p-1.5">
+              <Check className="h-5 w-5" />
             </div>
           )}
         </div>
         {photoWarning && (
-          <div className="w-full max-w-[320px] bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2 items-start">
-            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800">{photoWarning}</p>
+          <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2 items-start">
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800">{photoWarning}</p>
           </div>
         )}
-        <Button type="button" variant="outline" size="sm" onClick={retake} className="gap-2">
-          <RotateCcw className="h-4 w-4" />
+        <Button type="button" variant="outline" onClick={retake} className="gap-2 w-full h-12 text-base">
+          <RotateCcw className="h-5 w-5" />
           Переснять
         </Button>
       </div>
@@ -169,8 +174,8 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
   // Камера активна
   if (cameraActive) {
     return (
-      <div className="flex flex-col items-center gap-3">
-        <div className={`text-xs font-medium px-3 py-1 rounded-full ${
+      <div className="flex flex-col items-center gap-4">
+        <div className={`text-sm font-medium px-4 py-2 rounded-full ${
           faceStatus === "found" ? "bg-emerald-100 text-emerald-700" :
           faceStatus === "not_found" ? "bg-red-100 text-red-700" :
           "bg-gray-100 text-gray-500"
@@ -180,7 +185,7 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
           {faceStatus === "checking" && "Поиск лица..."}
           {faceStatus === "unsupported" && "Расположите лицо и плечи в рамке"}
         </div>
-        <div className={`relative w-full max-w-[320px] aspect-square rounded-2xl overflow-hidden border-2 ${borderColor} shadow-lg bg-black transition-colors duration-300`}>
+        <div className={`relative w-full aspect-square rounded-2xl overflow-hidden border-4 ${borderColor} shadow-xl bg-black transition-colors duration-300`}>
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: "scaleX(-1)" }} />
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 320 320" preserveAspectRatio="xMidYMid slice">
             <defs>
@@ -196,22 +201,27 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
             <ellipse cx="160" cy="290" rx="130" ry="60" fill="none" stroke={outlineColor} strokeWidth="2" strokeDasharray="8 4" />
           </svg>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" onClick={takePhoto} className={`gap-2 ${faceStatus === "found" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-gray-600 hover:bg-gray-700"}`}>
-            <Camera className="h-4 w-4" />
-            {faceStatus === "found" ? "Сфотографироваться" : "Всё равно снять"}
+        <div className="flex gap-3 w-full">
+          <Button
+            type="button"
+            onClick={takePhoto}
+            className={`gap-2 flex-1 h-14 text-base font-semibold ${faceStatus === "found" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-gray-600 hover:bg-gray-700"}`}
+          >
+            <Camera className="h-5 w-5" />
+            {faceStatus === "found" ? "Сфотографироваться" : "Снять фото"}
           </Button>
-          <Button type="button" variant="outline" onClick={stopCamera}>Отмена</Button>
+          <Button type="button" variant="outline" onClick={stopCamera} className="h-14 px-5 text-base">
+            Отмена
+          </Button>
         </div>
         <canvas ref={canvasRef} className="hidden" />
       </div>
     );
   }
 
-  // Начальный экран
+  // Ошибка / fallback экран
   return (
-    <div className="flex flex-col items-center gap-3">
-      {/* Скрытый input для файла/камеры */}
+    <div className="flex flex-col items-center gap-4">
       <input
         ref={fileInputRef}
         type="file"
@@ -221,10 +231,35 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
         onChange={handleFileSelect}
       />
 
-      <div className="w-full max-w-[320px] rounded-2xl bg-gray-100 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-3 p-5">
-        <Camera className="h-12 w-12 text-gray-400" />
-        <p className="text-sm text-gray-500 text-center font-medium">Фото для пропуска (СКУД)</p>
-        <ul className="text-xs text-gray-400 space-y-1 text-left w-full max-w-[200px]">
+      {error && (
+        <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1">
+          {error === "https_required" && (
+            <>
+              <p className="font-semibold">Браузер блокирует камеру (требуется HTTPS)</p>
+              <p>Используйте кнопку ниже — она откроет системную камеру.</p>
+            </>
+          )}
+          {error === "permission_denied" && (
+            <>
+              <p className="font-semibold">Доступ к камере запрещён</p>
+              <p>Откройте настройки браузера → Разрешения → Камера → Разрешить.</p>
+            </>
+          )}
+          {error === "camera_busy" && (
+            <>
+              <p className="font-semibold">Камера занята другим приложением</p>
+              <p>Закройте другие приложения, или используйте кнопку ниже.</p>
+            </>
+          )}
+          {error === "no_camera" && <p>Камера не найдена на устройстве.</p>}
+          {error === "unknown" && <p>Не удалось открыть камеру.</p>}
+        </div>
+      )}
+
+      <div className="w-full aspect-square rounded-2xl bg-gray-100 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-4 p-6">
+        <Camera className="h-20 w-20 text-gray-300" />
+        <p className="text-base text-gray-500 font-medium text-center">Фото для пропуска (СКУД)</p>
+        <ul className="text-sm text-gray-400 space-y-1.5 text-left">
           <li>✓ Лицо анфас, по центру</li>
           <li>✓ Хорошее освещение</li>
           <li>✓ Без очков и головного убора</li>
@@ -232,55 +267,24 @@ export default function PhotoCapture({ onCapture, capturedPreview }: PhotoCaptur
         </ul>
       </div>
 
-      {/* Ошибки доступа к камере */}
-      {error && (
-        <div className="w-full max-w-[320px] bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
-          {error === "https_required" && (
-            <>
-              <p className="font-semibold">Браузер блокирует камеру (требуется HTTPS)</p>
-              <p>Используйте кнопку ниже — она откроет системную камеру напрямую.</p>
-            </>
-          )}
-          {error === "permission_denied" && (
-            <>
-              <p className="font-semibold">Доступ к камере запрещён</p>
-              <p>Откройте настройки браузера → Разрешения → Камера → Разрешить для этого сайта. Или используйте кнопку ниже.</p>
-            </>
-          )}
-          {error === "camera_busy" && (
-            <>
-              <p className="font-semibold">Камера занята другим приложением</p>
-              <p>Закройте другие приложения использующие камеру, или используйте кнопку ниже.</p>
-            </>
-          )}
-          {error === "no_camera" && <p>Камера не найдена на устройстве.</p>}
-          {error === "unknown" && <p>Не удалось открыть камеру. Попробуйте кнопку ниже.</p>}
-        </div>
-      )}
-
-      <div className="flex flex-col gap-2 w-full max-w-[320px]">
-        {/* Основная кнопка — встроенная камера браузера */}
-        {!error && (
-          <Button type="button" onClick={startCamera} className="gap-2 bg-emerald-600 hover:bg-emerald-700 w-full">
-            <Camera className="h-4 w-4" />
-            Включить камеру
-          </Button>
-        )}
-
-        {/* Fallback — системная камера через file input */}
+      <div className="flex flex-col gap-3 w-full">
         <Button
           type="button"
-          variant={error ? "default" : "outline"}
-          onClick={() => fileInputRef.current?.click()}
-          className={`gap-2 w-full ${error ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+          onClick={() => { setError(null); startCamera(); }}
+          className="gap-2 bg-emerald-600 hover:bg-emerald-700 w-full h-14 text-base font-semibold"
         >
-          <Upload className="h-4 w-4" />
-          {error ? "Открыть камеру / галерею" : "Загрузить из галереи"}
+          <Camera className="h-5 w-5" />
+          Включить камеру
         </Button>
-
-        {error && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => { setError(null); startCamera(); }} className="text-xs text-gray-500">
-            Попробовать снова
+        {!hideUpload && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            className="gap-2 w-full h-12 text-base"
+          >
+            <Upload className="h-5 w-5" />
+            Загрузить из галереи
           </Button>
         )}
       </div>

@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { Prisma } from '@prisma/client';
 import * as fs from 'fs/promises';
-import { createReadStream, existsSync, readFileSync } from 'fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'fs';
 import * as path from 'path';
 import sharp = require('sharp');
 import { RequestUser } from '../auth/jwt.strategy';
@@ -65,7 +65,11 @@ export class EmployeesService {
    * Имя папки сотрудника — только числовой ID.
    * Никогда не меняется при переименовании сотрудника → нет дублей.
    */
-  static employeeDirName(employee: { id: number }): string {
+  static employeeDirName(employee: { id: number; phone?: string | null }): string {
+    if (employee.phone) {
+      const digits = employee.phone.replace(/\D/g, '');
+      if (digits.length >= 9) return digits;
+    }
     return String(employee.id);
   }
 
@@ -306,7 +310,7 @@ export class EmployeesService {
     });
   }
 
-  async getPhotoStream(id: number): Promise<{ buffer: Buffer; mimeType: string }> {
+  async getPhotoStream(id: number): Promise<{ buffer: Buffer; mimeType: string; mtime: Date }> {
     const employee = await this.prisma.employee.findUnique({ where: { id }, select: { photoPath: true } });
     if (!employee?.photoPath || !existsSync(employee.photoPath)) {
       throw new NotFoundException('Фото не найдено');
@@ -315,7 +319,8 @@ export class EmployeesService {
     // Проверяем кэш нормализованного фото
     const normalizedPath = employee.photoPath.replace(/(\.[^.]+)$/, '_norm.jpg');
     if (existsSync(normalizedPath)) {
-      return { buffer: readFileSync(normalizedPath), mimeType: 'image/jpeg' };
+      const mtime = statSync(normalizedPath).mtime;
+      return { buffer: readFileSync(normalizedPath), mimeType: 'image/jpeg', mtime };
     }
 
     // Применяем EXIF-ротацию и сжимаем до разумного размера
@@ -327,8 +332,9 @@ export class EmployeesService {
 
     // Кэшируем
     try { await fs.writeFile(normalizedPath, buffer); } catch (_) {}
+    const mtime = existsSync(normalizedPath) ? statSync(normalizedPath).mtime : new Date();
 
-    return { buffer, mimeType: 'image/jpeg' };
+    return { buffer, mimeType: 'image/jpeg', mtime };
   }
 
   async getPhotoThumbnail(id: number): Promise<Buffer> {
@@ -396,11 +402,7 @@ export class EmployeesService {
     if (!employee) throw new NotFoundException('Сотрудник не найден');
     if (employee.status !== 'Ожидает') throw new ForbiddenException('Сотрудник не в статусе ожидания');
 
-    return this.prisma.employee.update({
-      where: { id },
-      data: { status: 'Отклонён' },
-      include: { department: true, position: true, company: true },
-    });
+    return this.prisma.employee.delete({ where: { id } });
   }
 
   async getOrgChart(user: RequestUser, requestedCompanyId?: number) {

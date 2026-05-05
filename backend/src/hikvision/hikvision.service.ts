@@ -9,6 +9,7 @@ import { AttendanceService } from '../attendance/attendance.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { HikvisionIsupService } from './hikvision-isup.service';
 import { RequestUser } from '../auth/jwt.strategy';
+import { toFolderName } from '../common/transliterate';
 
 // Устройство считается офлайн если нет heartbeat дольше этого времени
 const OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 минут
@@ -20,6 +21,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HikvisionService.name);
   // MAC → true (онлайн) | false (офлайн) | undefined (первый запуск)
   private readonly deviceOnlineState = new Map<string, boolean>();
+  private readonly agentOnlineState = new Map<string, boolean>();
   private monitorTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -44,7 +46,53 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     } catch (e) {
       this.logger.error(`Ошибка мониторинга устройств: ${e.message}`);
     }
+    try {
+      await this.checkAgentAvailability();
+    } catch (e) {
+      this.logger.error(`Ошибка мониторинга агентов: ${e.message}`);
+    }
     this.monitorTimer = setTimeout(() => this.runMonitorLoop(), CHECK_INTERVAL_MS);
+  }
+
+  private async checkAgentAvailability() {
+    // Агент пингует каждые 5 секунд — если нет сигнала 3 минуты, считаем офлайн
+    const AGENT_OFFLINE_MS = 3 * 60 * 1000;
+    const agents = await this.prisma.agent.findMany();
+    const now = Date.now();
+
+    for (const agent of agents) {
+      const lastSeen = agent.lastSeenAt ? new Date(agent.lastSeenAt).getTime() : 0;
+      const isOnline = lastSeen > 0 && (now - lastSeen) < AGENT_OFFLINE_MS;
+      const prev = this.agentOnlineState.get(agent.agentId);
+
+      if (prev === undefined) {
+        this.agentOnlineState.set(agent.agentId, isOnline);
+        this.logger.log(`[monitor] Агент "${agent.name}" — ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
+        continue;
+      }
+
+      if (prev === isOnline) continue;
+
+      this.agentOnlineState.set(agent.agentId, isOnline);
+      const minsAgo = lastSeen ? Math.floor((now - lastSeen) / 60000) : null;
+
+      if (isOnline) {
+        this.logger.log(`🟢 Агент восстановлен: "${agent.name}"`);
+        this.telegramService.sendMessage(
+          `🟢 <b>Агент восстановлен</b>\n` +
+          `🖥 Имя: ${agent.name}\n` +
+          `✅ Связь восстановлена`,
+        ).catch(() => {});
+      } else {
+        this.logger.warn(`🔴 Агент недоступен: "${agent.name}", последний сигнал ${minsAgo} мин назад`);
+        this.telegramService.sendMessage(
+          `🔴 <b>Агент недоступен</b>\n` +
+          `🖥 Имя: ${agent.name}\n` +
+          `⏰ Последний сигнал: ${minsAgo !== null ? `${minsAgo} мин назад` : 'никогда'}\n` +
+          `⚠️ Проверь компьютер с агентом`,
+        ).catch(() => {});
+      }
+    }
   }
 
   private async checkDeviceAvailability() {
@@ -176,9 +224,16 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       }
 
       await this.telegramService.sendMessage(msg);
+      await this.telegramService.sendAttendance(msg);
       this.logger.log(`Удалённое открытие двери: ${device?.officeName || ipAddress}`);
       return;
     }
+
+    // Фото лица извлекаем в самом начале — нужно для любого события (в т.ч. неизвестных лиц)
+    const facePhoto = this.extractJpegFromMultipart(
+      typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody,
+    );
+    this.logger.debug(`facePhoto extracted: ${facePhoto ? facePhoto.length + ' bytes' : 'null'}`);
 
     // DS-K series uses "employeeNoString", older devices use "employeeNo"
     const employeeNo = accessEvent.employeeNoString
@@ -186,13 +241,8 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       : accessEvent.employeeNo
         ? String(accessEvent.employeeNo)
         : null;
-    if (!employeeNo) {
-      this.logger.debug('Событие без employeeNo/employeeNoString — пропускаем');
-      return;
-    }
 
-    // Определяем офис и направление
-    // Приоритет: устройство в БД → переменная окружения (legacy)
+    // Определяем офис и направление по устройству в БД или .env
     let officeName: string | null = null;
     let direction: 'IN' | 'OUT' | null = null;
 
@@ -200,7 +250,6 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       officeName = device.officeName;
       direction = device.direction as 'IN' | 'OUT';
     } else {
-      // Fallback: HIKVISION_DEVICES из .env
       try {
         const envDevices: Array<{ ip: string; officeName: string; direction: string }> =
           JSON.parse(process.env.HIKVISION_DEVICES || '[]');
@@ -212,19 +261,88 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       } catch {}
     }
 
-    if (!officeName || !direction) {
-      this.logger.warn(
-        `Устройство IP=${ipAddress} MAC=${macAddress || '?'} не привязано к компании — пропускаем`,
-      );
+    const timestamp = eventData.dateTime ? new Date(eventData.dateTime) : new Date();
+    const timeStr = timestamp.toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      timeZone: 'Asia/Dushanbe',
+    });
+
+    // Незарегистрированное лицо — устройство не смогло определить ID
+    if (!employeeNo) {
+      if (facePhoto && facePhoto.length > 1000) {
+        // Сохраняем в storage/unknown/YYYY-MM-DD/HHMMSS_IP.jpg
+        try {
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const dateFolder = `${timestamp.getFullYear()}-${pad(timestamp.getMonth() + 1)}-${pad(timestamp.getDate())}`;
+          const timeLabel = `${pad(timestamp.getHours())}${pad(timestamp.getMinutes())}${pad(timestamp.getSeconds())}`;
+          const safeIp = ipAddress.replace(/\./g, '-');
+          const dir = path.join('storage', 'unknown', dateFolder);
+          await fs.promises.mkdir(dir, { recursive: true });
+          await fs.promises.writeFile(path.join(dir, `${timeLabel}_${safeIp}.jpg`), facePhoto);
+          this.logger.warn(`Незарегистрированное лицо сохранено: ${dir}/${timeLabel}_${safeIp}.jpg`);
+        } catch (e) {
+          this.logger.error(`Не удалось сохранить фото незарегистрированного лица: ${e.message}`);
+        }
+
+        const caption = [
+          `⚠️ <b>Незарегистрированное лицо</b>`,
+          ``,
+          officeName ? `🏢 ${officeName} (${direction === 'IN' ? 'Вход' : 'Выход'})` : `🏠 IP: ${ipAddress}`,
+          `⏰ ${timeStr}`,
+        ].join('\n');
+        await this.telegramService.sendAttendancePhoto(facePhoto, caption);
+      } else {
+        this.logger.debug('Событие без employeeNo и без фото — пропускаем');
+      }
       return;
     }
 
-    const timestamp = eventData.dateTime ? new Date(eventData.dateTime) : new Date();
+    if (!officeName || !direction) {
+      this.logger.warn(`Устройство IP=${ipAddress} MAC=${macAddress || '?'} не привязано к компании — пропускаем`);
+      return;
+    }
 
-    // Ищем сотрудника: сначала по skudId (старый СКУД), затем по id (Face ID устройства)
+    // Отказ в доступе от устройства: лицо не распознано / нет прав
+    // subEventType: 16=нет прав, 76=Face ID не совпал, 25=не авторизован
+    const DENIED_SUBTYPES = new Set([16, 25, 76]);
+    const subType: number = accessEvent.subEventType ?? -1;
+    const isDenied = DENIED_SUBTYPES.has(subType);
+
+    if (isDenied) {
+      this.logger.warn(`Отказ в доступе: СКУД №${employeeNo} subType=${subType} (${officeName})`);
+      const caption = [
+        `🚫 <b>Отказ в доступе</b>`,
+        ``,
+        `🔢 СКУД №: ${employeeNo}`,
+        `🏢 ${officeName} (${direction === 'IN' ? 'Вход' : 'Выход'})`,
+        `⏰ ${timeStr}`,
+        subType === 76 ? `❌ Причина: лицо не распознано` :
+        subType === 16 ? `❌ Причина: нет прав доступа` :
+                         `❌ Причина: отказ устройства (${subType})`,
+      ].join('\n');
+
+      if (facePhoto && facePhoto.length > 1000) {
+        await this.telegramService.sendAttendancePhoto(facePhoto, caption);
+      } else {
+        await this.telegramService.sendAttendance(caption);
+      }
+      return;
+    }
+
+    // Ищем сотрудника: по skudId, по id, по номеру телефона (формат 992xxxxxxxxx)
     const numericId = parseInt(employeeNo) || 0;
+    const phoneVariants = employeeNo.length >= 9
+      ? [`+${employeeNo}`, employeeNo, `+${employeeNo.slice(-9)}`, employeeNo.slice(-9)]
+      : [];
     const employee = await this.prisma.employee.findFirst({
-      where: { OR: [{ skudId: employeeNo }, { id: numericId }] },
+      where: {
+        OR: [
+          { skudId: employeeNo },
+          { id: numericId },
+          ...(phoneVariants.length ? [{ phone: { in: phoneVariants } }] : []),
+        ],
+      },
       include: {
         company: { select: { name: true } },
         department: { select: { name: true } },
@@ -234,15 +352,30 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     if (!employee) {
       this.logger.warn(`Сотрудник не найден по СКУД ID: ${employeeNo} (IP: ${ipAddress})`);
-      await this.telegramService.sendMessage(
-        `⚠️ Неизвестный сотрудник\nСКУД №: ${employeeNo}\nУстройство: ${officeName} (${direction === 'IN' ? 'Вход' : 'Выход'})\nIP: ${ipAddress}`,
-      );
+      const caption = [
+        `⚠️ <b>Неизвестный сотрудник</b>`,
+        ``,
+        `🔢 СКУД №: ${employeeNo}`,
+        `🏢 ${officeName} (${direction === 'IN' ? 'Вход' : 'Выход'})`,
+        `🏠 IP: ${ipAddress}`,
+        `⏰ ${timeStr}`,
+      ].join('\n');
+
+      if (facePhoto && facePhoto.length > 1000) {
+        await this.telegramService.sendAttendancePhoto(facePhoto, caption);
+      } else {
+        await this.telegramService.sendAttendance(caption);
+      }
       return;
     }
 
     const office = await this.prisma.office.findFirst({
       where: { name: officeName, companyId: employee.companyId },
     });
+
+    const selfiePath = (facePhoto && facePhoto.length > 1000)
+      ? await this.saveSelfieToStorage(employee, timestamp, facePhoto)
+      : null;
 
     await this.prisma.attendanceEvent.create({
       data: {
@@ -252,6 +385,8 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
         direction,
         deviceName: `Hikvision ${ipAddress}`,
         officeId: office?.id || null,
+        source: 'HIKVISION',
+        selfiePath,
       },
     });
 
@@ -259,11 +394,6 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     const fullName = `${employee.lastName} ${employee.firstName}${employee.patronymic ? ' ' + employee.patronymic : ''}`;
     const isIn = direction === 'IN';
-    const timeStr = timestamp.toLocaleString('ru-RU', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      timeZone: 'Asia/Dushanbe',
-    });
 
     const caption = [
       `${isIn ? '🟢' : '🔴'} <b>${isIn ? 'Вход' : 'Выход'}</b>`,
@@ -277,14 +407,24 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       `⏰ ${timeStr}`,
     ].filter(s => s !== null).join('\n');
 
-    const facePhoto = this.extractJpegFromMultipart(
-      typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody,
-    );
-
     if (facePhoto && facePhoto.length > 1000) {
-      await this.telegramService.sendPhoto(facePhoto, caption);
+      await this.telegramService.sendAttendancePhoto(facePhoto, caption);
+    } else if (employee.photoPath) {
+      // Устройство не прислало фото — отправляем нормализованное фото из хранилища
+      try {
+        const normPath = employee.photoPath.replace(/photo\.jpg$/, 'photo_norm.jpg');
+        const absPath = path.resolve(fs.existsSync(normPath) ? normPath : employee.photoPath);
+        if (fs.existsSync(absPath)) {
+          const storedPhoto = fs.readFileSync(absPath);
+          await this.telegramService.sendAttendancePhoto(storedPhoto, caption);
+        } else {
+          await this.telegramService.sendAttendance(caption);
+        }
+      } catch {
+        await this.telegramService.sendAttendance(caption);
+      }
     } else {
-      await this.telegramService.sendMessage(caption);
+      await this.telegramService.sendAttendance(caption);
     }
     this.logger.log(`${isIn ? 'Вход' : 'Выход'}: ${fullName} — ${officeName} (${timeStr})`);
   }
@@ -379,7 +519,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
   async bindDevice(
     id: number,
-    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; directPort?: number },
+    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; directPort?: number; externalIp?: string },
     user: RequestUser,
   ) {
     if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
@@ -400,6 +540,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
         login: data.login ?? 'admin',
         password: data.password ?? null,
         directPort: data.directPort ?? null,
+        ...(data.externalIp !== undefined ? { externalIp: data.externalIp || null } : {}),
         status: 'active',
       },
       include: { company: { select: { id: true, name: true, shortName: true } } },
@@ -469,6 +610,17 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     return { ok: true };
   }
 
+  async assignAgentToDevice(id: number, agentId: number | null, user: RequestUser) {
+    if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
+    const device = await this.prisma.hikvisionDevice.findUnique({ where: { id } });
+    if (!device) throw new NotFoundException(`Устройство #${id} не найдено`);
+    return this.prisma.hikvisionDevice.update({
+      where: { id },
+      data: { agentId: agentId ?? null },
+      include: { agent: { select: { id: true, name: true } } },
+    });
+  }
+
   // ─────────── управление доступом сотрудников ───────────
 
   async getEmployeeDevices(employeeId: number, user: RequestUser) {
@@ -479,9 +631,14 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException('Нет доступа');
     }
 
+    const devicesWhere: any = user.isHoldingAdmin
+      ? { status: 'active' }
+      : { companyId: employee.companyId, status: 'active' };
+
     const devices = await this.prisma.hikvisionDevice.findMany({
-      where: { companyId: employee.companyId, status: 'active' },
-      orderBy: [{ officeName: 'asc' }, { direction: 'asc' }],
+      where: devicesWhere,
+      include: { company: { select: { id: true, name: true, shortName: true } } },
+      orderBy: [{ companyId: 'asc' }, { officeName: 'asc' }, { direction: 'asc' }],
     });
 
     const accesses = await this.prisma.hikvisionAccess.findMany({
@@ -613,6 +770,40 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       skipped,
       message: `Выдано ${toGrant.length} сотрудникам. Relay-агент запишет их на устройство.`,
     };
+  }
+
+  async revokeAllEmployees(deviceId: number, user: RequestUser) {
+    if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
+    const device = await this.prisma.hikvisionDevice.findUnique({
+      where: { id: deviceId },
+      include: { company: { select: { name: true, shortName: true } } },
+    });
+    if (!device) throw new NotFoundException('Устройство не найдено');
+
+    const accesses = await this.prisma.hikvisionAccess.findMany({
+      where: { deviceId },
+      select: { employeeId: true },
+    });
+
+    if (accesses.length === 0) {
+      return { revoked: 0, message: 'Нет сотрудников с доступом' };
+    }
+
+    await this.prisma.hikvisionCommand.createMany({
+      data: accesses.map(a => ({ deviceId, employeeId: a.employeeId, action: 'revoke', initiatedById: user.userId })),
+    });
+    await this.prisma.hikvisionAccess.deleteMany({ where: { deviceId } });
+
+    const companyName = (device as any).company?.shortName || (device as any).company?.name || '';
+    const devLabel = `${device.deviceName || device.officeName} (${device.direction === 'IN' ? 'Вход' : 'Выход'})`;
+    this.telegramService.sendMessage(
+      `🗑 <b>Массовое удаление Face ID</b>\n\n` +
+      `🚪 ${devLabel}${companyName ? ` · ${companyName}` : ''}\n` +
+      `❌ Удалено: <b>${accesses.length}</b> сотрудников\n` +
+      `👮 Инициатор: ${user.email}`,
+    ).catch(() => {});
+
+    return { revoked: accesses.length, message: `Удалено ${accesses.length} сотрудников с устройства. Relay-агент выполнит удаление.` };
   }
 
   async revokeAccess(deviceId: number, employeeId: number, user: RequestUser) {
@@ -993,6 +1184,27 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     await this.telegramService.sendMessage(message);
     return message;
+  }
+
+  private async saveSelfieToStorage(
+    employee: { id: number; lastName: string; firstName: string; company: { name: string } },
+    timestamp: Date,
+    jpeg: Buffer,
+  ): Promise<string | null> {
+    try {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const dateFolder = `${timestamp.getFullYear()}-${pad(timestamp.getMonth() + 1)}-${pad(timestamp.getDate())}`;
+      const timeLabel = `${pad(timestamp.getHours())}${pad(timestamp.getMinutes())}${pad(timestamp.getSeconds())}`;
+      const safeName = `${employee.lastName}_${employee.firstName}`.replace(/[^a-zA-Zа-яА-ЯёЁ0-9_-]/g, '');
+      const filename = `${timeLabel}_${employee.id}_${safeName}.jpg`;
+      const dir = path.join('storage', 'snapshots', dateFolder);
+      await fs.promises.mkdir(dir, { recursive: true });
+      await fs.promises.writeFile(path.join(dir, filename), jpeg);
+      return path.join('snapshots', dateFolder, filename);
+    } catch (e) {
+      this.logger.error(`Не удалось сохранить фото посещаемости: ${e.message}`);
+      return null;
+    }
   }
 
   // Extract face JPEG from Hikvision multipart event body.

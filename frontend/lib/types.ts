@@ -238,6 +238,7 @@ export type AttendanceSummary = {
   isEarlyLeave?: boolean;
   correctionType?: string | null;
   correctionDeadline?: string | null;
+  selfieEventIds?: number[];
 };
 
 export type SalaryRecord = {
@@ -320,6 +321,8 @@ export type HikvisionDevice = {
   officeName: string | null;
   direction: 'IN' | 'OUT' | null;
   login: string | null;
+  agentId: number | null;
+  agent?: { id: number; name: string } | null;
   // password is never returned from API
   lastSeenAt: string;
   createdAt: string;
@@ -328,6 +331,18 @@ export type HikvisionDevice = {
   hasAccess?: boolean;
   grantedBy?: string | null;
   grantedAt?: string | null;
+};
+
+export type AgentRecord = {
+  id: number;
+  agentId: string;
+  name: string;
+  version: string | null;
+  companyId: number | null;
+  company: { id: number; name: string; shortName: string | null } | null;
+  lastSeenAt: string | null;
+  secondsAgo: number | null;
+  online: boolean;
 };
 
 export type HoldingStats = {

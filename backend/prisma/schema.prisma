@@ -39,6 +39,7 @@ model Company {
   registrationTokens   RegistrationToken[]
   doors                Door[]
   hikvisionDevices     HikvisionDevice[]
+  agents               Agent[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 }
@@ -393,6 +394,8 @@ model HikvisionDevice {
   login       String?  @default("admin")
   password    String?
   directPort  Int?                       // порт проброски роутера → устройство:80
+  agent       Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agentId     Int?
   lastSeenAt  DateTime @default(now())
   accesses    HikvisionAccess[]
   commands    HikvisionCommand[]
@@ -400,6 +403,7 @@ model HikvisionDevice {
   updatedAt   DateTime @updatedAt
 
   @@index([companyId])
+  @@index([agentId])
   @@index([status])
 }
 
@@ -420,6 +424,22 @@ model HikvisionCommand {
 
   @@index([status, deviceId])
   @@index([employeeId])
+}
+
+// Relay-агент в офисе (один агент на компанию или один на весь холдинг)
+model Agent {
+  id         Int       @id @default(autoincrement())
+  agentId    String    @unique     // UUID, генерируется агентом один раз
+  name       String                // Имя агента, напр. "Favz_Office"
+  companyId  Int?
+  company    Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  devices    HikvisionDevice[]
+  lastSeenAt DateTime?             // Время последнего ping
+  version    String?               // Версия агента
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([companyId])
 }
 
 // Доступ сотрудника к HikvisionDevice (Face ID)

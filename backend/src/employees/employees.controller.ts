@@ -11,6 +11,7 @@ import {
   UseGuards,
   ParseIntPipe,
   Request,
+  Req,
   UseInterceptors,
   UploadedFile,
   Res,
@@ -158,6 +159,7 @@ export class EmployeesController {
   async getPhoto(
     @Param('id', ParseIntPipe) id: number,
     @Query('thumb') thumb: string,
+    @Req() req: import('express').Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     if (thumb === '1') {
@@ -166,9 +168,15 @@ export class EmployeesController {
       res.setHeader('Cache-Control', 'public, max-age=86400');
       return new StreamableFile(buffer);
     }
-    const { buffer, mimeType } = await this.employeesService.getPhotoStream(id);
+    const { buffer, mimeType, mtime } = await this.employeesService.getPhotoStream(id);
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+    res.setHeader('Last-Modified', mtime.toUTCString());
+    const ifModifiedSince = req.headers['if-modified-since'];
+    if (ifModifiedSince && new Date(ifModifiedSince) >= mtime) {
+      (res as any).status(304).end();
+      return;
+    }
     return new StreamableFile(buffer);
   }
 
