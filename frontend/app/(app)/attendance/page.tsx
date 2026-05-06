@@ -23,6 +23,7 @@ import {
   registerAttendanceEvent,
   getEmployees,
   getOffices,
+  getCompany,
 } from "@/lib/hrms-api"
 import { useAuth } from "@/app/contexts/AuthContext"
 import {
@@ -39,6 +40,8 @@ import {
   LogOut,
   CalendarRange,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 function formatTime(iso: string | null) {
@@ -51,6 +54,11 @@ function formatMinutesToHours(minutes: number) {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   return `${h}ч ${m}м`
+}
+
+function timeToMins(t: string): number {
+  const [h, m] = t.split(":").map(Number)
+  return h * 60 + m
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -263,7 +271,31 @@ export default function AttendancePage() {
   }
 
   // Excel export
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    // Fetch company schedule for late/absent calculations
+    const companyId = user?.companyId ||
+      (typeof window !== "undefined" ? parseInt(localStorage.getItem("currentCompanyId") || "0") || null : null)
+
+    let workDayStart = "09:00"
+    let workDayEnd = "18:00"
+    let lunchBreakStart = "12:00"
+    let lunchBreakEnd = "13:00"
+
+    if (companyId) {
+      try {
+        const company = await getCompany(companyId)
+        workDayStart = company.workDayStart || "09:00"
+        workDayEnd = company.workDayEnd || "18:00"
+        lunchBreakStart = company.lunchBreakStart || "12:00"
+        lunchBreakEnd = company.lunchBreakEnd || "13:00"
+      } catch { /* use defaults */ }
+    }
+
+    const workStartMins = timeToMins(workDayStart)
+    const workEndMins = timeToMins(workDayEnd)
+    const lunchDurMins = timeToMins(lunchBreakEnd) - timeToMins(lunchBreakStart)
+    const workdayMins = workEndMins - workStartMins - lunchDurMins
+
     const dateFormatted = new Date(selectedDate + "T00:00:00").toLocaleDateString("ru-RU", {
       day: "2-digit", month: "long", year: "numeric",
     })
@@ -273,22 +305,48 @@ export default function AttendancePage() {
     })
     const companyLabel = currentCompanyName || "Все компании"
 
-    // Summary row data
+    // Summary rows
     const summaryRows = [
       ["Посещаемость за " + dateFormatted],
       ["Компания: " + companyLabel, "", "", "Дата экспорта: " + exportTime],
+      ["Рабочий день: " + workDayStart + "–" + workDayEnd + "  |  Обед: " + lunchBreakStart + "–" + lunchBreakEnd],
       [],
       ["На месте: " + presentCount, "Ушли: " + leftCount, "Отсутствуют: " + absentCount, "Уважит.: " + excusedCount],
       [],
     ]
 
-    // Header
-    const headers = ["№", "ФИО", "Отдел", "Должность", "Офис", "Вход", "Выход", "Часы", "Мин", "Корректировка", "Статус"]
+    // Headers
+    const headers = ["№", "ФИО", "Отдел", "Должность", "Офис", "Вход", "Выход", "Часы", "Мин", "Опоздание", "Корректировка", "Статус"]
+
+    // Accumulators (prefixed to avoid shadowing component-level stats)
+    let totalLateMinutes = 0
+    let exportLateCount = 0
+    let totalAbsentMinutes = 0
+    let exportAbsentCount = 0
 
     // Data rows
     const rows = data.map((row, i) => {
       const h = Math.floor(row.totalMinutes / 60)
       const m = row.totalMinutes % 60
+
+      let lateStr = ""
+      if (row.isLate && row.firstEntry) {
+        const entryDate = new Date(row.firstEntry)
+        const entryMins = entryDate.getHours() * 60 + entryDate.getMinutes()
+        const lateMin = Math.max(0, entryMins - workStartMins)
+        if (lateMin > 0) {
+          totalLateMinutes += lateMin
+          exportLateCount++
+          const lh = Math.floor(lateMin / 60)
+          const lm = lateMin % 60
+          lateStr = lh > 0 ? `+${lh}ч ${lm}м` : `+${lm}м`
+        }
+      }
+      if (row.status === "absent") {
+        exportAbsentCount++
+        totalAbsentMinutes += workdayMins
+      }
+
       return [
         i + 1,
         row.employeeName,
@@ -299,6 +357,7 @@ export default function AttendancePage() {
         row.lastExit ? formatTime(row.lastExit) : "—",
         h,
         m,
+        lateStr || "",
         row.correctionMinutes !== 0 ? (row.correctionMinutes > 0 ? "+" : "") + row.correctionMinutes + " мин" : "",
         STATUS_LABELS[row.status] || row.status,
       ]
@@ -310,10 +369,17 @@ export default function AttendancePage() {
     const totalM = totalMinutes % 60
     const presentDays = data.filter((d) => d.status === "present" || d.status === "left").length
 
-    const totalsRow = ["", "ИТОГО", "", "", "", "", "", totalH, totalM, "", "Дней: " + presentDays]
+    const lateH = Math.floor(totalLateMinutes / 60)
+    const lateM = totalLateMinutes % 60
+    const absentH = Math.floor(totalAbsentMinutes / 60)
+    const absentM = totalAbsentMinutes % 60
+
+    const totalsRow =  ["", "ИТОГО:", "", "", "", "", "", totalH, totalM, "", "", `Работали: ${presentDays} чел.`]
+    const lateRow =    ["", `Опоздали: ${exportLateCount} чел.`, "", "", "", "", "", lateH, lateM, `${lateH}ч ${lateM}м`, "", ""]
+    const absentRow =  ["", `Отсутствовали: ${exportAbsentCount} чел.`, "", "", "", "", "", absentH, absentM, `${absentH}ч ${absentM}м`, "", ""]
 
     // Build worksheet
-    const wsData = [...summaryRows, headers, ...rows, [], totalsRow]
+    const wsData = [...summaryRows, headers, ...rows, [], totalsRow, lateRow, absentRow]
     const ws = XLSX.utils.aoa_to_sheet(wsData)
 
     // Column widths
@@ -327,13 +393,15 @@ export default function AttendancePage() {
       { wch: 8 },   // Выход
       { wch: 6 },   // Часы
       { wch: 6 },   // Мин
+      { wch: 12 },  // Опоздание
       { wch: 14 },  // Корректировка
-      { wch: 14 },  // Статус
+      { wch: 16 },  // Статус
     ]
 
     // Merge title cell
     ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 11 } },
     ]
 
     const wb = XLSX.utils.book_new()
@@ -345,6 +413,27 @@ export default function AttendancePage() {
   const exportRangeExcel = async () => {
     setRangeLoading(true)
     try {
+      // Fetch company schedule for late/absent calculations
+      const companyId = user?.companyId ||
+        (typeof window !== "undefined" ? parseInt(localStorage.getItem("currentCompanyId") || "0") || null : null)
+
+      let workDayStart = "09:00"
+      let workDayEnd = "18:00"
+      let lunchBreakStart = "12:00"
+      let lunchBreakEnd = "13:00"
+
+      if (companyId) {
+        try {
+          const company = await getCompany(companyId)
+          workDayStart = company.workDayStart || "09:00"
+          workDayEnd = company.workDayEnd || "18:00"
+          lunchBreakStart = company.lunchBreakStart || "12:00"
+          lunchBreakEnd = company.lunchBreakEnd || "13:00"
+        } catch { /* use defaults */ }
+      }
+
+      const workStartMins = timeToMins(workDayStart)
+
       const rangeData = await getAttendanceRange(rangeFrom, rangeTo)
 
       // Collect all unique dates sorted
@@ -357,6 +446,9 @@ export default function AttendancePage() {
         name: string
         department: string
         days: Map<string, { entry: string | null; exit: string | null; minutes: number }>
+        lateDays: number
+        lateMinutes: number
+        absentCount: number
       }>()
 
       rangeData.forEach((r) => {
@@ -365,18 +457,25 @@ export default function AttendancePage() {
             name: r.employeeName,
             department: r.departmentName || "",
             days: new Map(),
+            lateDays: 0,
+            lateMinutes: 0,
+            absentCount: 0,
           })
         }
-        employeeMap.get(r.employeeId)!.days.set(r.date, {
-          entry: r.firstEntry,
-          exit: r.lastExit,
-          minutes: r.totalMinutes,
-        })
+        const emp = employeeMap.get(r.employeeId)!
+        emp.days.set(r.date, { entry: r.firstEntry, exit: r.lastExit, minutes: r.totalMinutes })
+        if (r.isLate && r.firstEntry) {
+          const entryDate = new Date(r.firstEntry)
+          const entryMins = entryDate.getHours() * 60 + entryDate.getMinutes()
+          const lateMin = Math.max(0, entryMins - workStartMins)
+          emp.lateDays++
+          emp.lateMinutes += lateMin
+        }
+        if (r.status === "absent") emp.absentCount++
       })
 
-      const employees = Array.from(employeeMap.entries()).sort((a, b) =>
-        a[1].name.localeCompare(b[1].name, "ru"),
-      )
+      // Map preserves insertion order — server data already sorted by sortOrder
+      const employees = Array.from(employeeMap.entries())
 
       // Format dates for headers
       const dateHeaders = dates.map((d) => {
@@ -395,16 +494,31 @@ export default function AttendancePage() {
       // Title + meta
       const titleRow = [`Отчёт посещаемости за период ${fromFormatted} — ${toFormatted}`]
       const metaRow: string[] = [`Компания: ${companyLabel}`, "", "", `Дата экспорта: ${exportTime}`]
+      const scheduleRow: string[] = [`Рабочий день: ${workDayStart}–${workDayEnd}  |  Обед: ${lunchBreakStart}–${lunchBreakEnd}`]
 
-      // Headers: №, ФИО, [date Вход, date Выход] ..., Всего часов
+      // Headers: №, ФИО, [date Вход, date Выход] ..., Всего часов, Опозданий, Пропусков
       const headerRow1 = ["№", "ФИО"]
       const headerRow2 = ["", ""]
       dates.forEach((_, i) => {
         headerRow1.push(dateHeaders[i], "")
         headerRow2.push("Вход", "Выход")
       })
-      headerRow1.push("Всего")
-      headerRow2.push("часов")
+      headerRow1.push("Всего", "Опозданий", "Пропусков")
+      headerRow2.push("часов", "(дней/время)", "дней")
+
+      // Accumulators
+      let grandTotalMinutes = 0
+      let grandTotalLateDays = 0
+      let grandTotalLateMinutes = 0
+      let grandTotalAbsent = 0
+
+      const fmtLate = (days: number, mins: number): string => {
+        if (days === 0) return ""
+        const h = Math.floor(mins / 60)
+        const m = mins % 60
+        const timeStr = h > 0 ? (m > 0 ? `${h}ч ${m}м` : `${h}ч`) : `${m}м`
+        return `${days} дн. (${timeStr})`
+      }
 
       // Data rows
       const dataRows = employees.map(([, emp], idx) => {
@@ -424,12 +538,23 @@ export default function AttendancePage() {
         })
         const h = Math.floor(totalMin / 60)
         const m = totalMin % 60
-        row.push(`${h}ч ${m}м`)
+        row.push(`${h}ч ${m}м`, fmtLate(emp.lateDays, emp.lateMinutes), emp.absentCount)
+        grandTotalMinutes += totalMin
+        grandTotalLateDays += emp.lateDays
+        grandTotalLateMinutes += emp.lateMinutes
+        grandTotalAbsent += emp.absentCount
         return row
       })
 
+      // Totals row
+      const gH = Math.floor(grandTotalMinutes / 60)
+      const gM = grandTotalMinutes % 60
+      const totalsRow: (string | number)[] = ["", "ИТОГО:"]
+      dates.forEach(() => totalsRow.push("", ""))
+      totalsRow.push(`${gH}ч ${gM}м`, fmtLate(grandTotalLateDays, grandTotalLateMinutes), grandTotalAbsent)
+
       // Build worksheet
-      const wsData = [titleRow, metaRow, [], headerRow1, headerRow2, ...dataRows]
+      const wsData = [titleRow, metaRow, scheduleRow, [], headerRow1, headerRow2, ...dataRows, [], totalsRow]
       const ws = XLSX.utils.aoa_to_sheet(wsData)
 
       // Column widths
@@ -437,25 +562,21 @@ export default function AttendancePage() {
         { wch: 5 },   // №
         { wch: 30 },  // ФИО
       ]
-      dates.forEach(() => {
-        cols.push({ wch: 8 }, { wch: 8 }) // Вход, Выход
-      })
-      cols.push({ wch: 12 }) // Всего часов
+      dates.forEach(() => cols.push({ wch: 8 }, { wch: 8 })) // Вход, Выход
+      cols.push({ wch: 12 }, { wch: 12 }, { wch: 12 }) // Всего, Опозданий, Пропусков
       ws["!cols"] = cols
 
-      // Merge title (row 0)
-      const totalCols = 2 + dates.length * 2 + 1
+      // Merge rows
+      const totalCols = 2 + dates.length * 2 + 3
       ws["!merges"] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+        { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } }, // title
+        { s: { r: 2, c: 0 }, e: { r: 2, c: totalCols - 1 } }, // schedule
       ]
 
-      // Merge date headers (each date spans 2 columns, row index shifted by 1 due to metaRow)
+      // Merge date headers (row 4 = headerRow1, offset by 3 metaRows + 1 empty)
       dates.forEach((_, i) => {
         const colStart = 2 + i * 2
-        ws["!merges"]!.push({
-          s: { r: 3, c: colStart },
-          e: { r: 3, c: colStart + 1 },
-        })
+        ws["!merges"]!.push({ s: { r: 4, c: colStart }, e: { r: 4, c: colStart + 1 } })
       })
 
       const wb = XLSX.utils.book_new()
@@ -662,13 +783,39 @@ export default function AttendancePage() {
           <Label htmlFor="date" className="text-sm font-medium whitespace-nowrap">
             Дата:
           </Label>
-          <Input
-            id="date"
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="h-10 w-full sm:w-48 rounded-xl border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-          />
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-xl border-blue-200 hover:bg-blue-50 hover:border-blue-300 shrink-0"
+              onClick={() => {
+                const [y, mo, dy] = selectedDate.split("-").map(Number)
+                const date = new Date(y, mo - 1, dy - 1)
+                setSelectedDate(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`)
+              }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Input
+              id="date"
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="h-10 w-36 sm:w-44 rounded-xl border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-xl border-blue-200 hover:bg-blue-50 hover:border-blue-300 shrink-0"
+              onClick={() => {
+                const [y, mo, dy] = selectedDate.split("-").map(Number)
+                const date = new Date(y, mo - 1, dy + 1)
+                setSelectedDate(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`)
+              }}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

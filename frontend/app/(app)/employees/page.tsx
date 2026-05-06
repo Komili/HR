@@ -46,6 +46,7 @@ import {
   Mail,
   Phone,
   Eye,
+  EyeOff,
   Edit,
   Trash2,
   Copy,
@@ -92,20 +93,21 @@ function GalleryCard({ employee }: { employee: Employee }) {
     return () => { revoked = true; setBlobUrl(p => { if (p) URL.revokeObjectURL(p); return null }) }
   }, [visible, employee.photoPath, employee.id])
 
+  const isDismissed = employee.status === "Уволен"
   return (
-    <Link href={`/employees/${employee.id}`} className="group flex flex-col items-center gap-2 rounded-xl p-2 hover:bg-emerald-50 transition-colors">
+    <Link href={`/employees/${employee.id}`} className={`group flex flex-col items-center gap-2 rounded-xl p-2 transition-colors ${isDismissed ? "opacity-50 hover:opacity-70 hover:bg-gray-50" : "hover:bg-emerald-50"}`}>
       <div
         ref={ref}
-        className="w-24 h-32 rounded-xl overflow-hidden bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow"
+        className={`w-24 h-32 rounded-xl overflow-hidden flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow ${isDismissed ? "bg-gray-100" : "bg-gradient-to-br from-emerald-100 to-teal-100"}`}
       >
         {blobUrl ? (
-          <img src={blobUrl} alt={name} className="w-full h-full object-cover" />
+          <img src={blobUrl} alt={name} className={`w-full h-full object-cover ${isDismissed ? "grayscale" : ""}`} />
         ) : (
-          <span className="text-2xl font-bold text-emerald-600">{initials}</span>
+          <span className={`text-2xl font-bold ${isDismissed ? "text-gray-400" : "text-emerald-600"}`}>{initials}</span>
         )}
       </div>
       <div className="text-center w-24">
-        <div className="text-xs font-medium text-foreground group-hover:text-emerald-600 transition-colors leading-tight line-clamp-2">{name}</div>
+        <div className={`text-xs font-medium leading-tight line-clamp-2 transition-colors ${isDismissed ? "text-gray-400" : "text-foreground group-hover:text-emerald-600"}`}>{name}</div>
         <div className="text-[10px] text-muted-foreground mt-0.5">ID: {employee.id}</div>
       </div>
     </Link>
@@ -167,19 +169,28 @@ export default function EmployeesPage() {
   const [filterDept, setFilterDept] = React.useState<string>("")
   const [filterPosition, setFilterPosition] = React.useState<string>("")
   const [filterStatus, setFilterStatus] = React.useState<string>("")
+  const [showDismissed, setShowDismissed] = React.useState(false)
 
-  const hasFilters = !!(filterDept || filterPosition || filterStatus)
+  const hasExplicitFilters = !!(filterDept || filterPosition || filterStatus)
+  // hasFilters drives server vs client-side fetch: hiding dismissed also requires loading all
+  const hasFilters = hasExplicitFilters || !showDismissed
   const [viewMode, setViewMode] = React.useState<"table" | "gallery">("table")
 
   const filteredData = React.useMemo(() => {
-    if (!hasFilters) return data
     return data.filter((emp) => {
+      // Hide dismissed unless explicitly shown or status filter is "Уволен"
+      if (!showDismissed && filterStatus !== "Уволен" && emp.status === "Уволен") return false
       if (filterDept && String(emp.departmentId) !== filterDept) return false
       if (filterPosition && String(emp.positionId) !== filterPosition) return false
       if (filterStatus && emp.status !== filterStatus) return false
       return true
     })
-  }, [data, filterDept, filterPosition, filterStatus, hasFilters])
+  }, [data, showDismissed, filterDept, filterPosition, filterStatus])
+
+  const dismissedCount = React.useMemo(
+    () => data.filter((emp) => emp.status === "Уволен").length,
+    [data]
+  )
 
   const displayData = React.useMemo(() => {
     if (!hasFilters) return data
@@ -631,16 +642,27 @@ export default function EmployeesPage() {
               variant="outline"
               size="sm"
               onClick={() => setShowFilters((v) => !v)}
-              className={`h-9 rounded-xl text-xs sm:text-sm gap-1.5 ${showFilters || hasFilters ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-emerald-200 bg-white/80"}`}
+              className={`h-9 rounded-xl text-xs sm:text-sm gap-1.5 ${showFilters || hasExplicitFilters ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-emerald-200 bg-white/80"}`}
             >
               <Filter className="h-3.5 w-3.5" />
               Фильтры
-              {hasFilters && (
+              {hasExplicitFilters && (
                 <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] text-white font-bold">
                   {[filterDept, filterPosition, filterStatus].filter(Boolean).length}
                 </span>
               )}
             </Button>
+            <button
+              onClick={() => { setShowDismissed((v) => !v); setPage(0) }}
+              className={`flex items-center gap-1.5 h-9 rounded-xl px-3 text-xs font-medium border transition-colors ${showDismissed ? "border-gray-400 bg-gray-100 text-gray-700 hover:bg-gray-200" : "border-gray-200 bg-white/80 text-gray-500 hover:bg-gray-50"}`}
+              title={showDismissed ? "Скрыть уволенных" : "Показать уволенных"}
+            >
+              {showDismissed ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{showDismissed ? "Уволенные видны" : "Уволенные скрыты"}</span>
+              {!showDismissed && dismissedCount > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-400 text-[10px] text-white font-bold">{dismissedCount}</span>
+              )}
+            </button>
             {/* Переключатель вида */}
             <div className="flex rounded-xl border border-emerald-200 overflow-hidden">
               <button
@@ -661,7 +683,7 @@ export default function EmployeesPage() {
             <div className="flex items-center gap-2 text-sm">
               <span className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-2 sm:px-3 py-1 sm:py-1.5 text-emerald-700 font-medium text-xs sm:text-sm">
                 <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                {hasFilters ? `${filteredData.length} из ${total}` : `Всего: ${total}`}
+                {hasExplicitFilters ? `${filteredData.length} из ${data.length}` : `Всего: ${filteredData.length}`}
               </span>
             </div>
           </div>
@@ -709,7 +731,7 @@ export default function EmployeesPage() {
                 ))}
               </select>
             </div>
-            {hasFilters && (
+            {hasExplicitFilters && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -731,7 +753,16 @@ export default function EmployeesPage() {
 
         <div className="p-3 sm:p-5">
           {viewMode === "table" ? (
-            <DataTable columns={columns} data={displayData} pagination={pagination} />
+            <DataTable
+              columns={columns}
+              data={displayData}
+              pagination={pagination}
+              getRowClassName={(emp: Employee) =>
+                emp.status === "Уволен"
+                  ? "opacity-50 bg-gray-50 hover:bg-gray-100"
+                  : "hover:bg-emerald-50/50"
+              }
+            />
           ) : (
             <EmployeeGallery employees={displayData} />
           )}

@@ -83,16 +83,23 @@ export class AttendanceService implements OnModuleInit {
         employee: {
           select: {
             id: true, firstName: true, lastName: true, patronymic: true,
-            department: { select: { name: true } },
+            sortOrder: true,
+            department: { select: { name: true, sortOrder: true } },
             position: { select: { name: true } },
           },
         },
       },
-      orderBy: [
-        { employee: { department: { sortOrder: 'asc' } } },
-        { employee: { sortOrder: 'asc' } },
-        { employee: { lastName: 'asc' } },
-      ],
+    });
+
+    // Сортируем так же как список сотрудников: отдел.sortOrder → сотрудник.sortOrder → id
+    attendances.sort((a, b) => {
+      const dA = (a.employee as any)?.department?.sortOrder ?? 0;
+      const dB = (b.employee as any)?.department?.sortOrder ?? 0;
+      if (dA !== dB) return dA - dB;
+      const eA = (a.employee as any)?.sortOrder ?? 0;
+      const eB = (b.employee as any)?.sortOrder ?? 0;
+      if (eA !== eB) return eA - eB;
+      return (a.employee as any)?.id - (b.employee as any)?.id;
     });
 
     return attendances.map((a) => this.mapAttendance(a));
@@ -111,17 +118,26 @@ export class AttendanceService implements OnModuleInit {
         employee: {
           select: {
             id: true, firstName: true, lastName: true, patronymic: true,
-            department: { select: { name: true } },
+            sortOrder: true,
+            department: { select: { name: true, sortOrder: true } },
             position: { select: { name: true } },
           },
         },
       },
-      orderBy: [
-        { employee: { department: { sortOrder: 'asc' } } },
-        { employee: { sortOrder: 'asc' } },
-        { employee: { lastName: 'asc' } },
-        { date: 'asc' },
-      ],
+      orderBy: { date: 'asc' },
+    });
+
+    // Сортируем: отдел.sortOrder → сотрудник.sortOrder → id → дата
+    attendances.sort((a, b) => {
+      const dA = (a.employee as any)?.department?.sortOrder ?? 0;
+      const dB = (b.employee as any)?.department?.sortOrder ?? 0;
+      if (dA !== dB) return dA - dB;
+      const eA = (a.employee as any)?.sortOrder ?? 0;
+      const eB = (b.employee as any)?.sortOrder ?? 0;
+      if (eA !== eB) return eA - eB;
+      const idDiff = (a.employee as any)?.id - (b.employee as any)?.id;
+      if (idDiff !== 0) return idDiff;
+      return a.date.getTime() - b.date.getTime();
     });
 
     return attendances.map((a) => this.mapAttendance(a));

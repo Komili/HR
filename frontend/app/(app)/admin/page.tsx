@@ -65,6 +65,7 @@ function UsersTab() {
   const [error, setError] = React.useState<string | null>(null)
   const [success, setSuccess] = React.useState<string | null>(null)
   const [search, setSearch] = React.useState("")
+  const [companyFilter, setCompanyFilter] = React.useState<string>("all")
 
   const showSuccess = (msg: string) => {
     setSuccess(msg)
@@ -108,17 +109,29 @@ function UsersTab() {
   }, [loadData])
 
   const filteredUsers = React.useMemo(() => {
-    if (!search) return users
-    const s = search.toLowerCase()
-    return users.filter(
-      (u) =>
-        u.email.toLowerCase().includes(s) ||
-        (u.firstName && u.firstName.toLowerCase().includes(s)) ||
-        (u.lastName && u.lastName.toLowerCase().includes(s)) ||
-        u.role.name.toLowerCase().includes(s) ||
-        (u.company?.name && u.company.name.toLowerCase().includes(s))
-    )
-  }, [users, search])
+    let result = users
+
+    if (companyFilter === "holding") {
+      result = result.filter((u) => !u.companyId)
+    } else if (companyFilter !== "all") {
+      const id = Number(companyFilter)
+      result = result.filter((u) => u.companyId === id)
+    }
+
+    if (search) {
+      const s = search.toLowerCase()
+      result = result.filter(
+        (u) =>
+          u.email.toLowerCase().includes(s) ||
+          (u.firstName && u.firstName.toLowerCase().includes(s)) ||
+          (u.lastName && u.lastName.toLowerCase().includes(s)) ||
+          u.role.name.toLowerCase().includes(s) ||
+          (u.company?.name && u.company.name.toLowerCase().includes(s))
+      )
+    }
+
+    return result
+  }, [users, search, companyFilter])
 
   const handleOpenCreate = () => {
     setEditingUser(null)
@@ -403,7 +416,7 @@ function UsersTab() {
 
       <div className="rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 shadow-lg overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:p-5 border-b border-emerald-100/50">
-          <div className="relative flex-1 min-w-[200px] max-w-md">
+          <div className="relative flex-1 min-w-[180px] max-w-sm">
             <Search className="absolute left-3 sm:left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Поиск по email, имени, роли..."
@@ -411,6 +424,22 @@ function UsersTab() {
               onChange={(e) => setSearch(e.target.value)}
               className="pl-10 sm:pl-11 h-10 sm:h-11 rounded-xl bg-white/80 border-emerald-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20"
             />
+          </div>
+          <div className="relative">
+            <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className="h-10 sm:h-11 rounded-xl border border-emerald-100 bg-white/80 pl-9 pr-4 text-sm focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 min-w-[160px]"
+            >
+              <option value="all">Все компании</option>
+              <option value="holding">Холдинг (суперадмины)</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.shortName || c.name}
+                </option>
+              ))}
+            </select>
           </div>
           <Button
             onClick={handleOpenCreate}
