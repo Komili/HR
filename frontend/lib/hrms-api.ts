@@ -16,11 +16,11 @@ import type {
   Office,
   AttendanceSummary,
   SalaryRecord,
-  RegistrationToken,
-  PendingEmployee,
   OrgChartNode,
   Door,
   HikvisionDevice,
+  RegistrationToken,
+  PendingEmployee,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -401,43 +401,6 @@ export async function updateSalary(id: number, data: { bonus?: number; deduction
   return apiFetch(`/salary/${id}`, { method: "PATCH", body: data });
 }
 
-// ============ REGISTRATION ============
-
-export async function getPendingRegistrations(companyId?: number): Promise<PendingEmployee[]> {
-  const params = companyId
-    ? new URLSearchParams({ companyId: String(companyId) })
-    : withCompanyId(new URLSearchParams());
-  const query = params.toString();
-  return apiFetch(`/employees/pending${query ? `?${query}` : ""}`);
-}
-
-export async function approveRegistration(
-  id: number,
-  updates?: { departmentId?: number; positionId?: number },
-): Promise<Employee> {
-  return apiFetch(`/employees/${id}/approve`, { method: "PATCH", body: updates || {} });
-}
-
-export async function rejectRegistration(id: number): Promise<Employee> {
-  return apiFetch(`/employees/${id}/reject`, { method: "PATCH" });
-}
-
-export async function getRegistrationTokens(companyId?: number): Promise<RegistrationToken[]> {
-  const params = companyId
-    ? new URLSearchParams({ companyId: String(companyId) })
-    : withCompanyId(new URLSearchParams());
-  const query = params.toString();
-  return apiFetch(`/registration/tokens${query ? `?${query}` : ""}`);
-}
-
-export async function createRegistrationToken(companyId: number): Promise<RegistrationToken> {
-  return apiFetch("/registration/tokens", { method: "POST", body: { companyId } });
-}
-
-export async function deleteRegistrationToken(id: number): Promise<void> {
-  await apiFetch(`/registration/tokens/${id}`, { method: "DELETE" });
-}
-
 // ============ USERS (Admin) ============
 
 export async function getUsers(): Promise<import("./types").SystemUser[]> {
@@ -682,4 +645,41 @@ export async function updatePositionHistoryEntry(id: number, data: {
 
 export async function deletePositionHistoryEntry(id: number): Promise<void> {
   await apiFetch(`/position-history/${id}`, { method: "DELETE" });
+}
+
+// ============ REGISTRATION ============
+
+export async function getPendingRegistrations(companyId?: number): Promise<PendingEmployee[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/employees/pending${query ? `?${query}` : ""}`);
+}
+
+export async function approveRegistration(
+  id: number,
+  updates?: { departmentId?: number; positionId?: number },
+): Promise<Employee> {
+  return apiFetch(`/employees/${id}/approve`, { method: "PATCH", body: updates || {} });
+}
+
+export async function rejectRegistration(id: number): Promise<Employee> {
+  return apiFetch(`/employees/${id}/reject`, { method: "PATCH" });
+}
+
+export async function getRegistrationTokens(companyId?: number): Promise<RegistrationToken[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/registration/tokens${query ? `?${query}` : ""}`);
+}
+
+export async function createRegistrationToken(companyId: number): Promise<RegistrationToken> {
+  return apiFetch("/registration/tokens", { method: "POST", body: { companyId } });
+}
+
+export async function deleteRegistrationToken(id: number): Promise<void> {
+  await apiFetch(`/registration/tokens/${id}`, { method: "DELETE" });
 }

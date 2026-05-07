@@ -253,8 +253,15 @@ async function hikvisionRequest(device, door, method, urlPath, body, contentType
   }
   const digestAuth = buildDigestAuth(first.headers['www-authenticate'] || '', method, urlPath, door.login, door.password);
   const second = await rawHikvisionRequest(device, method, urlPath, body, contentType, digestAuth);
-  if (second.status >= 400) throw new Error(`HTTP ${second.status}: ${second.body}`);
-  return second.body;
+  if (second.status !== 401) {
+    if (second.status >= 400) throw new Error(`HTTP ${second.status}: ${second.body}`);
+    return second.body;
+  }
+  // Nonce устарел или использован другим запросом — повторяем с новым nonce из ответа
+  const retryAuth = buildDigestAuth(second.headers['www-authenticate'] || '', method, urlPath, door.login, door.password);
+  const third = await rawHikvisionRequest(device, method, urlPath, body, contentType, retryAuth);
+  if (third.status >= 400) throw new Error(`HTTP ${third.status}: ${third.body}`);
+  return third.body;
 }
 
 // ─────────────────────────────────────────────────────────────

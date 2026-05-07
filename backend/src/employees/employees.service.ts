@@ -291,9 +291,13 @@ export class EmployeesService {
     const targetDir = path.join('storage', 'companies', companyFolder, 'employees', employeeDir);
     await fs.mkdir(targetDir, { recursive: true });
 
-    // Удаляем старое фото если есть
+    // Удаляем старое фото и кэши (norm/thumb) если есть
     if (employee.photoPath) {
       try { await fs.unlink(employee.photoPath); } catch {}
+      const normPath = employee.photoPath.replace(/(\.[^.]+)$/, '_norm.jpg');
+      try { await fs.unlink(normPath); } catch {}
+      const thumbPath = employee.photoPath.replace(/(\.[^.]+)$/, '_thumb.jpg');
+      try { await fs.unlink(thumbPath); } catch {}
     }
 
     // Перемещаем файл из tmp
@@ -362,47 +366,6 @@ export class EmployeesService {
     } catch (_) {}
 
     return buffer;
-  }
-
-  async findPending(user?: RequestUser, requestedCompanyId?: number) {
-    const where: Prisma.EmployeeWhereInput = { status: 'Ожидает' };
-
-    if (user) {
-      const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
-      if (companyFilter) {
-        where.companyId = companyFilter;
-      }
-    }
-
-    return this.prisma.employee.findMany({
-      where,
-      include: { department: true, position: true, company: true },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async approveRegistration(id: number, updates: { departmentId?: number; positionId?: number }, user: RequestUser) {
-    const employee = await this.findOne(id, user);
-    if (!employee) throw new NotFoundException('Сотрудник не найден');
-    if (employee.status !== 'Ожидает') throw new ForbiddenException('Сотрудник не в статусе ожидания');
-
-    const data: Prisma.EmployeeUpdateInput = { status: 'Активен' };
-    if (updates.departmentId) data.department = { connect: { id: updates.departmentId } };
-    if (updates.positionId) data.position = { connect: { id: updates.positionId } };
-
-    return this.prisma.employee.update({
-      where: { id },
-      data,
-      include: { department: true, position: true, company: true },
-    });
-  }
-
-  async rejectRegistration(id: number, user: RequestUser) {
-    const employee = await this.findOne(id, user);
-    if (!employee) throw new NotFoundException('Сотрудник не найден');
-    if (employee.status !== 'Ожидает') throw new ForbiddenException('Сотрудник не в статусе ожидания');
-
-    return this.prisma.employee.delete({ where: { id } });
   }
 
   async getOrgChart(user: RequestUser, requestedCompanyId?: number) {

@@ -15,12 +15,12 @@ import { InventoryModule } from './inventory/inventory.module';
 import { OfficesModule } from './offices/offices.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { SalaryModule } from './salary/salary.module';
-import { RegistrationModule } from './registration/registration.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { HikvisionModule } from './hikvision/hikvision.module';
 import { PositionHistoryModule } from './position-history/position-history.module';
 import { DoorsModule } from './doors/doors.module';
 import { CheckinModule } from './checkin/checkin.module';
+import { RegistrationModule } from './registration/registration.module';
 
 @Module({
   imports: [
@@ -37,12 +37,12 @@ import { CheckinModule } from './checkin/checkin.module';
     OfficesModule,
     AttendanceModule,
     SalaryModule,
-    RegistrationModule,
     TelegramModule,
     HikvisionModule,
     PositionHistoryModule,
     DoorsModule,
     CheckinModule,
+    RegistrationModule,
   ],
   controllers: [AppController],
   providers: [

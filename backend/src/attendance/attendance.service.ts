@@ -1,15 +1,26 @@
 import { Injectable, ForbiddenException, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { existsSync, readFileSync } from 'fs';
+import { Subject, Observable, filter, map } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { RequestUser } from '../auth/jwt.strategy';
 
 @Injectable()
 export class AttendanceService implements OnModuleInit {
+  private readonly updates$ = new Subject<{ companyId: number; date: string }>();
+
   constructor(
     private prisma: PrismaService,
     private telegram: TelegramService,
   ) {}
+
+  /** SSE-поток обновлений посещаемости для конкретной компании/даты */
+  getUpdateStream(companyId: number | null, date: string): Observable<MessageEvent> {
+    return this.updates$.pipe(
+      filter((u) => (companyId === null || u.companyId === companyId) && u.date === date),
+      map(() => ({ data: 'update' } as MessageEvent)),
+    );
+  }
 
   onModuleInit() {
     // Проверять истёкшие дедлайны каждую минуту
@@ -102,7 +113,72 @@ export class AttendanceService implements OnModuleInit {
       return (a.employee as any)?.id - (b.employee as any)?.id;
     });
 
-    return attendances.map((a) => this.mapAttendance(a));
+    if (attendances.length === 0) return [];
+
+    // Build IP→officeName map for resolving legacy "Hikvision 1.2.3.4" deviceNames
+    const hikDevices = await this.prisma.hikvisionDevice.findMany({
+      select: { lastSeenIp: true, officeName: true },
+    });
+    const ipToName = new Map<string, string>();
+    for (const d of hikDevices) {
+      if (d.lastSeenIp && d.officeName) ipToName.set(d.lastSeenIp, d.officeName);
+    }
+
+    const resolveDeviceName = (deviceName: string | null, source: string | null): string | null => {
+      if (!deviceName) return null;
+      const m = deviceName.match(/^Hikvision (\d+\.\d+\.\d+\.\d+)$/);
+      if (m) return ipToName.get(m[1]) || deviceName;
+      return deviceName;
+    };
+
+    // Fetch events for the day to get last activity + selfie IDs
+    const employeeIds = attendances.map((a) => a.employeeId);
+    const dayEnd = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000);
+    const events = await this.prisma.attendanceEvent.findMany({
+      where: {
+        employeeId: { in: employeeIds },
+        timestamp: { gte: targetDate, lt: dayEnd },
+      },
+      select: {
+        id: true, employeeId: true, timestamp: true,
+        direction: true, deviceName: true, source: true, selfiePath: true,
+      },
+      orderBy: { timestamp: 'asc' },
+    });
+
+    const eventsByEmp = new Map<number, typeof events>();
+    for (const ev of events) {
+      const arr = eventsByEmp.get(ev.employeeId) ?? [];
+      arr.push(ev);
+      eventsByEmp.set(ev.employeeId, arr);
+    }
+
+    return attendances.map((a) => {
+      const empEvents = eventsByEmp.get(a.employeeId) ?? [];
+      const last = empEvents.length > 0 ? empEvents[empEvents.length - 1] : null;
+      const selfieEventsRaw = empEvents.filter((e) => e.selfiePath);
+      const selfieEventIds = selfieEventsRaw.map((e) => e.id);
+      const selfieEvents = selfieEventsRaw.map((e) => ({
+        id: e.id,
+        timestamp: e.timestamp.toISOString(),
+        direction: e.direction as 'IN' | 'OUT',
+        deviceName: resolveDeviceName(e.deviceName, e.source),
+        source: e.source,
+      }));
+      return {
+        ...this.mapAttendance(a),
+        lastEvent: last
+          ? {
+              timestamp: last.timestamp.toISOString(),
+              direction: last.direction as 'IN' | 'OUT',
+              deviceName: resolveDeviceName(last.deviceName, last.source),
+              source: last.source,
+            }
+          : null,
+        selfieEventIds,
+        selfieEvents,
+      };
+    });
   }
 
   async getRangeAttendance(dateFrom: string, dateTo: string, user: RequestUser, requestedCompanyId?: number) {
@@ -152,7 +228,7 @@ export class AttendanceService implements OnModuleInit {
     const startDate = new Date(Date.UTC(year, month - 1, 1));
     const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59));
 
-    const [attendances, selfieEvents] = await Promise.all([
+    const [attendances, selfieEvents, hikDevices] = await Promise.all([
       this.prisma.attendance.findMany({
         where: { employeeId, date: { gte: startDate, lte: endDate } },
         orderBy: { date: 'asc' },
@@ -163,24 +239,47 @@ export class AttendanceService implements OnModuleInit {
           timestamp: { gte: startDate, lte: endDate },
           selfiePath: { not: null },
         },
-        select: { id: true, timestamp: true },
+        select: { id: true, timestamp: true, direction: true, deviceName: true, source: true },
         orderBy: { timestamp: 'asc' },
+      }),
+      this.prisma.hikvisionDevice.findMany({
+        select: { lastSeenIp: true, officeName: true },
       }),
     ]);
 
-    // Group selfie event IDs by UTC date key (YYYY-MM-DD)
-    const selfiesByDate = new Map<string, number[]>();
+    const ipToName = new Map<string, string>();
+    for (const d of hikDevices) {
+      if (d.lastSeenIp && d.officeName) ipToName.set(d.lastSeenIp, d.officeName);
+    }
+    const resolveDevice = (name: string | null): string | null => {
+      if (!name) return null;
+      const m = name.match(/^Hikvision (\d+\.\d+\.\d+\.\d+)$/);
+      return m ? (ipToName.get(m[1]) || name) : name;
+    };
+
+    // Group selfie events by UTC date key (YYYY-MM-DD)
+    const selfiesByDate = new Map<string, typeof selfieEvents>();
     for (const ev of selfieEvents) {
       const key = ev.timestamp.toISOString().split('T')[0];
       const arr = selfiesByDate.get(key) || [];
-      arr.push(ev.id);
+      arr.push(ev);
       selfiesByDate.set(key, arr);
     }
 
-    return attendances.map((a) => ({
-      ...this.mapAttendance(a),
-      selfieEventIds: selfiesByDate.get(a.date.toISOString().split('T')[0]) || [],
-    }));
+    return attendances.map((a) => {
+      const dayEvs = selfiesByDate.get(a.date.toISOString().split('T')[0]) || [];
+      return {
+        ...this.mapAttendance(a),
+        selfieEventIds: dayEvs.map((e) => e.id),
+        selfieEvents: dayEvs.map((e) => ({
+          id: e.id,
+          timestamp: e.timestamp.toISOString(),
+          direction: e.direction as 'IN' | 'OUT',
+          deviceName: resolveDevice(e.deviceName),
+          source: e.source,
+        })),
+      };
+    });
   }
 
   async getSelfiePhoto(eventId: number, user: RequestUser): Promise<{ buffer: Buffer; mimeType: string }> {
@@ -463,5 +562,8 @@ export class AttendanceService implements OnModuleInit {
       update: { firstEntry, lastExit, totalMinutes: Math.max(0, totalMinutes + correctionMinutes), officeName, status, isLate, isEarlyLeave },
       create: { employeeId, companyId: employee.companyId, date: dateOnly, firstEntry, lastExit, totalMinutes: Math.max(0, totalMinutes), status, officeName, isLate, isEarlyLeave },
     });
+
+    const dateStr = dateOnly.toISOString().split('T')[0];
+    this.updates$.next({ companyId: employee.companyId, date: dateStr });
   }
 }

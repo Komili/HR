@@ -10,9 +10,13 @@ import {
   ParseIntPipe,
   Request,
   Res,
+  Sse,
   StreamableFile,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { Observable } from 'rxjs';
+import { JwtService } from '@nestjs/jwt';
 import { AttendanceService } from './attendance.service';
 import { CorrectAttendanceDto } from './dto/correct-attendance.dto';
 import { RegisterEventDto } from './dto/register-event.dto';
@@ -24,7 +28,10 @@ import { RequestUser } from '../auth/jwt.strategy';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('attendance')
 export class AttendanceController {
-  constructor(private readonly attendanceService: AttendanceService) {}
+  constructor(
+    private readonly attendanceService: AttendanceService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   @Get()
   @Roles('Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер')
@@ -105,5 +112,37 @@ export class AttendanceController {
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     return new StreamableFile(buffer);
+  }
+
+  /** SSE-эндпоинт для real-time обновлений посещаемости. JWT передаётся через query ?token= */
+  @Get('stream')
+  @Sse()
+  stream(
+    @Query('date') date: string,
+    @Query('token') token: string,
+    @Query('companyId') companyId?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ): Observable<MessageEvent> {
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(token);
+    } catch {
+      throw new UnauthorizedException('Invalid token');
+    }
+    const user: RequestUser = {
+      userId: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      companyId: payload.companyId,
+      companyName: payload.companyName,
+      isHoldingAdmin: payload.isHoldingAdmin,
+    };
+    const cid = companyId ? parseInt(companyId, 10) : (user.companyId ?? null);
+    const effectiveCid = user.isHoldingAdmin ? cid : (user.companyId ?? null);
+    if (res) {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-Accel-Buffering', 'no');
+    }
+    return this.attendanceService.getUpdateStream(effectiveCid, date);
   }
 }

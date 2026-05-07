@@ -163,14 +163,10 @@ export class RegistrationService {
 
     if (!token) throw new NotFoundException('Токен не найден');
 
-    // Проверка доступа
     if (!user.isHoldingAdmin && token.companyId !== user.companyId) {
       throw new BadRequestException('Нет доступа к этому токену');
     }
 
-    return this.prisma.registrationToken.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    await this.prisma.registrationToken.delete({ where: { id } });
   }
 }

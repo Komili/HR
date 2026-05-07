@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -59,6 +61,8 @@ import {
   UserX,
   Camera,
   CameraOff,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,8 +98,13 @@ import {
   checkHikvisionAccess,
   getAgentStatus,
   getAttendanceSelfieUrl,
+  deleteEmployee,
+  updateEmployee,
+  getDepartments,
+  getPositions,
 } from "@/lib/hrms-api";
-import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice } from "@/lib/types";
+import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice, Department, Position } from "@/lib/types";
+import { CrudModal } from "@/components/crud-modal";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { StatusBadge } from "@/components/status-badge";
 import { AgentStatusBanner } from "@/components/agent-status-banner";
@@ -149,17 +158,35 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [assignSearch, setAssignSearch] = useState("");
   const [assigningItemId, setAssigningItemId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const photoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [photoVersion, setPhotoVersion] = useState(0);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoBlobUrl, setPhotoBlobUrl] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [deleteEmployeeDialog, setDeleteEmployeeDialog] = useState(false);
+  const [deletingEmployee, setDeletingEmployee] = useState(false);
+
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    firstName: "", lastName: "", patronymic: "",
+    latinFirstName: "", latinLastName: "",
+    email: "", phone: "", status: "Активен",
+    departmentId: undefined as number | undefined,
+    positionId: undefined as number | undefined,
+    managerId: undefined as number | undefined,
+  });
+  const [editDepartments, setEditDepartments] = useState<Department[]>([]);
+  const [editPositions, setEditPositions] = useState<Position[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
 
   // Attendance state
   const [attendanceData, setAttendanceData] = useState<AttendanceSummary[]>([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().getMonth() + 1);
   const [attendanceYear, setAttendanceYear] = useState(() => new Date().getFullYear());
-  const [selfieModalEventId, setSelfieModalEventId] = useState<number | null>(null);
+  const [selfieModal, setSelfieModal] = useState<{ events: NonNullable<AttendanceSummary["selfieEvents"]>; idx: number } | null>(null);
+  const selfieModalEventId = selfieModal ? selfieModal.events[selfieModal.idx].id : null;
   const [selfieBlobUrl, setSelfieBlobUrl] = useState<string | null>(null);
   const [selfieLoading, setSelfieLoading] = useState(false);
 
@@ -234,8 +261,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
   }, [employeeId, attendanceMonth, attendanceYear]);
 
-  const openSelfieModal = useCallback(async (eventId: number) => {
-    setSelfieModalEventId(eventId);
+  const loadSelfieById = useCallback(async (eventId: number) => {
     setSelfieBlobUrl(null);
     setSelfieLoading(true);
     try {
@@ -243,19 +269,70 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
       const res = await fetch(getAttendanceSelfieUrl(eventId), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (res.ok) {
-        const blob = await res.blob();
-        setSelfieBlobUrl(URL.createObjectURL(blob));
-      }
+      if (res.ok) setSelfieBlobUrl(URL.createObjectURL(await res.blob()));
     } catch { /* ignore */ } finally {
       setSelfieLoading(false);
     }
   }, []);
 
+  const openSelfieModal = useCallback((events: NonNullable<AttendanceSummary["selfieEvents"]>, idx = 0) => {
+    setSelfieModal({ events, idx });
+    loadSelfieById(events[idx].id);
+  }, [loadSelfieById]);
+
+  const navigateSelfieModal = useCallback((dir: 1 | -1) => {
+    setSelfieModal(prev => {
+      if (!prev) return null;
+      const next = prev.idx + dir;
+      if (next < 0 || next >= prev.events.length) return prev;
+      loadSelfieById(prev.events[next].id);
+      return { ...prev, idx: next };
+    });
+  }, [loadSelfieById]);
+
   const closeSelfieModal = useCallback(() => {
-    setSelfieModalEventId(null);
+    setSelfieModal(null);
     setSelfieBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
   }, []);
+
+  const openEditDialog = useCallback(async () => {
+    if (!employee) return;
+    setEditForm({
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      patronymic: employee.patronymic || "",
+      latinFirstName: employee.latinFirstName || "",
+      latinLastName: employee.latinLastName || "",
+      email: employee.email || "",
+      phone: employee.phone || "",
+      status: employee.status || "Активен",
+      departmentId: (employee as any).departmentId || undefined,
+      positionId: (employee as any).positionId || undefined,
+      managerId: (employee as any).managerId || undefined,
+    });
+    setEditOpen(true);
+    try {
+      const [deps, pos] = await Promise.all([getDepartments(), getPositions()]);
+      setEditDepartments(deps);
+      setEditPositions(pos);
+    } catch { /* ignore */ }
+  }, [employee]);
+
+  const handleEditSave = useCallback(async () => {
+    if (!editForm.firstName || !editForm.lastName) return;
+    setEditSaving(true);
+    try {
+      await updateEmployee(employeeId, editForm);
+      setEditOpen(false);
+      // Reload employee data
+      const updated = await getEmployee(employeeId);
+      setEmployee(updated as any);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка сохранения");
+    } finally {
+      setEditSaving(false);
+    }
+  }, [employeeId, editForm]);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -336,7 +413,8 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
     let revoked = false;
     const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
-    fetch(getEmployeePhotoUrl(employeeId), {
+    const photoUrl = `${getEmployeePhotoUrl(employeeId)}${photoVersion > 0 ? `?v=${photoVersion}` : ''}`;
+    fetch(photoUrl, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(res => res.ok ? res.blob() : null)
@@ -630,10 +708,13 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
           <div className="flex items-center gap-3 sm:gap-5">
             <div className="relative group flex-shrink-0">
               <button
-                onClick={() => photoBlobUrl && setLightboxOpen(true)}
-                disabled={uploadingPhoto || !photoBlobUrl}
+                onClick={() => {
+                  if (photoBlobUrl) setLightboxOpen(true);
+                  else photoFileInputRef.current?.click();
+                }}
+                disabled={uploadingPhoto}
                 className="block focus:outline-none"
-                title={photoBlobUrl ? "Нажмите для просмотра фото" : undefined}
+                title={photoBlobUrl ? "Нажмите для просмотра фото" : "Добавить фото"}
               >
                 {photoBlobUrl ? (
                   <img
@@ -642,8 +723,11 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                     className="h-14 w-14 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl object-cover shadow-lg shadow-emerald-500/30 group-hover:brightness-75 transition-all cursor-pointer"
                   />
                 ) : (
-                  <div className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-lg sm:text-2xl font-bold text-white shadow-lg shadow-emerald-500/30">
+                  <div className="relative flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-lg sm:text-2xl font-bold text-white shadow-lg shadow-emerald-500/30 cursor-pointer group-hover:brightness-75 transition-all">
                     {initials}
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl sm:rounded-2xl bg-black/0 group-hover:bg-black/30 transition-all">
+                      <Upload className="h-5 w-5 sm:h-6 sm:w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
                   </div>
                 )}
               </button>
@@ -652,6 +736,17 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                   <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
                 </div>
               )}
+              <input
+                ref={photoFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handlePhotoUpload(file);
+                  e.target.value = "";
+                }}
+              />
             </div>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-3xl font-bold text-white truncate">{fullName}</h1>
@@ -685,7 +780,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               variant="outline"
               size="sm"
               className="h-8 sm:h-9 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs sm:text-sm"
-              onClick={() => router.push(`/employees?action=edit&id=${employeeId}`)}
+              onClick={openEditDialog}
             >
               <Edit className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Редактировать</span>
@@ -694,9 +789,11 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20"
+              className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-red-500/20 border-red-400/30 text-red-300 hover:bg-red-500/40 hover:text-red-200"
+              onClick={() => setDeleteEmployeeDialog(true)}
+              title="Удалить сотрудника"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -1194,78 +1291,102 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 <>
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                        <TableHead>Дата</TableHead>
-                        <TableHead>Вход</TableHead>
-                        <TableHead>Выход</TableHead>
-                        <TableHead>Часов</TableHead>
-                        <TableHead>Корректировка</TableHead>
-                        <TableHead>Статус</TableHead>
-                        <TableHead>Офис</TableHead>
+                      <TableRow className="bg-gradient-to-r from-blue-50/80 to-cyan-50/80 hover:bg-blue-50/80">
+                        <TableHead className="text-blue-700 font-semibold text-xs uppercase tracking-wider">Дата</TableHead>
+                        <TableHead className="text-blue-700 font-semibold text-xs uppercase tracking-wider">Вход</TableHead>
+                        <TableHead className="text-blue-700 font-semibold text-xs uppercase tracking-wider">Выход</TableHead>
+                        <TableHead className="text-blue-700 font-semibold text-xs uppercase tracking-wider">Часов</TableHead>
+                        <TableHead className="text-blue-700 font-semibold text-xs uppercase tracking-wider">Корректировка</TableHead>
+                        <TableHead className="text-blue-700 font-semibold text-xs uppercase tracking-wider">Статус</TableHead>
+                        <TableHead className="text-blue-700 font-semibold text-xs uppercase tracking-wider w-8"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {attendanceData.map((row) => {
-                        const statusStyles: Record<string, string> = {
-                          present: "bg-emerald-50/40",
-                          left: "bg-red-50/40",
-                          absent: "bg-gray-50/40",
-                          excused: "bg-amber-50/40",
+                        const rowBg: Record<string, string> = {
+                          present: "bg-emerald-50/60 hover:bg-emerald-100/60",
+                          left:    "bg-red-50/60 hover:bg-red-100/60",
+                          absent:  "bg-gray-50/60 hover:bg-gray-100/60",
+                          excused: "bg-amber-50/60 hover:bg-amber-100/60",
                         };
                         const statusLabels: Record<string, string> = {
-                          present: "На месте",
-                          left: "Ушёл",
-                          absent: "Отсутствует",
-                          excused: "Уважит.",
+                          present: "На месте", left: "Ушёл", absent: "Отсутствует", excused: "Уважит.",
                         };
-                        const statusBadgeStyles: Record<string, string> = {
+                        const statusBadge: Record<string, string> = {
                           present: "bg-emerald-100 text-emerald-700 border-emerald-200",
-                          left: "bg-red-100 text-red-700 border-red-200",
-                          absent: "bg-gray-100 text-gray-600 border-gray-200",
+                          left:    "bg-red-100 text-red-700 border-red-200",
+                          absent:  "bg-gray-100 text-gray-600 border-gray-200",
                           excused: "bg-amber-100 text-amber-700 border-amber-200",
                         };
-                        const formatT = (iso: string | null) => {
+                        const fmtT = (iso: string | null) => {
                           if (!iso) return "—";
                           return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false });
                         };
                         const h = Math.floor(row.totalMinutes / 60);
                         const m = row.totalMinutes % 60;
+                        const hasSelfies = row.selfieEvents && row.selfieEvents.length > 0;
                         return (
-                          <TableRow key={row.id} className={statusStyles[row.status] || ""}>
-                            <TableCell className="font-medium">
+                          <TableRow key={row.id} className={`border-b border-blue-50 ${rowBg[row.status] || ""}`}>
+                            <TableCell className="font-medium text-sm py-2.5">
                               {new Date(row.date + "T00:00:00").toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", weekday: "short" })}
                             </TableCell>
-                            <TableCell>{formatT(row.firstEntry)}</TableCell>
-                            <TableCell>{formatT(row.lastExit)}</TableCell>
-                            <TableCell className="font-medium">{h}ч {m}м</TableCell>
-                            <TableCell>
-                              {row.correctionMinutes !== 0 ? (
-                                <span className={`text-sm font-medium ${row.correctionMinutes > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                                  {row.correctionMinutes > 0 ? "+" : ""}{row.correctionMinutes}м
-                                  {row.correctionNote && (
-                                    <span className="ml-1 text-xs text-muted-foreground" title={row.correctionNote}>
-                                      ({row.correctionNote})
-                                    </span>
-                                  )}
+                            <TableCell className="py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-medium">{fmtT(row.firstEntry)}</span>
+                                {row.isLate && row.firstEntry && (
+                                  <span className="inline-flex items-center rounded-full bg-orange-100 border border-orange-200 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">Опоздал</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-medium">{fmtT(row.lastExit)}</span>
+                                {row.isEarlyLeave && row.lastExit && (
+                                  <span className="inline-flex items-center rounded-full bg-purple-100 border border-purple-200 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">Ранний</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium text-sm py-2.5">
+                              {h}ч {m}м
+                              {row.correctionMinutes !== 0 && (
+                                <span className={`ml-1 text-xs ${row.correctionMinutes > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                  ({row.correctionMinutes > 0 ? "+" : ""}{row.correctionMinutes}м)
                                 </span>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
                               )}
                             </TableCell>
-                            <TableCell>
-                              <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusBadgeStyles[row.status] || "bg-gray-100 text-gray-700"}`}>
+                            <TableCell className="py-2.5">
+                              {row.correctionNote ? (
+                                <span className="text-xs text-muted-foreground" title={row.correctionNote}>
+                                  {row.correctionNote.length > 30 ? row.correctionNote.slice(0, 30) + "…" : row.correctionNote}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2.5">
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${statusBadge[row.status] || "bg-gray-100 text-gray-700"}`}>
                                 {statusLabels[row.status] || row.status}
                               </span>
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{row.officeName || "—"}</TableCell>
+                            <TableCell className="py-2.5 pr-3">
+                              {hasSelfies && (
+                                <button
+                                  onClick={() => openSelfieModal(row.selfieEvents!, 0)}
+                                  className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-violet-100 transition-colors"
+                                  title={`Фото чекина (${row.selfieEvents!.length})`}
+                                >
+                                  <Camera className="h-3.5 w-3.5 text-violet-500" />
+                                </button>
+                              )}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
                     </TableBody>
                   </Table>
                   {/* Итого */}
-                  <div className="border-t border-gray-100 px-3 sm:px-6 py-3 sm:py-4 bg-blue-50/30">
-                    <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-xs sm:text-sm">
+                  <div className="border-t border-gray-100 px-4 sm:px-6 py-3 sm:py-4 bg-blue-50/30">
+                    <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs sm:text-sm">
                       <div>
                         <span className="text-muted-foreground">Дней присутствия: </span>
                         <span className="font-bold text-emerald-600">
@@ -1280,6 +1401,12 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                         </span>
                       </div>
                       <div>
+                        <span className="text-muted-foreground">Опозданий: </span>
+                        <span className="font-bold text-orange-600">
+                          {attendanceData.filter((d) => d.isLate).length}
+                        </span>
+                      </div>
+                      <div>
                         <span className="text-muted-foreground">Отсутствий: </span>
                         <span className="font-bold text-gray-600">
                           {attendanceData.filter((d) => d.status === "absent").length}
@@ -1291,6 +1418,93 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
               )}
             </CardContent>
           </Card>
+
+          {/* Selfie Modal */}
+          {selfieModal && (() => {
+            const ev = selfieModal.events[selfieModal.idx];
+            const isIn = ev.direction === "IN";
+            const isMobile = ev.source === "QR_CHECKIN" || ev.deviceName?.includes("Мобильный");
+            const camName = isMobile ? "Телефон" : (ev.deviceName?.replace(/_/g, " ") || "Камера");
+            const dt = new Date(ev.timestamp);
+            const dateStr = dt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+            const timeStr = dt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+            const total = selfieModal.events.length;
+            return (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+                onClick={closeSelfieModal}
+              >
+                <div
+                  className="relative bg-white rounded-2xl shadow-2xl max-w-xs w-full mx-4 overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <Camera className="h-4 w-4 text-violet-500" />
+                      <span className="text-sm font-semibold">Фото чекина</span>
+                      {total > 1 && (
+                        <span className="text-xs text-muted-foreground bg-gray-200 rounded-full px-2 py-0.5">
+                          {selfieModal.idx + 1} / {total}
+                        </span>
+                      )}
+                    </div>
+                    <button onClick={closeSelfieModal} className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Photo */}
+                  <div className="relative aspect-[3/4] bg-gray-100 flex items-center justify-center">
+                    {selfieLoading ? (
+                      <div className="h-8 w-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+                    ) : selfieBlobUrl ? (
+                      <img src={selfieBlobUrl} alt="Фото чекина" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <Camera className="h-10 w-10 text-gray-300" />
+                        <span className="text-sm">Фото недоступно</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Metadata */}
+                  <div className="px-4 py-3 border-t space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${isIn ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                        {isIn ? "▲ Вход" : "▼ Выход"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{isMobile ? "📱" : "🖥"} {camName}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{timeStr}</span>{" — "}{dateStr}
+                    </div>
+                  </div>
+
+                  {/* Navigation */}
+                  {total > 1 && (
+                    <div className="flex items-center justify-between px-4 py-2.5 border-t bg-gray-50">
+                      <button
+                        onClick={() => navigateSelfieModal(-1)}
+                        disabled={selfieModal.idx === 0}
+                        className="h-8 w-8 flex items-center justify-center rounded-full border hover:bg-white disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-xs text-muted-foreground">листать фото</span>
+                      <button
+                        onClick={() => navigateSelfieModal(1)}
+                        disabled={selfieModal.idx === total - 1}
+                        className="h-8 w-8 flex items-center justify-center rounded-full border hover:bg-white disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </TabsContent>
 
         {/* История должностей */}
@@ -1998,6 +2212,129 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
           onClose={() => setLightboxOpen(false)}
         />
       )}
+
+      {/* Диалог удаления сотрудника */}
+      <Dialog open={deleteEmployeeDialog} onOpenChange={setDeleteEmployeeDialog}>
+        <DialogContent className="max-w-sm rounded-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <DialogTitle>Удалить сотрудника?</DialogTitle>
+            </div>
+            <DialogDescription className="pl-[52px]">
+              <span className="font-medium text-foreground">{fullName}</span> будет удалён безвозвратно вместе со всеми документами и данными.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2 mt-2">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setDeleteEmployeeDialog(false)} disabled={deletingEmployee}>
+              Отмена
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-xl bg-red-600 hover:bg-red-700 text-white"
+              disabled={deletingEmployee}
+              onClick={async () => {
+                setDeletingEmployee(true);
+                try {
+                  await deleteEmployee(employeeId);
+                  router.push('/employees');
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Ошибка удаления');
+                  setDeleteEmployeeDialog(false);
+                } finally {
+                  setDeletingEmployee(false);
+                }
+              }}
+            >
+              {deletingEmployee ? (
+                <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin mr-1" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1" />
+              )}
+              Удалить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Employee Dialog */}
+      <CrudModal
+        isOpen={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Редактировать сотрудника"
+        description="Измените данные сотрудника"
+        onSave={handleEditSave}
+        isSaving={editSaving}
+      >
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="edit-lastName">Фамилия *</Label>
+              <Input id="edit-lastName" value={editForm.lastName}
+                onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                placeholder="Фамилия" className="h-10 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-firstName">Имя *</Label>
+              <Input id="edit-firstName" value={editForm.firstName}
+                onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                placeholder="Имя" className="h-10 rounded-xl" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-patronymic">Отчество</Label>
+            <Input id="edit-patronymic" value={editForm.patronymic}
+              onChange={(e) => setEditForm({ ...editForm, patronymic: e.target.value })}
+              placeholder="Отчество" className="h-10 rounded-xl" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input id="edit-email" type="email" value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                placeholder="Email" className="h-10 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-phone">Телефон</Label>
+              <Input id="edit-phone" value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                placeholder="Телефон" className="h-10 rounded-xl" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Отдел</Label>
+              <select value={editForm.departmentId || ""}
+                onChange={(e) => setEditForm({ ...editForm, departmentId: e.target.value ? Number(e.target.value) : undefined })}
+                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
+                <option value="">Без отдела</option>
+                {editDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Должность</Label>
+              <select value={editForm.positionId || ""}
+                onChange={(e) => setEditForm({ ...editForm, positionId: e.target.value ? Number(e.target.value) : undefined })}
+                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
+                <option value="">Без должности</option>
+                {editPositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Статус</Label>
+            <select value={editForm.status}
+              onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+              className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
+              {["Активен","Стажёр","Руководитель","Дистанционно","В отпуске","Больничный","Декрет","Уволен"].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </CrudModal>
     </div>
   );
 }

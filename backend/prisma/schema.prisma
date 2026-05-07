@@ -36,10 +36,10 @@ model Company {
   attendanceEvents AttendanceEvent[]
   attendances      Attendance[]
   salaries             Salary[]
-  registrationTokens   RegistrationToken[]
   doors                Door[]
   hikvisionDevices     HikvisionDevice[]
   agents               Agent[]
+  registrationTokens   RegistrationToken[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 }
@@ -284,19 +284,6 @@ model Salary {
   @@index([companyId, month, year])
 }
 
-model RegistrationToken {
-  id         Int      @id @default(autoincrement())
-  token      String   @unique
-  company    Company  @relation(fields: [companyId], references: [id])
-  companyId  Int
-  isActive   Boolean  @default(true)
-  createdBy  String   // Email пользователя, создавшего токен
-  usageCount Int      @default(0)
-  createdAt  DateTime @default(now())
-
-  @@index([companyId])
-}
-
 model PositionHistory {
   id             Int      @id @default(autoincrement())
   employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -438,6 +425,19 @@ model Agent {
   version    String?               // Версия агента
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+
+  @@index([companyId])
+}
+
+model RegistrationToken {
+  id         Int      @id @default(autoincrement())
+  token      String   @unique
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  Int
+  isActive   Boolean  @default(true)
+  createdBy  String
+  usageCount Int      @default(0)
+  createdAt  DateTime @default(now())
 
   @@index([companyId])
 }

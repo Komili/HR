@@ -24,6 +24,7 @@ import {
   getEmployees,
   getOffices,
   getCompany,
+  getAttendanceSelfieUrl,
 } from "@/lib/hrms-api"
 import { useAuth } from "@/app/contexts/AuthContext"
 import {
@@ -42,6 +43,11 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Camera,
+  Smartphone,
+  Cpu,
+  MousePointerClick,
+  X,
 } from "lucide-react"
 
 function formatTime(iso: string | null) {
@@ -93,6 +99,38 @@ function getRowBg(row: AttendanceSummary): string {
   return ROW_BG[row.status] || ""
 }
 
+function formatDeviceName(name: string | null): string {
+  if (!name) return "—"
+  // Old format: "Hikvision 192.168.x.x" → just "Hikvision"
+  if (/^Hikvision \d+\.\d+\.\d+\.\d+$/.test(name)) return "Hikvision"
+  // Clean up underscores/camelCase
+  return name.replace(/_/g, " ").trim()
+}
+
+function LastActivity({ event }: { event: AttendanceSummary["lastEvent"] }) {
+  if (!event) return <span className="text-sm text-muted-foreground">—</span>
+  const time = new Date(event.timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false })
+  const isMobile = event.source === "QR_CHECKIN" || event.deviceName?.includes("Мобильный")
+  const isManual = event.deviceName?.includes("Ручной")
+  const isIn = event.direction === "IN"
+  const doorName = isMobile ? "Телефон" : isManual ? "Вручную" : formatDeviceName(event.deviceName)
+  const dirLabel = isIn ? "Вход" : "Выход"
+  const dirColor = isIn ? "text-emerald-600 bg-emerald-50 border-emerald-200" : "text-red-600 bg-red-50 border-red-200"
+  const Icon = isMobile ? Smartphone : event.source === "HIKVISION" ? Cpu : MousePointerClick
+  return (
+    <div className="flex flex-col leading-tight gap-0.5">
+      <div className="flex items-center gap-1">
+        <Icon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+        <span className="text-xs text-foreground font-medium truncate max-w-[110px]" title={doorName}>{doorName}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className={`inline-flex items-center rounded px-1 py-0 text-[10px] font-semibold border ${dirColor}`}>{dirLabel}</span>
+        <span className="text-[11px] text-muted-foreground">{time}</span>
+      </div>
+    </div>
+  )
+}
+
 function StatusBadge({ status }: { status: string }) {
   const style = STATUS_STYLES[status] || "bg-gray-100 text-gray-700 border-gray-200"
   return (
@@ -103,7 +141,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function AttendancePage() {
-  const { user, currentCompanyName } = useAuth()
+  const { user, token, currentCompanyName } = useAuth()
   const canCorrect = user && (user.isHoldingAdmin || user.role === "Кадровик" || user.role === "Руководитель")
   const canRegister = user && (user.isHoldingAdmin || user.role === "Кадровик")
 
@@ -142,6 +180,12 @@ export default function AttendancePage() {
   // Table search
   const [tableSearch, setTableSearch] = React.useState("")
 
+  // Selfie popup
+  type SelfieEvent = NonNullable<AttendanceSummary["selfieEvents"]>[number]
+  const [selfieDialog, setSelfieDialog] = React.useState<{ events: SelfieEvent[]; idx: number } | null>(null)
+  const [selfieUrl, setSelfieUrl] = React.useState<string | null>(null)
+  const [selfieLoading, setSelfieLoading] = React.useState(false)
+
   // Range report dialog
   const [rangeOpen, setRangeOpen] = React.useState(false)
   const [rangeFrom, setRangeFrom] = React.useState(() => {
@@ -154,21 +198,62 @@ export default function AttendancePage() {
   })
   const [rangeLoading, setRangeLoading] = React.useState(false)
 
-  const loadData = React.useCallback(() => {
-    setError(null)
-    setLoading(true)
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
+
+  const loadData = React.useCallback((silent = false) => {
+    if (!silent) { setError(null); setLoading(true) }
     getAttendance(selectedDate)
-      .then(setData)
+      .then((d) => { setData(d); setLastUpdated(new Date()) })
       .catch((err) => {
-        setData([])
-        setError(err instanceof Error ? err.message : "Ошибка загрузки данных")
+        if (!silent) { setData([]); setError(err instanceof Error ? err.message : "Ошибка загрузки данных") }
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (!silent) setLoading(false) })
   }, [selectedDate])
+
+  const fetchSelfie = React.useCallback((eventId: number) => {
+    setSelfieUrl(null)
+    setSelfieLoading(true)
+    const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null
+    fetch(getAttendanceSelfieUrl(eventId), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.blob() : Promise.reject()))
+      .then((b) => setSelfieUrl(URL.createObjectURL(b)))
+      .catch(() => setSelfieUrl(null))
+      .finally(() => setSelfieLoading(false))
+  }, [])
+
+  const openSelfie = React.useCallback((events: NonNullable<AttendanceSummary["selfieEvents"]>, idx = 0) => {
+    setSelfieDialog({ events, idx })
+    fetchSelfie(events[idx].id)
+  }, [fetchSelfie])
+
+  const navigateSelfie = React.useCallback((dir: 1 | -1) => {
+    if (!selfieDialog) return
+    const nextIdx = selfieDialog.idx + dir
+    if (nextIdx < 0 || nextIdx >= selfieDialog.events.length) return
+    setSelfieDialog({ ...selfieDialog, idx: nextIdx })
+    fetchSelfie(selfieDialog.events[nextIdx].id)
+  }, [selfieDialog, fetchSelfie])
 
   React.useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Real-time SSE updates: reconnect when date or token changes
+  React.useEffect(() => {
+    if (!token) return
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "/api"
+    const companyId = typeof window !== "undefined" ? localStorage.getItem("currentCompanyId") : null
+    const params = new URLSearchParams({ date: selectedDate, token })
+    if (companyId) params.set("companyId", companyId)
+    const es = new EventSource(`${apiBase}/attendance/stream?${params}`)
+    es.onmessage = () => { if (!document.hidden) loadData(true) }
+    es.onerror = () => es.close()
+    const onVisible = () => { if (!document.hidden) loadData(true) }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => { es.close(); document.removeEventListener("visibilitychange", onVisible) }
+  }, [selectedDate, token, loadData])
 
   React.useEffect(() => {
     getAttendanceLatestDate()
@@ -817,14 +902,22 @@ export default function AttendancePage() {
             </Button>
           </div>
         </div>
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Поиск по ФИО..."
-            value={tableSearch}
-            onChange={(e) => setTableSearch(e.target.value)}
-            className="pl-10 h-10 rounded-xl bg-white/80 border-blue-100 focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20"
-          />
+        <div className="flex items-center gap-3 flex-1">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Поиск по ФИО..."
+              value={tableSearch}
+              onChange={(e) => setTableSearch(e.target.value)}
+              className="pl-10 h-10 rounded-xl bg-white/80 border-blue-100 focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+          {lastUpdated && selectedDate === new Date().toISOString().split("T")[0] && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {lastUpdated.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false })}
+            </span>
+          )}
         </div>
       </div>
 
@@ -869,9 +962,8 @@ export default function AttendancePage() {
                   <tr className="bg-gradient-to-r from-blue-50/80 to-cyan-50/80 border-b border-blue-100/50">
                     <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left">№</th>
                     <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left">ФИО</th>
-                    <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left hidden lg:table-cell">Отдел</th>
                     <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left hidden lg:table-cell">Должность</th>
-                    <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left hidden md:table-cell">Офис</th>
+                    <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left hidden md:table-cell">Активность</th>
                     <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left">Вход</th>
                     <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left">Выход</th>
                     <th className="text-blue-700 text-xs font-semibold uppercase tracking-wider py-4 px-4 text-left hidden md:table-cell">Часов</th>
@@ -882,7 +974,7 @@ export default function AttendancePage() {
                 <tbody>
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-12 text-center">
+                      <td colSpan={9} className="py-12 text-center">
                         <div className="flex flex-col items-center text-muted-foreground gap-2">
                           <Clock className="h-12 w-12 text-gray-300 mb-1" />
                           <span className="text-sm">Нет данных за выбранную дату</span>
@@ -931,9 +1023,10 @@ export default function AttendancePage() {
                               </div>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-sm text-muted-foreground hidden lg:table-cell">{row.departmentName || "—"}</td>
                           <td className="py-3 px-4 text-sm text-muted-foreground hidden lg:table-cell">{row.positionName || "—"}</td>
-                          <td className="py-3 px-4 text-sm text-muted-foreground hidden md:table-cell">{row.officeName || "—"}</td>
+                          <td className="py-3 px-4 hidden md:table-cell">
+                            <LastActivity event={row.lastEvent} />
+                          </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-1.5">
                               <span className="text-sm font-medium">{formatTime(row.firstEntry)}</span>
@@ -962,17 +1055,30 @@ export default function AttendancePage() {
                             <StatusBadge status={row.status} />
                           </td>
                           <td className="py-3 px-4">
-                            {canCorrect && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-50"
-                                onClick={() => openCorrection(row)}
-                                title="Корректировка"
-                              >
-                                <Pencil className="h-4 w-4 text-blue-600" />
-                              </Button>
-                            )}
+                            <div className="flex items-center gap-1">
+                              {row.selfieEvents && row.selfieEvents.length > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 hover:bg-violet-50"
+                                  onClick={() => openSelfie(row.selfieEvents!, 0)}
+                                  title="Фото чекина"
+                                >
+                                  <Camera className="h-4 w-4 text-violet-500" />
+                                </Button>
+                              )}
+                              {canCorrect && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-50"
+                                  onClick={() => openCorrection(row)}
+                                  title="Корректировка"
+                                >
+                                  <Pencil className="h-4 w-4 text-blue-600" />
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -1319,6 +1425,96 @@ export default function AttendancePage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Selfie Popup */}
+      {selfieDialog && (() => {
+        const ev = selfieDialog.events[selfieDialog.idx]
+        const isIn = ev.direction === "IN"
+        const isMobile = ev.source === "QR_CHECKIN" || ev.deviceName?.includes("Мобильный")
+        const camName = isMobile ? "Телефон" : ev.deviceName ? ev.deviceName.replace(/_/g, " ") : "Камера"
+        const dt = new Date(ev.timestamp)
+        const dateStr = dt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })
+        const timeStr = dt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => { setSelfieDialog(null); setSelfieUrl(null) }}
+          >
+            <div
+              className="relative bg-white rounded-2xl shadow-2xl max-w-xs w-full mx-4 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                <div className="flex items-center gap-2">
+                  <Camera className="h-4 w-4 text-violet-500" />
+                  <span className="text-sm font-semibold">Фото чекина</span>
+                  {selfieDialog.events.length > 1 && (
+                    <span className="text-xs text-muted-foreground bg-gray-200 rounded-full px-2 py-0.5">
+                      {selfieDialog.idx + 1} / {selfieDialog.events.length}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setSelfieDialog(null); setSelfieUrl(null) }}
+                  className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Photo */}
+              <div className="relative aspect-[3/4] bg-gray-100 flex items-center justify-center">
+                {selfieLoading ? (
+                  <div className="h-8 w-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+                ) : selfieUrl ? (
+                  <img src={selfieUrl} alt="Фото чекина" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <Camera className="h-10 w-10 text-gray-300" />
+                    <span className="text-sm">Фото недоступно</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Metadata */}
+              <div className="px-4 py-3 border-t space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${isIn ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                    {isIn ? "▲ Вход" : "▼ Выход"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{isMobile ? "📱" : "🖥"} {camName}</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{timeStr}</span>
+                  {" — "}{dateStr}
+                </div>
+              </div>
+
+              {/* Navigation */}
+              {selfieDialog.events.length > 1 && (
+                <div className="flex items-center justify-between px-4 py-2.5 border-t bg-gray-50">
+                  <button
+                    onClick={() => navigateSelfie(-1)}
+                    disabled={selfieDialog.idx === 0}
+                    className="h-8 w-8 flex items-center justify-center rounded-full border hover:bg-white disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-xs text-muted-foreground">листать фото</span>
+                  <button
+                    onClick={() => navigateSelfie(1)}
+                    disabled={selfieDialog.idx === selfieDialog.events.length - 1}
+                    className="h-8 w-8 flex items-center justify-center rounded-full border hover:bg-white disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Range Report Dialog */}
       <Dialog open={rangeOpen} onOpenChange={setRangeOpen}>

@@ -383,7 +383,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
         companyId: employee.companyId,
         timestamp,
         direction,
-        deviceName: `Hikvision ${ipAddress}`,
+        deviceName: device?.officeName || device?.deviceName || `Hikvision ${ipAddress}`,
         officeId: office?.id || null,
         source: 'HIKVISION',
         selfiePath,
@@ -1097,9 +1097,16 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     const auth = this.buildHikDigest(first.headers['www-authenticate'] || '', method, urlPath, login, password);
     const second = await this.rawHikRequest({ ip, port }, method, urlPath, body, contentType, auth);
-    if (second.status === 401) throw new Error(`Неверный логин или пароль для устройства ${ip}`);
-    if (second.status >= 400) throw new Error(`HTTP ${second.status}: ${second.body}`);
-    return second.body;
+    if (second.status !== 401) {
+      if (second.status >= 400) throw new Error(`HTTP ${second.status}: ${second.body}`);
+      return second.body;
+    }
+    // Nonce устарел или использован параллельным запросом — повторяем с новым nonce
+    const retryAuth = this.buildHikDigest(second.headers['www-authenticate'] || '', method, urlPath, login, password);
+    const third = await this.rawHikRequest({ ip, port }, method, urlPath, body, contentType, retryAuth);
+    if (third.status === 401) throw new Error(`Неверный логин или пароль для устройства ${ip}`);
+    if (third.status >= 400) throw new Error(`HTTP ${third.status}: ${third.body}`);
+    return third.body;
   }
 
   private buildHikDigest(wwwAuth: string, method: string, uri: string, username: string, password: string): string {

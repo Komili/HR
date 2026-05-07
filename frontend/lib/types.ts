@@ -110,6 +110,7 @@ export type Employee = {
   photoPath: string | null;
   status: string | null;
   documents?: { type: string }[];
+  updatedAt?: string | null;
 };
 
 export type OrgChartNode = {
@@ -239,6 +240,19 @@ export type AttendanceSummary = {
   correctionType?: string | null;
   correctionDeadline?: string | null;
   selfieEventIds?: number[];
+  selfieEvents?: Array<{
+    id: number;
+    timestamp: string;
+    direction: "IN" | "OUT";
+    deviceName: string | null;
+    source: string | null;
+  }>;
+  lastEvent?: {
+    timestamp: string;
+    direction: "IN" | "OUT";
+    deviceName: string | null;
+    source: string | null;
+  } | null;
 };
 
 export type SalaryRecord = {
@@ -267,28 +281,6 @@ export type SalaryRecord = {
   };
 };
 
-export type RegistrationToken = {
-  id: number;
-  token: string;
-  companyId: number;
-  isActive: boolean;
-  createdBy: string;
-  usageCount: number;
-  createdAt: string;
-  company?: { id: number; name: string; shortName: string | null };
-};
-
-export type PendingEmployee = Employee & {
-  status: string;
-  birthDate: string | null;
-  address: string | null;
-  passportSerial: string | null;
-  passportNumber: string | null;
-  passportIssuedBy: string | null;
-  passportIssueDate: string | null;
-  inn: string | null;
-  createdAt: string;
-};
 
 export type Door = {
   id: number;
@@ -343,6 +335,29 @@ export type AgentRecord = {
   lastSeenAt: string | null;
   secondsAgo: number | null;
   online: boolean;
+};
+
+export type RegistrationToken = {
+  id: number;
+  token: string;
+  companyId: number;
+  isActive: boolean;
+  createdBy: string;
+  usageCount: number;
+  createdAt: string;
+  company?: { id: number; name: string; shortName: string | null };
+};
+
+export type PendingEmployee = Employee & {
+  status: string;
+  birthDate: string | null;
+  address: string | null;
+  passportSerial: string | null;
+  passportNumber: string | null;
+  passportIssuedBy: string | null;
+  passportIssueDate: string | null;
+  inn: string | null;
+  createdAt: string;
 };
 
 export type HoldingStats = {

@@ -8,6 +8,7 @@ interface EmployeeAvatarProps {
   firstName: string
   lastName: string
   photoPath: string | null
+  photoUpdatedAt?: string | null
   size?: "sm" | "md" | "lg"
   className?: string
   thumb?: boolean
@@ -19,7 +20,7 @@ const sizeClasses = {
   lg: "h-14 w-14 sm:h-20 sm:w-20 text-lg sm:text-2xl",
 }
 
-export function EmployeeAvatar({ employeeId, firstName, lastName, photoPath, size = "md", className = "", thumb = true }: EmployeeAvatarProps) {
+export function EmployeeAvatar({ employeeId, firstName, lastName, photoPath, photoUpdatedAt, size = "md", className = "", thumb = true }: EmployeeAvatarProps) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [isVisible, setIsVisible] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -42,7 +43,7 @@ export function EmployeeAvatar({ employeeId, firstName, lastName, photoPath, siz
 
     observer.observe(ref.current)
     return () => observer.disconnect()
-  }, [photoPath])
+  }, [photoPath, photoUpdatedAt])
 
   // Загрузка фото с авторизацией
   useEffect(() => {
@@ -54,7 +55,10 @@ export function EmployeeAvatar({ employeeId, firstName, lastName, photoPath, siz
     let revoked = false
     const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null
 
-    fetch(getEmployeePhotoUrl(employeeId, thumb), {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api"
+    const v = photoUpdatedAt ? new Date(photoUpdatedAt).getTime() : null
+    const photoUrl = `${API_URL}/employees/${employeeId}/photo${thumb ? `?thumb=1${v ? `&v=${v}` : ''}` : v ? `?v=${v}` : ''}`
+    fetch(photoUrl, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(res => res.ok ? res.blob() : null)
@@ -67,7 +71,7 @@ export function EmployeeAvatar({ employeeId, firstName, lastName, photoPath, siz
       revoked = true
       setBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null })
     }
-  }, [photoPath, employeeId, isVisible, thumb])
+  }, [photoPath, photoUpdatedAt, employeeId, isVisible, thumb])
 
   if (blobUrl) {
     return (

@@ -91,35 +91,6 @@ export class EmployeesController {
     return this.employeesService.getOrgChart(req!.user, requestedCompanyId);
   }
 
-  @Get('pending')
-  @Roles('Суперадмин', 'Кадровик')
-  findPending(
-    @Query('companyId') companyId?: string,
-    @Request() req?: { user: RequestUser },
-  ) {
-    const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
-    return this.employeesService.findPending(req?.user, requestedCompanyId);
-  }
-
-  @Patch(':id/approve')
-  @Roles('Суперадмин', 'Кадровик')
-  approveRegistration(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: { departmentId?: number; positionId?: number },
-    @Request() req: { user: RequestUser },
-  ) {
-    return this.employeesService.approveRegistration(id, body, req.user);
-  }
-
-  @Patch(':id/reject')
-  @Roles('Суперадмин', 'Кадровик')
-  rejectRegistration(
-    @Param('id', ParseIntPipe) id: number,
-    @Request() req: { user: RequestUser },
-  ) {
-    return this.employeesService.rejectRegistration(id, req.user);
-  }
-
   @Post(':id/photo')
   @Roles('Суперадмин', 'Кадровик')
   @UseInterceptors(

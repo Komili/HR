@@ -362,7 +362,7 @@ export default function EmployeesPage() {
       header: "Сотрудник",
       size: 240,
       cell: ({ row }) => {
-        const { lastName, firstName, patronymic, id, photoPath, department, position } = row.original
+        const { lastName, firstName, patronymic, id, photoPath, updatedAt, department, position } = row.original
         const fullName = `${lastName} ${firstName} ${patronymic || ""}`.trim()
 
         return (
@@ -372,6 +372,7 @@ export default function EmployeesPage() {
               firstName={firstName}
               lastName={lastName}
               photoPath={photoPath}
+              photoUpdatedAt={updatedAt}
               className="shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all shrink-0"
             />
             <div className="min-w-0">

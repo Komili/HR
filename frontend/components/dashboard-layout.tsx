@@ -25,10 +25,10 @@ import {
   // Banknote,  // скрыто (зарплата скрыта по решению руководства)
   Network,
   Shield,
-  UserPlus2,
   DoorOpen,
-  QrCode,
   Smartphone,
+  QrCode,
+  ClipboardList,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -59,9 +59,9 @@ const menuItems = [
   { name: "Посещаемость", path: "/attendance", icon: Clock, description: "Учёт времени" },
   // { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },  // скрыто по решению руководства
   { name: "Оргструктура", path: "/org-structure", icon: Network, description: "Иерархия" },
-  { name: "Регистрации", path: "/registrations", icon: UserPlus2, description: "Заявки" },
-  { name: "QR Check-in", path: "/qr", icon: QrCode, description: "Без оборудования" },
   { name: "Чекин по телефону", path: "/checkin/phone", icon: Smartphone, description: "Удалённая отметка" },
+  // { name: "QR Регистрация", path: "/qr", icon: QrCode, description: "QR-код для сотрудников" },  // скрыто, не используется
+  { name: "Заявки", path: "/registrations", icon: ClipboardList, description: "Одобрение регистраций" },
 ];
 
 const settingsNav = { name: "Настройки", path: "/settings", icon: Settings, description: "Конфиг" };

@@ -53,6 +53,7 @@ import {
 } from "@/lib/hrms-api";
 import type { PendingEmployee, RegistrationToken, Department, Position } from "@/lib/types";
 import { EmployeeAvatar } from "@/components/employee-avatar";
+import { QRCodeSVG } from "qrcode.react";
 
 type Tab = "pending" | "qr";
 
@@ -69,19 +70,17 @@ export default function RegistrationsPage() {
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [creatingToken, setCreatingToken] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (companyId: number | null) => {
     setLoading(true);
-    try {
-      const [p, t] = await Promise.all([
-        getPendingRegistrations(),
-        getRegistrationTokens(),
-      ]);
-      setPending(p);
-      setTokens(t);
-    } catch {
-    } finally {
-      setLoading(false);
-    }
+    await Promise.allSettled([
+      getPendingRegistrations(companyId ?? undefined)
+        .then(setPending)
+        .catch(() => {}),
+      getRegistrationTokens(companyId ?? undefined)
+        .then(setTokens)
+        .catch(() => {}),
+    ]);
+    setLoading(false);
   }, []);
 
   const handleView = useCallback(async (emp: PendingEmployee) => {
@@ -100,7 +99,7 @@ export default function RegistrationsPage() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    loadData(currentCompanyId);
   }, [loadData, currentCompanyId]);
 
   const handleApprove = async (id: number, updates?: { departmentId?: number; positionId?: number }) => {
@@ -378,17 +377,10 @@ function QrTab({
 function TokenCard({ token, onDelete }: { token: RegistrationToken; onDelete: () => void }) {
   const qrRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
-  const [QRCodeComponent, setQRCodeComponent] = useState<any>(null);
 
   const registerUrl = typeof window !== "undefined"
     ? `${window.location.origin}/register?token=${token.token}`
     : "";
-
-  useEffect(() => {
-    import("qrcode.react").then((mod) => {
-      setQRCodeComponent(() => mod.QRCodeSVG);
-    });
-  }, []);
 
   const handleCopy = async () => {
     try {
@@ -403,16 +395,85 @@ function TokenCard({ token, onDelete }: { token: RegistrationToken; onDelete: ()
     if (!printWindow || !qrRef.current) return;
     const svgEl = qrRef.current.querySelector("svg");
     if (!svgEl) return;
-    printWindow.document.write(`
-      <html><head><title>QR - ${token.company?.name || ""}</title>
-      <style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif}
-      h2{margin-bottom:10px}p{color:#666;font-size:14px}</style></head>
-      <body><h2>${token.company?.shortName || token.company?.name || ""}</h2>
-      ${svgEl.outerHTML}
-      <p>Отсканируйте QR-код для регистрации</p></body></html>
-    `);
+    const companyName = token.company?.shortName || token.company?.name || "";
+    const svgStr = svgEl.outerHTML;
+    printWindow.document.write(`<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <title>QR — ${companyName}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;background:#fff;color:#1a1a2e;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .page{width:480px;border:2px solid #e2e8f0;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+    .header{background:linear-gradient(135deg,#065f46,#047857);padding:28px 32px 24px;text-align:center;color:#fff}
+    .header .holding{font-size:11px;letter-spacing:3px;text-transform:uppercase;opacity:.65;margin-bottom:4px}
+    .header .logo{font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.75;margin-bottom:6px}
+    .header h1{font-size:22px;font-weight:700;line-height:1.2;margin-bottom:4px}
+    .header .sub{font-size:13px;opacity:.8}
+    .qr-wrap{background:#f8fafc;padding:28px;display:flex;flex-direction:column;align-items:center;gap:12px;border-bottom:1px solid #e2e8f0}
+    .qr-box{background:#fff;border:3px solid #e2e8f0;border-radius:16px;padding:16px;display:inline-block;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+    .qr-hint{font-size:12px;color:#64748b;text-align:center}
+    .steps{padding:24px 28px 20px}
+    .steps-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#047857;margin-bottom:16px}
+    .step{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+    .step-num{min-width:30px;height:30px;border-radius:50%;background:#ecfdf5;border:2px solid #6ee7b7;color:#047857;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+    .step-text{padding-top:4px;font-size:14px;color:#374151;line-height:1.45}
+    .step-text b{color:#1a1a2e;font-weight:600}
+    .note{margin:0 28px 24px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 14px;font-size:12px;color:#92400e;line-height:1.5}
+    .note b{color:#78350f}
+    .footer{background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 28px;text-align:center;font-size:11px;color:#94a3b8}
+    @media print{body{padding:0}@page{margin:12mm}}
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="holding">FAVZ HOLDING</div>
+    <div class="logo">КАДРЫ · HR-система</div>
+    <h1>Регистрация сотрудника</h1>
+    <div class="sub">${companyName}</div>
+  </div>
+
+  <div class="qr-wrap">
+    <div class="qr-box">${svgStr}</div>
+    <div class="qr-hint">📱 Наведите камеру телефона на QR-код</div>
+  </div>
+
+  <div class="steps">
+    <div class="steps-title">Как зарегистрироваться</div>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text"><b>Откройте камеру</b> на своём телефоне и наведите на QR-код выше</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text"><b>Нажмите на уведомление</b> — откроется форма регистрации</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text"><b>Заполните анкету:</b> ФИО, дата рождения, телефон</div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-text"><b>Сделайте фото</b> в форме — оно используется для учёта</div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-text"><b>Отправьте заявку</b> — кадровый отдел рассмотрит её и свяжется с вами</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Важно:</b> Этот QR-код привязан к компании <b>${companyName}</b>.
+    Не передавайте его посторонним лицам.
+  </div>
+
+  <div class="footer">При возникновении вопросов обратитесь в кадровый отдел · FAVZ HOLDING</div>
+</div>
+<script>window.onload=()=>window.print()</script>
+</body></html>`);
     printWindow.document.close();
-    printWindow.print();
   };
 
   return (
@@ -430,9 +491,9 @@ function TokenCard({ token, onDelete }: { token: RegistrationToken; onDelete: ()
         </Badge>
       </div>
 
-      {token.isActive && QRCodeComponent && (
+      {token.isActive && registerUrl && (
         <div ref={qrRef} className="flex justify-center py-2">
-          <QRCodeComponent value={registerUrl} size={180} level="M" />
+          <QRCodeSVG value={registerUrl} size={180} level="M" />
         </div>
       )}
 
