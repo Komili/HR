@@ -120,7 +120,9 @@
       "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(r['employeeName'][:20], '|', r.get\\('lastEvent',{}\\).get\\('deviceName'\\), '|', r.get\\('selfieEventIds',[]\\)\\) for r in data[:5]]\")",
       "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(r['employeeName'][:18], '|', r.get\\('lastEvent',{}\\).get\\('deviceName'\\)\\) for r in data[:6]]\")",
       "Bash(python3 -c ' *)",
-      "Bash(mysql *)"
+      "Bash(mysql *)",
+      "Bash(gunzip -c /home/komil/projects/HR/storage/backups/hrms_db_20260512_101100.sql.gz)",
+      "Bash(awk -F'VALUES' '{print $1}')"
     ]
   }
 }
