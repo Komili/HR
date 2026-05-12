@@ -29,6 +29,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RequestUser } from '../auth/jwt.strategy';
+import { cyrillicToLatin } from '../common/transliterate';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -52,6 +53,13 @@ export class EmployeesController {
 
     if (!targetCompanyId) {
       throw new NotFoundException('Company ID is required');
+    }
+
+    if (!employeeData.latinFirstName) {
+      employeeData.latinFirstName = cyrillicToLatin(employeeData.firstName);
+    }
+    if (!employeeData.latinLastName) {
+      employeeData.latinLastName = cyrillicToLatin(employeeData.lastName);
     }
 
     const data = {
@@ -79,6 +87,35 @@ export class EmployeesController {
   ) {
     const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
     return this.employeesService.findAll(+page, +limit, search, req?.user, requestedCompanyId);
+  }
+
+  @Get('pending')
+  @Roles('Суперадмин', 'Кадровик')
+  findPending(
+    @Query('companyId') companyId?: string,
+    @Request() req?: { user: RequestUser },
+  ) {
+    const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
+    return this.employeesService.findPending(req!.user, requestedCompanyId);
+  }
+
+  @Patch(':id/approve')
+  @Roles('Суперадмин', 'Кадровик')
+  approveRegistration(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { departmentId?: number; positionId?: number },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.employeesService.approveRegistration(id, body, req.user);
+  }
+
+  @Patch(':id/reject')
+  @Roles('Суперадмин', 'Кадровик')
+  rejectRegistration(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.employeesService.rejectRegistration(id, req.user);
   }
 
   @Get('org-chart')

@@ -24,12 +24,12 @@ export class CreateEmployeeDto {
   patronymic?: string;
 
   @IsString()
-  @IsNotEmpty()
-  latinFirstName: string;
+  @IsOptional()
+  latinFirstName?: string;
 
   @IsString()
-  @IsNotEmpty()
-  latinLastName: string;
+  @IsOptional()
+  latinLastName?: string;
 
   @IsDateString()
   @IsOptional()

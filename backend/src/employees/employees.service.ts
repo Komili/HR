@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { Prisma } from '@prisma/client';
@@ -148,6 +148,46 @@ export class EmployeesService {
     ]);
 
     return { data, total };
+  }
+
+  async findPending(user: RequestUser, requestedCompanyId?: number): Promise<EmployeeWithRelations[]> {
+    const where: Prisma.EmployeeWhereInput = { status: 'Ожидает' };
+    const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
+    if (companyFilter) where.companyId = companyFilter;
+
+    return this.prisma.employee.findMany({
+      where,
+      include: { department: true, position: true, company: true, documents: { select: { type: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async approveRegistration(
+    id: number,
+    updates: { departmentId?: number; positionId?: number },
+    user: RequestUser,
+  ): Promise<EmployeeWithRelations> {
+    const employee = await this.findOne(id, user);
+    if (!employee) throw new NotFoundException(`Employee ${id} not found`);
+    if (employee.status !== 'Ожидает') throw new BadRequestException('Заявка уже обработана');
+
+    return this.update(
+      id,
+      {
+        status: 'Активен',
+        ...(updates.departmentId ? { department: { connect: { id: updates.departmentId } } } : {}),
+        ...(updates.positionId ? { position: { connect: { id: updates.positionId } } } : {}),
+      },
+      user,
+    );
+  }
+
+  async rejectRegistration(id: number, user: RequestUser): Promise<EmployeeWithRelations> {
+    const employee = await this.findOne(id, user);
+    if (!employee) throw new NotFoundException(`Employee ${id} not found`);
+    if (employee.status !== 'Ожидает') throw new BadRequestException('Заявка уже обработана');
+
+    return this.update(id, { status: 'Отклонён' }, user);
   }
 
   async reorderEmployees(items: { id: number; sortOrder: number }[]): Promise<void> {
