@@ -93,12 +93,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=[ordered]@{serverUrl=
 
 echo  OK  !CONFIG_FILE! created.
 
-schtasks /delete /tn "!TASK_NAME!" /f >nul 2>&1
-schtasks /create /tn "!TASK_NAME!" /tr "node \"%INSTALL_DIR%relay-agent.js\" --config \"%INSTALL_DIR%!CONFIG_FILE!\"" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul 2>&1
-echo  OK  Auto-start registered as "!TASK_NAME!".
-
-schtasks /run /tn "!TASK_NAME!" >nul 2>&1
-echo  OK  Agent started in background.
+for /f "delims=" %%N in ('where node 2^>nul') do set NODE_EXE=%%N
+if "!NODE_EXE!"=="" set NODE_EXE=node
+echo ^& "!NODE_EXE!" "%INSTALL_DIR%relay-agent.js" --config "%INSTALL_DIR%!CONFIG_FILE!" > "%INSTALL_DIR%run-!PROFILE!.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$arg='-NonInteractive -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File '+[char]34+'%INSTALL_DIR%run-!PROFILE!.ps1'+[char]34; $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg -WorkingDirectory '%INSTALL_DIR%'; $t=New-ScheduledTaskTrigger -AtLogOn; $s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); Unregister-ScheduledTask -TaskName '!TASK_NAME!' -Confirm:$false -ErrorAction SilentlyContinue; Register-ScheduledTask -TaskName '!TASK_NAME!' -Action $a -Trigger $t -Settings $s -RunLevel Highest -Force | Out-Null; Start-ScheduledTask -TaskName '!TASK_NAME!'; Start-Sleep 3; (Get-ScheduledTask -TaskName '!TASK_NAME!').State"
 echo.
 echo  ================================================
 echo   Agent "!PROFILE!" is running.
@@ -118,38 +116,37 @@ echo  ================================================
 echo.
 echo  Available profiles:
 echo.
-set IDX=0
+dir /b "%INSTALL_DIR%config-*.json" >nul 2>&1
+if errorlevel 1 goto :no_profiles
 for %%F in ("%INSTALL_DIR%config-*.json") do (
-    set /a IDX+=1
-    set CFG!IDX!=%%~nxF
-    set PRF!IDX!=%%~nF
-    set PRF!IDX!=!PRF%IDX%:config-=!
-    echo    !IDX!.  [!PRF%IDX%!]  %%~nxF
+    set "_n=%%~nF"
+    set "_n=!_n:config-=!"
+    echo    - !_n!
 )
-if exist "%INSTALL_DIR%config.json" (
-    set /a IDX+=1
-    set CFG!IDX!=config.json
-    set PRF!IDX!=default
-    echo    !IDX!.  [default]  config.json
-)
-if !IDX!==0 (
-    echo    (no profiles found)
-    echo.
-    pause
-    goto :main_menu
-)
+if exist "%INSTALL_DIR%config.json" echo    - default
 echo.
-set /p SEL="  Select number (or 0 to go back): "
-if "!SEL!"=="0" goto :main_menu
-if !SEL! GTR !IDX! goto :manage_menu
-
-set SEL_CFG=!CFG%SEL%!
-set SEL_PRF=!PRF%SEL%!
-if "!SEL_PRF!"=="default" (
+set /p SEL_PRF="  Enter profile name (or ENTER to go back): "
+if "!SEL_PRF!"=="" goto :main_menu
+if /i "!SEL_PRF!"=="default" (
+    set SEL_CFG=config.json
     set TASK_NAME=HRMS Relay Agent
 ) else (
+    set SEL_CFG=config-!SEL_PRF!.json
     set TASK_NAME=HRMS Agent !SEL_PRF!
 )
+if not exist "%INSTALL_DIR%!SEL_CFG!" (
+    echo.
+    echo  Profile "!SEL_PRF!" not found. Try again.
+    pause
+    goto :manage_menu
+)
+goto :profile_menu
+
+:no_profiles
+echo    (no profiles found)
+echo.
+pause
+goto :main_menu
 
 :profile_menu
 cls
@@ -173,9 +170,10 @@ if /i "!CHOICE!"=="b" goto :manage_menu
 goto :profile_menu
 
 :start_agent
-schtasks /end /tn "!TASK_NAME!" >nul 2>&1
-timeout /t 2 /nobreak >nul
-schtasks /run /tn "!TASK_NAME!" >nul 2>&1
+for /f "delims=" %%N in ('where node 2^>nul') do set NODE_EXE=%%N
+if "!NODE_EXE!"=="" set NODE_EXE=node
+echo ^& "!NODE_EXE!" "%INSTALL_DIR%relay-agent.js" --config "%INSTALL_DIR%!SEL_CFG!" > "%INSTALL_DIR%run-!SEL_PRF!.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$arg='-NonInteractive -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File '+[char]34+'%INSTALL_DIR%run-!SEL_PRF!.ps1'+[char]34; $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg -WorkingDirectory '%INSTALL_DIR%'; $t=New-ScheduledTaskTrigger -AtLogOn; $s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); Unregister-ScheduledTask -TaskName '!TASK_NAME!' -Confirm:$false -ErrorAction SilentlyContinue; Register-ScheduledTask -TaskName '!TASK_NAME!' -Action $a -Trigger $t -Settings $s -RunLevel Highest -Force | Out-Null; Start-ScheduledTask -TaskName '!TASK_NAME!'; Start-Sleep 3; (Get-ScheduledTask -TaskName '!TASK_NAME!').State"
 echo.
 echo  Agent "!SEL_PRF!" started.
 pause
@@ -209,7 +207,10 @@ if "!SEL_PRF!"=="default" (
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=[ordered]@{serverUrl='http://185.125.200.112:7272';agentToken='beebe0a45627c39f2c3b025f338e1f2f6984be97a1be20d95c6201a702e37fc1';agentName='!AGENT_NAME!';pollIntervalMs=5000;deviceCheckIntervalMs=30000;hikvisionTimeoutMs=10000;logFile='!LOG_ENTRY!';logMaxSizeMb=10}; [IO.File]::WriteAllText('%INSTALL_DIR%!SEL_CFG!', ($c|ConvertTo-Json), [Text.UTF8Encoding]::new($false))"
 
-schtasks /run /tn "!TASK_NAME!" >nul 2>&1
+for /f "delims=" %%N in ('where node 2^>nul') do set NODE_EXE=%%N
+if "!NODE_EXE!"=="" set NODE_EXE=node
+echo ^& "!NODE_EXE!" "%INSTALL_DIR%relay-agent.js" --config "%INSTALL_DIR%!SEL_CFG!" > "%INSTALL_DIR%run-!SEL_PRF!.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$arg='-NonInteractive -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File '+[char]34+'%INSTALL_DIR%run-!SEL_PRF!.ps1'+[char]34; $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg -WorkingDirectory '%INSTALL_DIR%'; $t=New-ScheduledTaskTrigger -AtLogOn; $s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); Unregister-ScheduledTask -TaskName '!TASK_NAME!' -Confirm:$false -ErrorAction SilentlyContinue; Register-ScheduledTask -TaskName '!TASK_NAME!' -Action $a -Trigger $t -Settings $s -RunLevel Highest -Force | Out-Null; Start-ScheduledTask -TaskName '!TASK_NAME!'; Start-Sleep 3; (Get-ScheduledTask -TaskName '!TASK_NAME!').State"
 echo  OK  Agent "!SEL_PRF!" restarted with new name.
 pause
 goto :profile_menu
