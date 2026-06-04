@@ -122,7 +122,15 @@
       "Bash(python3 -c ' *)",
       "Bash(mysql *)",
       "Bash(gunzip -c /home/komil/projects/HR/storage/backups/hrms_db_20260512_101100.sql.gz)",
-      "Bash(awk -F'VALUES' '{print $1}')"
+      "Bash(awk -F'VALUES' '{print $1}')",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(awk '{print $2}')",
+      "PowerShell(Get-ChildItem C:\\\\repos\\\\HR\\\\hrms_db_20260604_135115.sql -ErrorAction SilentlyContinue | Select-Object Name, @{N='SizeMB';E={[math]::Round\\($_.Length/1MB,2\\)}}, LastWriteTime)",
+      "PowerShell(docker exec hrms_db *)",
+      "PowerShell(docker exec *)",
+      "PowerShell(docker cp *)",
+      "PowerShell(cd C:\\\\repos\\\\HR\\\\backend; $out = npx tsc --noEmit -p tsconfig.json 2>&1; $errs = $out | Select-String -Pattern \"error TS\"; Write-Output \"Total errors: $\\($errs.Count\\)\"; $errs | Select-Object -First 15)",
+      "PowerShell(cd C:\\\\repos\\\\HR\\\\frontend; $out = npx tsc --noEmit -p tsconfig.json 2>&1; $errs = $out | Select-String -Pattern \"error TS\"; Write-Output \"Total errors: $\\($errs.Count\\)\"; $errs | Select-Object -First 20)"
     ]
   }
 }
