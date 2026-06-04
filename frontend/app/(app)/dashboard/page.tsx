@@ -57,10 +57,10 @@ function formatAttHours(minutes: number) {
 
 // Цвет строки по статусу: зелёный — на месте, красный — ушёл, жёлтый — отпросился, серый — не пришёл
 const ATT_ROW_BG: Record<string, string> = {
-  present: "bg-emerald-50 hover:bg-emerald-100/70",
-  left: "bg-red-50 hover:bg-red-100/70",
-  excused: "bg-amber-50 hover:bg-amber-100/70",
-  absent: "bg-gray-100 hover:bg-gray-200/70",
+  present: "bg-emerald-100 hover:bg-emerald-200",
+  left: "bg-red-100 hover:bg-red-200",
+  excused: "bg-amber-100 hover:bg-amber-200",
+  absent: "bg-slate-100 hover:bg-slate-200",
 };
 
 type Birthday = { employee: Employee; date: Date; daysUntil: number; age: number | null };
