@@ -66,10 +66,10 @@ CAPTION="📦 HRMS — Еженедельный полный бэкап
 
 if [ "$FILE_SIZE_MB" -lt 50 ]; then
     curl -s \
-        -F "chat_id=$TELEGRAM_CHAT_IDS" \
+        -F "chat_id=$BACKUP_TELEGRAM_CHAT_ID" \
         -F "document=@$ARCHIVE;filename=hrms_full_${TIMESTAMP}.tar.gz" \
         -F "caption=$CAPTION" \
-        "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendDocument" | \
+        "https://api.telegram.org/bot${BACKUP_TELEGRAM_TOKEN}/sendDocument" | \
         python3 -c "import sys,json; r=json.load(sys.stdin); print('✅ Отправлен в Telegram' if r.get('ok') else '❌ Ошибка: '+str(r))"
 else
     FULL_CAPTION="$CAPTION
@@ -80,9 +80,9 @@ else
     python3 -c "
 import json, urllib.request
 text = open('/dev/stdin').read()
-data = json.dumps({'chat_id': '$TELEGRAM_CHAT_IDS', 'text': text}).encode()
+data = json.dumps({'chat_id': '$BACKUP_TELEGRAM_CHAT_ID', 'text': text}).encode()
 req = urllib.request.Request(
-    'https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage',
+    'https://api.telegram.org/bot${BACKUP_TELEGRAM_TOKEN}/sendMessage',
     data=data, headers={'Content-Type': 'application/json'}
 )
 r = json.loads(urllib.request.urlopen(req).read())

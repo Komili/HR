@@ -53,10 +53,10 @@ CAPTION="🗄 HRMS — Ежедневный бэкап БД
 ✅ Бэкап успешно создан"
 
 curl -s \
-    -F "chat_id=$TELEGRAM_CHAT_IDS" \
+    -F "chat_id=$BACKUP_TELEGRAM_CHAT_ID" \
     -F "document=@$BACKUP_FILE;filename=hrms_db_${TIMESTAMP}.sql.gz" \
     -F "caption=$CAPTION" \
-    "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendDocument" | \
+    "https://api.telegram.org/bot${BACKUP_TELEGRAM_TOKEN}/sendDocument" | \
     python3 -c "import sys,json; r=json.load(sys.stdin); print('✅ Отправлен в Telegram' if r.get('ok') else '❌ Ошибка: '+str(r))"
 
 echo "[$(date)] Готово. Файл сохранён: $BACKUP_FILE"

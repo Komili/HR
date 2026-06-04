@@ -5,7 +5,7 @@ export const TELEGRAM_CATEGORIES = [
   { key: 'correction', label: 'Корректировки посещаемости' },
   { key: 'registration', label: 'Регистрация сотрудников' },
   { key: 'access', label: 'СКУД / двери (доступы, ошибки)' },
-  { key: 'system', label: 'Системные (старт/стоп сервера, бэкапы)' },
+  { key: 'system', label: 'Системные (старт/стоп сервера, СКУД-алерты)' },
 ] as const;
 
 export type TelegramCategory = (typeof TELEGRAM_CATEGORIES)[number]['key'];

@@ -103,11 +103,35 @@ export class TelegramSettingsService {
     const cfg = await this.prisma.telegramConfig.findUnique({ where: { id: 1 } });
     const token = chat.token || cfg?.defaultToken || process.env.TELEGRAM_TOKEN;
     if (!token) throw new BadRequestException('Токен бота не задан (ни у чата, ни по умолчанию)');
+
+    // Companies
+    const companyIdList = (chat.companyIds || '')
+      .split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n) && n > 0);
+    let companiesLine = 'Все компании (глобально)';
+    if (companyIdList.length > 0) {
+      const companies = await this.prisma.company.findMany({ where: { id: { in: companyIdList } }, select: { name: true } });
+      companiesLine = companies.map((c) => c.name).join(', ');
+    }
+
+    // Categories
+    const catKeys = (chat.categories || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const catsLine = catKeys.length === 0
+      ? 'Не выбраны'
+      : catKeys.map((k) => TELEGRAM_CATEGORIES.find((c) => c.key === k)?.label || k).join('\n  • ');
+
+    const tokenSource = chat.token ? 'свой' : cfg?.defaultToken ? 'по умолчанию' : 'из .env';
+
     try {
       await this.telegram.sendTest(
         token,
         chat.chatId,
-        `🔔 <b>Тест уведомления</b>\nЧат: <b>${chat.title}</b>\n✅ Если вы видите это сообщение — настройка верна.`,
+        `🔔 <b>Тест уведомления</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📌 Чат: <b>${chat.title}</b>\n` +
+        `🏢 Компании: ${companiesLine}\n` +
+        `🤖 Токен: ${tokenSource}\n\n` +
+        `📋 <b>Категории уведомлений:</b>\n  • ${catsLine}\n\n` +
+        `✅ Если вы видите это — настройка верна.`,
       );
       return { success: true };
     } catch (err) {

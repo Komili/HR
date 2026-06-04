@@ -12,7 +12,7 @@ services:
     volumes:
       - hrms_mysql:/var/lib/mysql
     ports:
-      - "7171:3306"
+      - "127.0.0.1:7171:3306"
     networks:
       - hrms_net
     restart: unless-stopped
@@ -63,7 +63,7 @@ services:
       - proxy
     restart: unless-stopped
     ports:
-      - "7373:7070"
+      - "127.0.0.1:7373:7070"
 
 
 volumes:

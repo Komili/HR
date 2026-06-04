@@ -130,7 +130,13 @@
       "PowerShell(docker exec *)",
       "PowerShell(docker cp *)",
       "PowerShell(cd C:\\\\repos\\\\HR\\\\backend; $out = npx tsc --noEmit -p tsconfig.json 2>&1; $errs = $out | Select-String -Pattern \"error TS\"; Write-Output \"Total errors: $\\($errs.Count\\)\"; $errs | Select-Object -First 15)",
-      "PowerShell(cd C:\\\\repos\\\\HR\\\\frontend; $out = npx tsc --noEmit -p tsconfig.json 2>&1; $errs = $out | Select-String -Pattern \"error TS\"; Write-Output \"Total errors: $\\($errs.Count\\)\"; $errs | Select-Object -First 20)"
+      "PowerShell(cd C:\\\\repos\\\\HR\\\\frontend; $out = npx tsc --noEmit -p tsconfig.json 2>&1; $errs = $out | Select-String -Pattern \"error TS\"; Write-Output \"Total errors: $\\($errs.Count\\)\"; $errs | Select-Object -First 20)",
+      "Bash(crontab -)",
+      "Bash(netstat -tlnp)",
+      "Bash(xxd agent/AGENT.bat)",
+      "Bash(unix2dos agent/AGENT.bat)",
+      "Bash(git add *)",
+      "Bash(git stash *)"
     ]
   }
 }
