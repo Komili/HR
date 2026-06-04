@@ -32,4 +32,8 @@ backups/
 *.tmp_token.json
 hrms_export.sql
 hrms_migrate_*.tar.gz
+# Дампы БД с реальными данными — не коммитим (персональные данные сотрудников)
+hrms_db_*.sql
+hrms_backup_*.sql
+db_export_*.sql
 docker/nginx/certs/

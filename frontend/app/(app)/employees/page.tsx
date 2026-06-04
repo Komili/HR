@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { CrudModal } from "@/components/crud-modal"
+import { EmployeeFormFields } from "@/components/employee-form-fields"
 import {
   getEmployees,
   createEmployee,
@@ -206,8 +207,10 @@ export default function EmployeesPage() {
     patronymic: "",
     latinFirstName: "",
     latinLastName: "",
+    birthDate: "",
     email: "",
     phone: "",
+    address: "",
     departmentId: undefined,
     positionId: undefined,
   })
@@ -251,8 +254,10 @@ export default function EmployeesPage() {
       patronymic: "",
       latinFirstName: "",
       latinLastName: "",
+      birthDate: "",
       email: "",
       phone: "",
+      address: "",
       departmentId: undefined,
       positionId: undefined,
       managerId: undefined,
@@ -269,8 +274,10 @@ export default function EmployeesPage() {
       patronymic: employee.patronymic || "",
       latinFirstName: employee.latinFirstName,
       latinLastName: employee.latinLastName,
+      birthDate: employee.birthDate ? employee.birthDate.split("T")[0] : "",
       email: employee.email || "",
       phone: employee.phone || "",
+      address: employee.address || "",
       departmentId: employee.departmentId || undefined,
       positionId: employee.positionId || undefined,
       managerId: employee.managerId || undefined,
@@ -778,130 +785,14 @@ export default function EmployeesPage() {
         onSave={handleSave}
         isSaving={isSaving}
       >
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 sm:pr-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Фамилия *</Label>
-              <Input
-                id="lastName"
-                value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                placeholder="Введите фамилию"
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="firstName">Имя *</Label>
-              <Input
-                id="firstName"
-                value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                placeholder="Введите имя"
-                className="h-10 rounded-xl"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="patronymic">Отчество</Label>
-            <Input
-              id="patronymic"
-              value={formData.patronymic || ""}
-              onChange={(e) => setFormData({ ...formData, patronymic: e.target.value })}
-              placeholder="Введите отчество"
-              className="h-10 rounded-xl"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email || ""}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="Введите email"
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="phone">Телефон</Label>
-              <Input
-                id="phone"
-                value={formData.phone || ""}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="Номер телефона"
-                className="h-10 rounded-xl"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="department">Отдел</Label>
-              <select
-                id="department"
-                value={formData.departmentId || ""}
-                onChange={(e) => setFormData({ ...formData, departmentId: e.target.value ? Number(e.target.value) : undefined })}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Выберите отдел</option>
-                {departments.map((dep) => (
-                  <option key={dep.id} value={dep.id}>{dep.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="position">Должность</Label>
-              <select
-                id="position"
-                value={formData.positionId || ""}
-                onChange={(e) => setFormData({ ...formData, positionId: e.target.value ? Number(e.target.value) : undefined })}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Выберите должность</option>
-                {positions.map((pos) => (
-                  <option key={pos.id} value={pos.id}>{pos.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="status">Статус</Label>
-              <select
-                id="status"
-                value={formData.status || "Активен"}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                {ALL_STATUSES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="manager">Руководитель</Label>
-              <select
-                id="manager"
-                value={formData.managerId || ""}
-                onChange={(e) => setFormData({ ...formData, managerId: e.target.value ? Number(e.target.value) : undefined })}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Нет руководителя</option>
-                {data
-                  .filter((emp) => emp.id !== editingEmployee?.id)
-                  .map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.lastName} {emp.firstName}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          </div>
-        </div>
+        <EmployeeFormFields
+          value={formData}
+          onChange={setFormData}
+          departments={departments}
+          positions={positions}
+          managers={data}
+          excludeManagerId={editingEmployee?.id}
+        />
       </CrudModal>
 
       {/* Диалог подтверждения удаления */}

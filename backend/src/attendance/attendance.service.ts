@@ -85,35 +85,40 @@ export class AttendanceService implements OnModuleInit {
   async getDailyAttendance(date: string, user: RequestUser, requestedCompanyId?: number) {
     const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
     const targetDate = new Date(date + 'T00:00:00.000Z');
-    const where: any = { date: targetDate };
-    if (companyFilter) where.companyId = companyFilter;
 
-    const attendances = await this.prisma.attendance.findMany({
-      where,
-      include: {
-        employee: {
-          select: {
-            id: true, firstName: true, lastName: true, patronymic: true,
-            sortOrder: true,
-            department: { select: { name: true, sortOrder: true } },
-            position: { select: { name: true } },
-          },
-        },
+    // 1. Полный список сотрудников (тот же набор и порядок, что и в списке сотрудников):
+    //    исключаем заявки (Ожидает/Отклонён) и уволенных.
+    const empWhere: any = { status: { notIn: ['Ожидает', 'Отклонён', 'Уволен'] } };
+    if (companyFilter) empWhere.companyId = companyFilter;
+    const employees = await this.prisma.employee.findMany({
+      where: empWhere,
+      select: {
+        id: true, firstName: true, lastName: true, patronymic: true,
+        companyId: true, sortOrder: true,
+        department: { select: { name: true, sortOrder: true } },
+        position: { select: { name: true } },
       },
     });
 
     // Сортируем так же как список сотрудников: отдел.sortOrder → сотрудник.sortOrder → id
-    attendances.sort((a, b) => {
-      const dA = (a.employee as any)?.department?.sortOrder ?? 0;
-      const dB = (b.employee as any)?.department?.sortOrder ?? 0;
+    employees.sort((a, b) => {
+      const dA = (a as any).department?.sortOrder ?? 0;
+      const dB = (b as any).department?.sortOrder ?? 0;
       if (dA !== dB) return dA - dB;
-      const eA = (a.employee as any)?.sortOrder ?? 0;
-      const eB = (b.employee as any)?.sortOrder ?? 0;
+      const eA = a.sortOrder ?? 0;
+      const eB = b.sortOrder ?? 0;
       if (eA !== eB) return eA - eB;
-      return (a.employee as any)?.id - (b.employee as any)?.id;
+      return a.id - b.id;
     });
 
-    if (attendances.length === 0) return [];
+    if (employees.length === 0) return [];
+
+    // 2. Записи посещаемости за день → map по employeeId
+    const attWhere: any = { date: targetDate };
+    if (companyFilter) attWhere.companyId = companyFilter;
+    const attendances = await this.prisma.attendance.findMany({ where: attWhere });
+    const attByEmp = new Map<number, (typeof attendances)[number]>();
+    for (const a of attendances) attByEmp.set(a.employeeId, a);
 
     // Build IP→officeName map for resolving legacy "Hikvision 1.2.3.4" deviceNames
     const hikDevices = await this.prisma.hikvisionDevice.findMany({
@@ -131,20 +136,22 @@ export class AttendanceService implements OnModuleInit {
       return deviceName;
     };
 
-    // Fetch events for the day to get last activity + selfie IDs
+    // 3. События дня — только для тех, у кого есть запись (у отсутствующих событий нет)
     const employeeIds = attendances.map((a) => a.employeeId);
     const dayEnd = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000);
-    const events = await this.prisma.attendanceEvent.findMany({
-      where: {
-        employeeId: { in: employeeIds },
-        timestamp: { gte: targetDate, lt: dayEnd },
-      },
-      select: {
-        id: true, employeeId: true, timestamp: true,
-        direction: true, deviceName: true, source: true, selfiePath: true,
-      },
-      orderBy: { timestamp: 'asc' },
-    });
+    const events = employeeIds.length
+      ? await this.prisma.attendanceEvent.findMany({
+          where: {
+            employeeId: { in: employeeIds },
+            timestamp: { gte: targetDate, lt: dayEnd },
+          },
+          select: {
+            id: true, employeeId: true, timestamp: true,
+            direction: true, deviceName: true, source: true, selfiePath: true,
+          },
+          orderBy: { timestamp: 'asc' },
+        })
+      : [];
 
     const eventsByEmp = new Map<number, typeof events>();
     for (const ev of events) {
@@ -153,8 +160,40 @@ export class AttendanceService implements OnModuleInit {
       eventsByEmp.set(ev.employeeId, arr);
     }
 
-    return attendances.map((a) => {
-      const empEvents = eventsByEmp.get(a.employeeId) ?? [];
+    const dateStr = targetDate.toISOString().split('T')[0];
+
+    // 4. Маппим КАЖДОГО сотрудника: есть запись → реальные данные, нет → «Отсутствует»
+    return employees.map((emp) => {
+      const a = attByEmp.get(emp.id);
+
+      if (!a) {
+        // Отсутствующий — синтетическая запись с отрицательным id (нет строки Attendance)
+        return {
+          id: -emp.id,
+          employeeId: emp.id,
+          employeeName: `${emp.lastName} ${emp.firstName}${emp.patronymic ? ' ' + emp.patronymic : ''}`,
+          departmentName: emp.department?.name || null,
+          positionName: emp.position?.name || null,
+          date: dateStr,
+          firstEntry: null,
+          lastExit: null,
+          status: 'absent',
+          totalMinutes: 0,
+          correctionMinutes: 0,
+          correctedBy: null,
+          correctionNote: null,
+          correctionType: null,
+          correctionDeadline: null,
+          officeName: null,
+          isLate: false,
+          isEarlyLeave: false,
+          lastEvent: null,
+          selfieEventIds: [] as number[],
+          selfieEvents: [] as any[],
+        };
+      }
+
+      const empEvents = eventsByEmp.get(emp.id) ?? [];
       const last = empEvents.length > 0 ? empEvents[empEvents.length - 1] : null;
       const selfieEventsRaw = empEvents.filter((e) => e.selfiePath);
       const selfieEventIds = selfieEventsRaw.map((e) => e.id);
@@ -166,7 +205,7 @@ export class AttendanceService implements OnModuleInit {
         source: e.source,
       }));
       return {
-        ...this.mapAttendance(a),
+        ...this.mapAttendance({ ...a, employee: emp }),
         lastEvent: last
           ? {
               timestamp: last.timestamp.toISOString(),

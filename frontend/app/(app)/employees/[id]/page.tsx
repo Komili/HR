@@ -102,9 +102,11 @@ import {
   updateEmployee,
   getDepartments,
   getPositions,
+  getEmployees,
 } from "@/lib/hrms-api";
-import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice, Department, Position } from "@/lib/types";
+import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice, Department, Position, Employee, CreateEmployeeInput } from "@/lib/types";
 import { CrudModal } from "@/components/crud-modal";
+import { EmployeeFormFields } from "@/components/employee-form-fields";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { StatusBadge } from "@/components/status-badge";
 import { AgentStatusBanner } from "@/components/agent-status-banner";
@@ -168,16 +170,17 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<CreateEmployeeInput>({
     firstName: "", lastName: "", patronymic: "",
     latinFirstName: "", latinLastName: "",
-    email: "", phone: "", status: "Активен",
-    departmentId: undefined as number | undefined,
-    positionId: undefined as number | undefined,
-    managerId: undefined as number | undefined,
+    birthDate: "", email: "", phone: "", address: "", status: "Активен",
+    departmentId: undefined,
+    positionId: undefined,
+    managerId: undefined,
   });
   const [editDepartments, setEditDepartments] = useState<Department[]>([]);
   const [editPositions, setEditPositions] = useState<Position[]>([]);
+  const [editEmployees, setEditEmployees] = useState<Employee[]>([]);
   const [editSaving, setEditSaving] = useState(false);
 
   // Attendance state
@@ -303,8 +306,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
       patronymic: employee.patronymic || "",
       latinFirstName: employee.latinFirstName || "",
       latinLastName: employee.latinLastName || "",
+      birthDate: employee.birthDate ? employee.birthDate.split("T")[0] : "",
       email: employee.email || "",
       phone: employee.phone || "",
+      address: employee.address || "",
       status: employee.status || "Активен",
       departmentId: (employee as any).departmentId || undefined,
       positionId: (employee as any).positionId || undefined,
@@ -312,9 +317,10 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     });
     setEditOpen(true);
     try {
-      const [deps, pos] = await Promise.all([getDepartments(), getPositions()]);
+      const [deps, pos, emps] = await Promise.all([getDepartments(), getPositions(), getEmployees(1, 1000, "")]);
       setEditDepartments(deps);
       setEditPositions(pos);
+      setEditEmployees(emps.data);
     } catch { /* ignore */ }
   }, [employee]);
 
@@ -2268,72 +2274,14 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
         onSave={handleEditSave}
         isSaving={editSaving}
       >
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="edit-lastName">Фамилия *</Label>
-              <Input id="edit-lastName" value={editForm.lastName}
-                onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
-                placeholder="Фамилия" className="h-10 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-firstName">Имя *</Label>
-              <Input id="edit-firstName" value={editForm.firstName}
-                onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
-                placeholder="Имя" className="h-10 rounded-xl" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-patronymic">Отчество</Label>
-            <Input id="edit-patronymic" value={editForm.patronymic}
-              onChange={(e) => setEditForm({ ...editForm, patronymic: e.target.value })}
-              placeholder="Отчество" className="h-10 rounded-xl" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="edit-email">Email</Label>
-              <Input id="edit-email" type="email" value={editForm.email}
-                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                placeholder="Email" className="h-10 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-phone">Телефон</Label>
-              <Input id="edit-phone" value={editForm.phone}
-                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                placeholder="Телефон" className="h-10 rounded-xl" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Отдел</Label>
-              <select value={editForm.departmentId || ""}
-                onChange={(e) => setEditForm({ ...editForm, departmentId: e.target.value ? Number(e.target.value) : undefined })}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
-                <option value="">Без отдела</option>
-                {editDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>Должность</Label>
-              <select value={editForm.positionId || ""}
-                onChange={(e) => setEditForm({ ...editForm, positionId: e.target.value ? Number(e.target.value) : undefined })}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
-                <option value="">Без должности</option>
-                {editPositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Статус</Label>
-            <select value={editForm.status}
-              onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-              className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
-              {["Активен","Стажёр","Руководитель","Дистанционно","В отпуске","Больничный","Декрет","Уволен"].map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <EmployeeFormFields
+          value={editForm}
+          onChange={setEditForm}
+          departments={editDepartments}
+          positions={editPositions}
+          managers={editEmployees}
+          excludeManagerId={employeeId}
+        />
       </CrudModal>
     </div>
   );

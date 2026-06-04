@@ -179,6 +179,8 @@ export default function AttendancePage() {
 
   // Table search
   const [tableSearch, setTableSearch] = React.useState("")
+  // Фильтр по статусу через карточки-кнопки
+  const [statusFilter, setStatusFilter] = React.useState<string | null>(null)
 
   // Selfie popup
   type SelfieEvent = NonNullable<AttendanceSummary["selfieEvents"]>[number]
@@ -277,6 +279,12 @@ export default function AttendancePage() {
   const leftCount = filteredData.filter((d) => d.status === "left").length
   const absentCount = filteredData.filter((d) => d.status === "absent").length
   const excusedCount = filteredData.filter((d) => d.status === "excused").length
+
+  // Фильтр по статусу (клик по карточке)
+  const displayedData = React.useMemo(
+    () => (statusFilter ? filteredData.filter((d) => d.status === statusFilter) : filteredData),
+    [filteredData, statusFilter],
+  )
 
   // Correction handlers
   const openCorrection = (row: AttendanceSummary) => {
@@ -804,10 +812,10 @@ export default function AttendancePage() {
   ]
 
   const quickStats = [
-    { label: "На месте", value: presentCount, icon: UserCheck, color: "text-emerald-600", bg: "bg-emerald-100" },
-    { label: "Ушли", value: leftCount, icon: UserMinus, color: "text-red-600", bg: "bg-red-100" },
-    { label: "Отсутствуют", value: absentCount, icon: UserX, color: "text-gray-600", bg: "bg-gray-100" },
-    { label: "Уважит.", value: excusedCount, icon: ShieldCheck, color: "text-amber-600", bg: "bg-amber-100" },
+    { label: "На месте", status: "present", value: presentCount, icon: UserCheck, color: "text-emerald-600", bg: "bg-emerald-100", ring: "ring-emerald-400 border-emerald-300 bg-emerald-50/60" },
+    { label: "Ушли", status: "left", value: leftCount, icon: UserMinus, color: "text-red-600", bg: "bg-red-100", ring: "ring-red-400 border-red-300 bg-red-50/60" },
+    { label: "Отсутствуют", status: "absent", value: absentCount, icon: UserX, color: "text-gray-600", bg: "bg-gray-100", ring: "ring-gray-400 border-gray-300 bg-gray-50/60" },
+    { label: "Уважит.", status: "excused", value: excusedCount, icon: ShieldCheck, color: "text-amber-600", bg: "bg-amber-100", ring: "ring-amber-400 border-amber-300 bg-amber-50/60" },
   ]
 
   return (
@@ -921,22 +929,34 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — кнопки фильтра по статусу */}
       <div className="grid gap-3 grid-cols-2 sm:gap-4 sm:grid-cols-4">
-        {quickStats.map((stat) => (
-          <div
-            key={stat.label}
-            className="flex items-center gap-4 rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 p-4 shadow-sm hover:shadow-md transition-all"
-          >
-            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${stat.bg}`}>
-              <stat.icon className={`h-5 w-5 ${stat.color}`} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{stat.value}</div>
-              <div className="text-xs text-muted-foreground">{stat.label}</div>
-            </div>
-          </div>
-        ))}
+        {quickStats.map((stat) => {
+          const active = statusFilter === stat.status
+          return (
+            <button
+              key={stat.label}
+              type="button"
+              onClick={() => setStatusFilter(active ? null : stat.status)}
+              aria-pressed={active}
+              title={active ? "Сбросить фильтр" : `Показать: ${stat.label}`}
+              className={`flex items-center gap-4 rounded-2xl bg-white/80 backdrop-blur-sm border p-4 shadow-sm text-left transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer ${
+                active ? `ring-2 ${stat.ring} shadow-md` : "border-white/50"
+              }`}
+            >
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${stat.bg}`}>
+                <stat.icon className={`h-5 w-5 ${stat.color}`} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-2xl font-bold">{stat.value}</div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  {stat.label}
+                  {active && <X className="h-3 w-3" />}
+                </div>
+              </div>
+            </button>
+          )
+        })}
       </div>
 
       {/* Table */}
@@ -972,27 +992,43 @@ export default function AttendancePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredData.length === 0 ? (
+                  {displayedData.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="py-12 text-center">
                         <div className="flex flex-col items-center text-muted-foreground gap-2">
                           <Clock className="h-12 w-12 text-gray-300 mb-1" />
-                          <span className="text-sm">Нет данных за выбранную дату</span>
-                          {latestDate && latestDate !== selectedDate && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mt-1 text-xs"
-                              onClick={() => setSelectedDate(latestDate)}
-                            >
-                              Перейти к последним данным ({new Date(latestDate + "T00:00:00").toLocaleDateString("ru-RU")})
-                            </Button>
+                          {statusFilter ? (
+                            <>
+                              <span className="text-sm">Нет сотрудников с этим статусом</span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mt-1 text-xs"
+                                onClick={() => setStatusFilter(null)}
+                              >
+                                Сбросить фильтр
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-sm">Нет данных за выбранную дату</span>
+                              {latestDate && latestDate !== selectedDate && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-1 text-xs"
+                                  onClick={() => setSelectedDate(latestDate)}
+                                >
+                                  Перейти к последним данным ({new Date(latestDate + "T00:00:00").toLocaleDateString("ru-RU")})
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
                     </tr>
                   ) : (
-                    filteredData.map((row, index) => {
+                    displayedData.map((row, index) => {
                       const deadlineExpired = row.correctionDeadline && new Date(row.correctionDeadline) < new Date()
                       return (
                         <tr
@@ -1067,7 +1103,7 @@ export default function AttendancePage() {
                                   <Camera className="h-4 w-4 text-violet-500" />
                                 </Button>
                               )}
-                              {canCorrect && (
+                              {canCorrect && row.id > 0 && (
                                 <Button
                                   variant="ghost"
                                   size="sm"

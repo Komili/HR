@@ -17,6 +17,7 @@ import {
   Clock,
   Calendar,
   CheckCircle2,
+  Cake,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -29,6 +30,72 @@ import {
 import * as XLSX from "xlsx";
 import { getEmployees, getDepartments, getPositions, getInventoryItems, getAttendance } from "@/lib/hrms-api";
 import type { Employee, Department, Position, AttendanceSummary } from "@/lib/types";
+
+const ATT_STATUS_LABELS: Record<string, string> = {
+  present: "На месте",
+  left: "Ушёл",
+  absent: "Отсутствует",
+  excused: "Уважит.",
+};
+
+const ATT_STATUS_STYLES: Record<string, string> = {
+  present: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  left: "bg-red-100 text-red-700 border-red-200",
+  absent: "bg-gray-100 text-gray-600 border-gray-200",
+  excused: "bg-amber-100 text-amber-700 border-amber-200",
+};
+
+function formatAttTime(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function formatAttHours(minutes: number) {
+  if (!minutes || minutes <= 0) return "—";
+  return `${Math.floor(minutes / 60)}ч ${minutes % 60}м`;
+}
+
+// Цвет строки по статусу: зелёный — на месте, красный — ушёл, жёлтый — отпросился, серый — не пришёл
+const ATT_ROW_BG: Record<string, string> = {
+  present: "bg-emerald-50 hover:bg-emerald-100/70",
+  left: "bg-red-50 hover:bg-red-100/70",
+  excused: "bg-amber-50 hover:bg-amber-100/70",
+  absent: "bg-gray-100 hover:bg-gray-200/70",
+};
+
+type Birthday = { employee: Employee; date: Date; daysUntil: number; age: number | null };
+
+// Ближайшие дни рождения в пределах N дней (включая сегодня), отсортированные
+function getUpcomingBirthdays(employees: Employee[], withinDays = 30): Birthday[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const result: Birthday[] = [];
+  for (const emp of employees) {
+    if (!emp.birthDate) continue;
+    const bd = new Date(emp.birthDate);
+    if (isNaN(bd.getTime())) continue;
+    let next = new Date(today.getFullYear(), bd.getMonth(), bd.getDate());
+    next.setHours(0, 0, 0, 0);
+    if (next < today) next = new Date(today.getFullYear() + 1, bd.getMonth(), bd.getDate());
+    const daysUntil = Math.round((next.getTime() - today.getTime()) / 86400000);
+    if (daysUntil <= withinDays) {
+      const age = next.getFullYear() - bd.getFullYear();
+      result.push({ employee: emp, date: next, daysUntil, age: isNaN(age) ? null : age });
+    }
+  }
+  result.sort((a, b) => a.daysUntil - b.daysUntil);
+  return result;
+}
+
+function birthdayWhenLabel(daysUntil: number): string {
+  if (daysUntil === 0) return "Сегодня 🎉";
+  if (daysUntil === 1) return "Завтра";
+  return `через ${daysUntil} дн.`;
+}
+
+function initials(emp: Employee): string {
+  return `${emp.firstName?.charAt(0) || ""}${emp.lastName?.charAt(0) || ""}`.toUpperCase();
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -207,19 +274,14 @@ export default function DashboardPage() {
     },
   ];
 
-  const quickActions = [
-    { title: "Добавить сотрудника", icon: UserPlus, color: "from-emerald-500 to-teal-500", bg: "from-emerald-50 to-teal-50", href: "/employees?action=create" },
-    { title: "Создать отдел", icon: Building2, color: "from-blue-500 to-cyan-500", bg: "from-blue-50 to-cyan-50", href: "/departments?action=create" },
-    { title: "Создать должность", icon: Briefcase, color: "from-violet-500 to-purple-500", bg: "from-violet-50 to-purple-50", href: "/positions?action=create" },
-    { title: "Добавить инвентарь", icon: Package, color: "from-amber-500 to-orange-500", bg: "from-amber-50 to-orange-50", href: "/inventory?action=create" },
-  ];
-
   const reportTypes = [
     { title: "Отчёт по сотрудникам", description: "Полный экспорт данных сотрудников", icon: Users, color: "from-emerald-500 to-teal-500", bg: "from-emerald-50 to-teal-50", action: generateEmployeeReport },
     { title: "Аналитика отделов", description: "Распределение команд и структура", icon: Building2, color: "from-blue-500 to-cyan-500", bg: "from-blue-50 to-cyan-50", action: generateDepartmentReport },
     { title: "Сводка посещаемости", description: "Рабочие часы и статусы", icon: Clock, color: "from-purple-500 to-pink-500", bg: "from-purple-50 to-pink-50", action: generateAttendanceReport },
     { title: "Месячный обзор", description: "Комплексная месячная статистика", icon: Calendar, color: "from-amber-500 to-orange-500", bg: "from-amber-50 to-orange-50", action: generateMonthlyReport },
   ];
+
+  const upcomingBirthdays = getUpcomingBirthdays(employees, 30);
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
@@ -284,6 +346,91 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Посещаемость сегодня */}
+      <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 sm:p-6">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-100 to-cyan-100">
+              <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base sm:text-lg font-bold">Посещаемость сегодня</CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                {new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-xl border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 text-xs sm:text-sm h-8 sm:h-9 self-start sm:self-auto"
+            onClick={() => router.push("/attendance")}
+          >
+            Открыть полную посещаемость
+            <ArrowUpRight className="ml-1 sm:ml-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          </Button>
+        </CardHeader>
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+          {todayAttendance.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground">
+              <Clock className="h-10 w-10 text-gray-300" />
+              <span className="text-sm">Нет данных за сегодня</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-blue-100/50">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b border-blue-100/50">
+                    <th className="text-blue-700 text-xs sm:text-sm font-semibold uppercase tracking-wider py-3 px-3 sm:px-4 text-left">ФИО</th>
+                    <th className="text-blue-700 text-xs sm:text-sm font-semibold uppercase tracking-wider py-3 px-3 sm:px-4 text-left hidden sm:table-cell">Вход</th>
+                    <th className="text-blue-700 text-xs sm:text-sm font-semibold uppercase tracking-wider py-3 px-3 sm:px-4 text-left hidden sm:table-cell">Выход</th>
+                    <th className="text-blue-700 text-xs sm:text-sm font-semibold uppercase tracking-wider py-3 px-3 sm:px-4 text-left hidden sm:table-cell">Часы</th>
+                    <th className="text-blue-700 text-xs sm:text-sm font-semibold uppercase tracking-wider py-3 px-3 sm:px-4 text-left">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {todayAttendance.map((row) => (
+                    <tr key={row.id} className={`border-b border-white/60 last:border-0 transition-colors ${ATT_ROW_BG[row.status] || "hover:bg-blue-50/40"}`}>
+                      <td className="py-2.5 px-3 sm:px-4">
+                        <a
+                          href={`/employees/${row.employeeId}`}
+                          className="font-medium text-sm sm:text-base text-foreground hover:text-blue-600 hover:underline transition-colors"
+                        >
+                          {row.employeeName}
+                        </a>
+                        {/* Время под именем — только на телефоне */}
+                        <div className="sm:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                          <span>Вход: <span className="font-medium text-foreground">{formatAttTime(row.firstEntry)}</span></span>
+                          <span>Выход: <span className="font-medium text-foreground">{formatAttTime(row.lastExit)}</span></span>
+                          {row.isLate && row.firstEntry && (
+                            <span className="font-semibold text-orange-600">Опоздал</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 sm:px-4 hidden sm:table-cell">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm sm:text-base font-medium">{formatAttTime(row.firstEntry)}</span>
+                          {row.isLate && row.firstEntry && (
+                            <span className="inline-flex items-center rounded-full bg-orange-100 border border-orange-200 px-1.5 py-0.5 text-xs font-medium text-orange-700">Опоздал</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 sm:px-4 text-sm sm:text-base font-medium hidden sm:table-cell">{formatAttTime(row.lastExit)}</td>
+                      <td className="py-2.5 px-3 sm:px-4 text-sm sm:text-base font-medium hidden sm:table-cell">{formatAttHours(row.totalMinutes)}</td>
+                      <td className="py-2.5 px-3 sm:px-4">
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs sm:text-sm font-medium ${ATT_STATUS_STYLES[row.status] || "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                          {ATT_STATUS_LABELS[row.status] || row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Stats */}
       <div className="grid gap-3 grid-cols-2 sm:gap-5 lg:grid-cols-4">
         {stats.map((stat, index) => (
@@ -310,31 +457,55 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Quick Actions */}
-      <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl">
+      {/* Дни рождения */}
+      <Card className="border-0 bg-white/80 backdrop-blur-sm shadow-xl overflow-hidden">
         <CardHeader className="p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
-            <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-100 to-orange-100">
-              <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-600" />
+            <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg bg-gradient-to-br from-pink-100 to-rose-100">
+              <Cake className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-pink-600" />
             </div>
-            <CardTitle className="text-base sm:text-lg font-bold">Быстрые действия</CardTitle>
+            <CardTitle className="text-base sm:text-lg font-bold">Дни рождения</CardTitle>
           </div>
-          <p className="text-xs sm:text-sm text-muted-foreground">Создание новых записей в системе</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">Ближайшие 30 дней</p>
         </CardHeader>
-        <CardContent className="grid gap-3 grid-cols-2 sm:gap-4 lg:grid-cols-4 p-4 pt-0 sm:p-6 sm:pt-0">
-          {quickActions.map((item) => (
-            <div
-              key={item.title}
-              onClick={() => router.push(item.href)}
-              className={`group relative overflow-hidden rounded-xl sm:rounded-2xl bg-gradient-to-br ${item.bg} p-3 sm:p-5 border border-white/50 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer`}
-            >
-              <div className={`mb-2 sm:mb-3 flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-gradient-to-br ${item.color} shadow-lg transition-transform group-hover:scale-110`}>
-                <item.icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-              </div>
-              <div className="text-xs sm:text-base font-semibold text-foreground">{item.title}</div>
-              <ArrowUpRight className="absolute right-3 top-3 sm:right-4 sm:top-4 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground/50 opacity-0 transition-all group-hover:opacity-100" />
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+          {upcomingBirthdays.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
+              <Cake className="h-10 w-10 text-gray-300" />
+              <span className="text-sm">Нет дней рождения в ближайшие 30 дней</span>
             </div>
-          ))}
+          ) : (
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+              {upcomingBirthdays.map((b) => {
+                const isToday = b.daysUntil === 0;
+                return (
+                  <div
+                    key={b.employee.id}
+                    onClick={() => router.push(`/employees/${b.employee.id}`)}
+                    className={`group flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 ${isToday ? "border-pink-300 bg-gradient-to-br from-pink-50 to-rose-50 ring-1 ring-pink-200" : "border-gray-200 bg-white hover:border-pink-200"}`}
+                  >
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white bg-gradient-to-br ${isToday ? "from-pink-500 to-rose-500" : "from-violet-400 to-purple-400"}`}>
+                      {initials(b.employee)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-sm text-foreground truncate">{b.employee.lastName} {b.employee.firstName}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {b.employee.position?.name || "—"}{b.age ? ` · ${b.age} лет` : ""}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-semibold text-foreground capitalize">
+                        {b.date.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" })}
+                      </div>
+                      <div className={`text-xs ${isToday ? "text-pink-600 font-semibold" : "text-muted-foreground"}`}>
+                        {birthdayWhenLabel(b.daysUntil)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 

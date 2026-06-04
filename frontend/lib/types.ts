@@ -105,8 +105,10 @@ export type Employee = {
   positionId: number | null;
   managerId: number | null;
   sortOrder?: number;
+  birthDate?: string | null;
   email: string | null;
   phone: string | null;
+  address?: string | null;
   photoPath: string | null;
   status: string | null;
   documents?: { type: string }[];
