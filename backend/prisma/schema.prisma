@@ -40,7 +40,6 @@ model Company {
   hikvisionDevices     HikvisionDevice[]
   agents               Agent[]
   registrationTokens   RegistrationToken[]
-  telegramChats        TelegramChat[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 }
@@ -474,11 +473,8 @@ model TelegramChat {
   chatId     String                                 // Telegram chat id (например -100123 или 12345)
   token      String?                                // Свой токен бота; если null — берётся defaultToken
   categories String   @default("")                  // CSV ключей категорий, напр. "attendance,late,registration"
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  companyId  Int?                                   // null = глобально (все компании + системные)
+  companyIds String   @default("")                  // CSV id компаний; пусто = все компании (глобально)
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  @@index([companyId])
 }

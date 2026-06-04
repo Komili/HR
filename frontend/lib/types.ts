@@ -143,8 +143,7 @@ export type TelegramChat = {
   chatId: string;
   token: string | null;
   categories: string; // CSV ключей категорий
-  companyId: number | null;
-  company?: { id: number; name: string } | null;
+  companyIds: string; // CSV id компаний; пусто = все
   isActive: boolean;
 };
 
@@ -153,7 +152,7 @@ export type TelegramChatInput = {
   chatId: string;
   token?: string | null;
   categories: string[];
-  companyId?: number | null;
+  companyIds: number[];
   isActive?: boolean;
 };
 

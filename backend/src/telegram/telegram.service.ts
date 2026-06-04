@@ -8,7 +8,7 @@ type ChatRoute = {
   chatId: string;
   token: string | null;
   categories: string[];
-  companyId: number | null;
+  companyIds: number[]; // пусто = все компании (глобально)
 };
 
 type NotifyOpts = {
@@ -55,7 +55,7 @@ export class TelegramService implements OnModuleInit, OnApplicationBootstrap, On
         chatId: r.chatId,
         token: r.token || null,
         categories: (r.categories || '').split(',').map((s) => s.trim()).filter(Boolean),
-        companyId: r.companyId,
+        companyIds: (r.companyIds || '').split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n)),
       }));
 
       // Фолбэк на .env, если чаты ещё не настроены в БД
@@ -67,7 +67,7 @@ export class TelegramService implements OnModuleInit, OnApplicationBootstrap, On
           chatId,
           token: null,
           categories: ['attendance', 'correction', 'registration', 'access', 'system'],
-          companyId: null,
+          companyIds: [],
         }));
         this.logger.log(`ℹ️  Чаты из БД не настроены — использую .env (${ids.length} чат(ов))`);
       }
@@ -94,9 +94,12 @@ export class TelegramService implements OnModuleInit, OnApplicationBootstrap, On
 
     for (const chat of this.chats) {
       if (!chat.categories.includes(category)) continue;
-      // Компания: глобальный чат (companyId=null) получает всё;
-      // чат компании — только события своей компании.
-      if (chat.companyId != null && chat.companyId !== companyId) continue;
+      // Компании: пустой список = глобальный чат (получает всё);
+      // иначе — только события из выбранных компаний.
+      if (chat.companyIds.length > 0) {
+        if (companyId == null) continue;
+        if (!chat.companyIds.includes(companyId)) continue;
+      }
 
       const token = chat.token || this.defaultToken;
       if (!token) continue;

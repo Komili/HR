@@ -8,7 +8,7 @@ type ChatInput = {
   chatId?: string;
   token?: string | null;
   categories?: string[];
-  companyId?: number | null;
+  companyIds?: number[];
   isActive?: boolean;
 };
 
@@ -40,14 +40,18 @@ export class TelegramSettingsService {
   }
 
   listChats() {
-    return this.prisma.telegramChat.findMany({
-      orderBy: [{ companyId: 'asc' }, { id: 'asc' }],
-      include: { company: { select: { id: true, name: true } } },
-    });
+    return this.prisma.telegramChat.findMany({ orderBy: { id: 'asc' } });
   }
 
   private sanitizeCategories(categories?: string[]): string {
     return (categories || []).filter((c) => TELEGRAM_CATEGORY_KEYS.includes(c)).join(',');
+  }
+
+  private sanitizeCompanyIds(companyIds?: number[]): string {
+    return (companyIds || [])
+      .map((n) => Number(n))
+      .filter((n) => Number.isInteger(n) && n > 0)
+      .join(',');
   }
 
   async createChat(data: ChatInput) {
@@ -59,7 +63,7 @@ export class TelegramSettingsService {
         chatId: data.chatId.trim(),
         token: data.token?.trim() || null,
         categories: this.sanitizeCategories(data.categories),
-        companyId: data.companyId ?? null,
+        companyIds: this.sanitizeCompanyIds(data.companyIds),
         isActive: data.isActive ?? true,
       },
     });
@@ -77,7 +81,7 @@ export class TelegramSettingsService {
         ...(data.chatId !== undefined ? { chatId: data.chatId.trim() } : {}),
         ...(data.token !== undefined ? { token: data.token?.trim() || null } : {}),
         ...(data.categories !== undefined ? { categories: this.sanitizeCategories(data.categories) } : {}),
-        ...(data.companyId !== undefined ? { companyId: data.companyId ?? null } : {}),
+        ...(data.companyIds !== undefined ? { companyIds: this.sanitizeCompanyIds(data.companyIds) } : {}),
         ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       },
     });

@@ -36,8 +36,8 @@ export default function TelegramSettingsPage() {
   // Edit dialog
   const [editOpen, setEditOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<TelegramChat | null>(null)
-  const [form, setForm] = React.useState<{ title: string; chatId: string; token: string; companyId: number | null; categories: string[]; isActive: boolean }>(
-    { title: "", chatId: "", token: "", companyId: null, categories: [], isActive: true }
+  const [form, setForm] = React.useState<{ title: string; chatId: string; token: string; companyIds: number[]; categories: string[]; isActive: boolean }>(
+    { title: "", chatId: "", token: "", companyIds: [], categories: [], isActive: true }
   )
   const [saving, setSaving] = React.useState(false)
 
@@ -82,9 +82,12 @@ export default function TelegramSettingsPage() {
     }
   }
 
+  const parseIds = (csv: string): number[] =>
+    (csv || "").split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n))
+
   const openCreate = () => {
     setEditing(null)
-    setForm({ title: "", chatId: "", token: "", companyId: null, categories: categories.map((c) => c.key), isActive: true })
+    setForm({ title: "", chatId: "", token: "", companyIds: [], categories: categories.map((c) => c.key), isActive: true })
     setEditOpen(true)
   }
 
@@ -94,7 +97,7 @@ export default function TelegramSettingsPage() {
       title: chat.title,
       chatId: chat.chatId,
       token: chat.token || "",
-      companyId: chat.companyId,
+      companyIds: parseIds(chat.companyIds),
       categories: (chat.categories || "").split(",").map((s) => s.trim()).filter(Boolean),
       isActive: chat.isActive,
     })
@@ -105,6 +108,13 @@ export default function TelegramSettingsPage() {
     setForm((f) => ({
       ...f,
       categories: f.categories.includes(key) ? f.categories.filter((k) => k !== key) : [...f.categories, key],
+    }))
+  }
+
+  const toggleCompany = (id: number) => {
+    setForm((f) => ({
+      ...f,
+      companyIds: f.companyIds.includes(id) ? f.companyIds.filter((x) => x !== id) : [...f.companyIds, id],
     }))
   }
 
@@ -119,7 +129,7 @@ export default function TelegramSettingsPage() {
         title: form.title.trim(),
         chatId: form.chatId.trim(),
         token: form.token.trim() || null,
-        companyId: form.companyId,
+        companyIds: form.companyIds,
         categories: form.categories,
         isActive: form.isActive,
       }
@@ -159,8 +169,11 @@ export default function TelegramSettingsPage() {
     }
   }
 
-  const companyName = (id: number | null) =>
-    id == null ? "Все компании (глобально)" : (companies.find((c) => c.id === id)?.name || `ID ${id}`)
+  const companiesLabel = (csv: string): string => {
+    const ids = parseIds(csv)
+    if (ids.length === 0) return "Все компании (глобально)"
+    return ids.map((id) => companies.find((c) => c.id === id)?.name || `ID ${id}`).join(", ")
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -248,7 +261,7 @@ export default function TelegramSettingsPage() {
                           {chat.token && <span className="text-[10px] rounded-full bg-violet-100 text-violet-700 px-2 py-0.5">свой бот</span>}
                         </div>
                         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                          <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />{companyName(chat.companyId)}</span>
+                          <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />{companiesLabel(chat.companyIds)}</span>
                           <span className="font-mono">chat: {chat.chatId}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -295,22 +308,30 @@ export default function TelegramSettingsPage() {
             <Label>Название *</Label>
             <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Напр. «Кадры Фавз» или «Директор»" className="h-10 rounded-xl" />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Chat ID *</Label>
-              <Input value={form.chatId} onChange={(e) => setForm({ ...form, chatId: e.target.value })} placeholder="-1001234567890 или 123456789" className="h-10 rounded-xl font-mono text-sm" />
+          <div className="space-y-2">
+            <Label>Chat ID *</Label>
+            <Input value={form.chatId} onChange={(e) => setForm({ ...form, chatId: e.target.value })} placeholder="-1001234567890 или 123456789" className="h-10 rounded-xl font-mono text-sm" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Компании</Label>
+              <button type="button" className="text-xs text-sky-600 hover:underline" onClick={() => setForm({ ...form, companyIds: form.companyIds.length === companies.length ? [] : companies.map((c) => c.id) })}>
+                {form.companyIds.length === companies.length ? "Снять все" : "Выбрать все"}
+              </button>
             </div>
-            <div className="space-y-2">
-              <Label>Компания</Label>
-              <select
-                value={form.companyId ?? ""}
-                onChange={(e) => setForm({ ...form, companyId: e.target.value ? Number(e.target.value) : null })}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Все компании (глобально)</option>
-                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 rounded-xl border border-gray-200 p-3 max-h-44 overflow-y-auto">
+              {companies.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input type="checkbox" checked={form.companyIds.includes(c.id)} onChange={() => toggleCompany(c.id)} className="h-4 w-4 rounded accent-sky-600" />
+                  <span className="truncate">{c.name}</span>
+                </label>
+              ))}
             </div>
+            <p className="text-xs text-muted-foreground">
+              {form.companyIds.length === 0
+                ? "Ничего не выбрано = все компании (глобально, + системные уведомления)"
+                : `Выбрано компаний: ${form.companyIds.length}`}
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Свой токен бота (необязательно)</Label>
