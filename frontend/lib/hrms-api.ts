@@ -72,6 +72,40 @@ export async function updateCompanySchedule(
   return apiFetch(`/companies/${id}/schedule`, { method: "PATCH", body: data });
 }
 
+// ============ TELEGRAM SETTINGS (суперадмин) ============
+
+export async function getTelegramCategories(): Promise<import("./types").TelegramCategoryDef[]> {
+  return apiFetch("/telegram/categories");
+}
+
+export async function getTelegramConfig(): Promise<{ defaultToken: string }> {
+  return apiFetch("/telegram/config");
+}
+
+export async function updateTelegramConfig(defaultToken: string): Promise<{ defaultToken: string }> {
+  return apiFetch("/telegram/config", { method: "PATCH", body: { defaultToken } });
+}
+
+export async function getTelegramChats(): Promise<import("./types").TelegramChat[]> {
+  return apiFetch("/telegram/chats");
+}
+
+export async function createTelegramChat(data: import("./types").TelegramChatInput): Promise<import("./types").TelegramChat> {
+  return apiFetch("/telegram/chats", { method: "POST", body: data });
+}
+
+export async function updateTelegramChat(id: number, data: Partial<import("./types").TelegramChatInput>): Promise<import("./types").TelegramChat> {
+  return apiFetch(`/telegram/chats/${id}`, { method: "PATCH", body: data });
+}
+
+export async function deleteTelegramChat(id: number): Promise<void> {
+  await apiFetch(`/telegram/chats/${id}`, { method: "DELETE" });
+}
+
+export async function testTelegramChat(id: number): Promise<{ success: boolean }> {
+  return apiFetch(`/telegram/chats/${id}/test`, { method: "POST" });
+}
+
 // ============ EMPLOYEES ============
 
 export async function getEmployees(

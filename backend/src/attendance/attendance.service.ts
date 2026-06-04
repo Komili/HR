@@ -397,8 +397,10 @@ export class AttendanceService implements OnModuleInit {
 
       // TG уведомление
       const timeLabel = type === 'manual_in' ? '🟢 Ручной Check-In' : '🔴 Ручной Check-Out';
-      await this.telegram.sendMessage(
+      await this.telegram.notify(
+        'correction',
         `${timeLabel}\n👤 ${empName}\n📅 ${dateStr}  ⏰ ${data.time}\n💬 ${data.note}${data.deadline ? `\n⏳ Срок: до ${data.deadline}` : ''}\n👮 Кадровик: ${user.email}`,
+        { companyId: attendance.companyId },
       );
     } else if (type === 'remote') {
       // Вне офиса — только пометка, без событий
@@ -413,8 +415,10 @@ export class AttendanceService implements OnModuleInit {
         },
       });
 
-      await this.telegram.sendMessage(
+      await this.telegram.notify(
+        'correction',
         `🏠 Вне офиса\n👤 ${empName}\n📅 ${dateStr}\n💬 ${data.note}${data.deadline ? `\n⏳ Срок: до ${data.deadline}` : ''}\n👮 Кадровик: ${user.email}`,
+        { companyId: attendance.companyId },
       );
     } else {
       // Тип 'minutes': и +30 и -30 прибавляют время (знак = смысл, не направление)
@@ -436,8 +440,10 @@ export class AttendanceService implements OnModuleInit {
       });
 
       const sign = minutes >= 0 ? '+' : '';
-      await this.telegram.sendMessage(
+      await this.telegram.notify(
+        'correction',
         `✏️ Корректировка времени\n👤 ${empName}\n📅 ${dateStr}  ${sign}${minutes} мин.\n💬 ${data.note}${data.deadline ? `\n⏳ Срок: до ${data.deadline}` : ''}\n👮 Кадровик: ${user.email}`,
+        { companyId: attendance.companyId },
       );
     }
 
@@ -491,8 +497,10 @@ export class AttendanceService implements OnModuleInit {
     const empName = `${employee.lastName} ${employee.firstName}`;
     const dirLabel = data.direction === 'IN' ? '🟢 Check-In' : '🔴 Check-Out';
     const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dushanbe' });
-    await this.telegram.sendMessage(
+    await this.telegram.notify(
+      'correction',
       `${dirLabel} (ручной)\n👤 ${empName}  ⏰ ${timeStr}${data.note ? `\n💬 ${data.note}` : ''}${data.deadline ? `\n⏳ Срок: до ${data.deadline}` : ''}\n👮 ${user.email}`,
+      { companyId: employee.companyId },
     );
 
     return event;
@@ -518,8 +526,10 @@ export class AttendanceService implements OnModuleInit {
         hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dushanbe',
       });
 
-      await this.telegram.sendMessage(
+      await this.telegram.notify(
+        'correction',
         `⚠️ Срок корректировки истёк!\n👤 ${empName}\n⏳ Срок был до: ${deadlineStr}\n💬 ${record.correctionNote || '—'}\n📞 Позвоните сотруднику и уточните!`,
+        { companyId: record.companyId },
       );
 
       await this.prisma.attendance.update({

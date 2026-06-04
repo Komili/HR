@@ -1,116 +1,161 @@
 import { Injectable, Logger, OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { TelegramCategory } from './telegram.categories';
 
+type ChatRoute = {
+  id: number;
+  title: string;
+  chatId: string;
+  token: string | null;
+  categories: string[];
+  companyId: number | null;
+};
+
+type NotifyOpts = {
+  companyId?: number | null;
+  photo?: Buffer;
+  caption?: string;
+  parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2' | null;
+};
+
+/**
+ * Telegram-уведомления с настройкой через БД (TelegramConfig + TelegramChat).
+ * Маршрутизация: notify(category, text, { companyId }) → все активные чаты,
+ * подписанные на категорию, с учётом компании (глобальный чат получает всё).
+ *
+ * Совместимость: старые методы sendMessage/sendAttendance/... routed через notify.
+ */
 @Injectable()
 export class TelegramService implements OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(TelegramService.name);
 
-  // Бот для алертов/системных сообщений
-  private alertBot: any = null;
-  private alertChatIds: string[] = [];
+  private defaultToken: string | null = null;
+  private chats: ChatRoute[] = [];
+  private readonly bots = new Map<string, any>(); // token → TelegramBot
+  private TelegramBot: any = null;
 
-  // Бот для посещаемости (Вход/Выход)
-  private attendanceBot: any = null;
-  private attendanceChatIds: string[] = [];
+  constructor(private readonly prisma: PrismaService) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const TelegramBot = require('node-telegram-bot-api');
+    this.TelegramBot = require('node-telegram-bot-api');
+    await this.reload();
+  }
 
-    // ── Основной бот (алерты) ──
-    const alertToken = process.env.TELEGRAM_TOKEN;
-    const alertChatIdsRaw = process.env.TELEGRAM_CHAT_IDS;
+  /** Перечитать конфигурацию из БД (вызывается после изменений в админке) */
+  async reload(): Promise<void> {
+    try {
+      const config = await this.prisma.telegramConfig.findUnique({ where: { id: 1 } });
+      this.defaultToken = config?.defaultToken || process.env.TELEGRAM_TOKEN || null;
 
-    if (alertToken && alertChatIdsRaw) {
-      this.alertBot = new TelegramBot(alertToken, { polling: false });
-      this.alertChatIds = alertChatIdsRaw.split(',').map((id) => id.trim()).filter(Boolean);
-      this.logger.log(`✅ Бот алертов запущен. Чаты: ${this.alertChatIds.join(', ')}`);
-    } else {
-      this.logger.warn('TELEGRAM_TOKEN / TELEGRAM_CHAT_IDS не заданы — алерты отключены');
+      const rows = await this.prisma.telegramChat.findMany({ where: { isActive: true } });
+      this.chats = rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        chatId: r.chatId,
+        token: r.token || null,
+        categories: (r.categories || '').split(',').map((s) => s.trim()).filter(Boolean),
+        companyId: r.companyId,
+      }));
+
+      // Фолбэк на .env, если чаты ещё не настроены в БД
+      if (this.chats.length === 0 && this.defaultToken && process.env.TELEGRAM_CHAT_IDS) {
+        const ids = process.env.TELEGRAM_CHAT_IDS.split(',').map((s) => s.trim()).filter(Boolean);
+        this.chats = ids.map((chatId, i) => ({
+          id: -1 - i,
+          title: `.env чат ${chatId}`,
+          chatId,
+          token: null,
+          categories: ['attendance', 'correction', 'registration', 'access', 'system'],
+          companyId: null,
+        }));
+        this.logger.log(`ℹ️  Чаты из БД не настроены — использую .env (${ids.length} чат(ов))`);
+      }
+
+      this.logger.log(`✅ Telegram сконфигурирован: ${this.chats.length} чат(ов), токен ${this.defaultToken ? 'есть' : 'НЕ задан'}`);
+    } catch (err) {
+      this.logger.error(`Ошибка загрузки конфигурации Telegram: ${err.message}`);
     }
+  }
 
-    // ── Бот посещаемости ──
-    const attendanceToken = process.env.TELEGRAM_ATTENDANCE_TOKEN;
-    const attendanceChatIdsRaw = process.env.TELEGRAM_ATTENDANCE_CHAT_IDS;
-
-    if (attendanceToken && attendanceChatIdsRaw) {
-      // Отдельный бот
-      this.attendanceBot = new TelegramBot(attendanceToken, { polling: false });
-      this.attendanceChatIds = attendanceChatIdsRaw.split(',').map((id) => id.trim()).filter(Boolean);
-      this.logger.log(`✅ Бот посещаемости запущен. Чаты: ${this.attendanceChatIds.join(', ')}`);
-    } else if (attendanceChatIdsRaw && this.alertBot) {
-      // Тот же бот, другие чаты
-      this.attendanceBot = this.alertBot;
-      this.attendanceChatIds = attendanceChatIdsRaw.split(',').map((id) => id.trim()).filter(Boolean);
-      this.logger.log(`✅ Посещаемость → тот же бот, чаты: ${this.attendanceChatIds.join(', ')}`);
-    } else if (this.alertBot) {
-      // Всё в один чат
-      this.attendanceBot = this.alertBot;
-      this.attendanceChatIds = this.alertChatIds;
-      this.logger.log('ℹ️  TELEGRAM_ATTENDANCE_CHAT_IDS не задан — посещаемость идёт в основной чат');
+  private getBot(token: string): any | null {
+    if (!token) return null;
+    let bot = this.bots.get(token);
+    if (!bot) {
+      bot = new this.TelegramBot(token, { polling: false });
+      this.bots.set(token, bot);
     }
+    return bot;
+  }
+
+  /** Основной метод: разослать уведомление подписанным на категорию чатам */
+  async notify(category: TelegramCategory | string, text: string, opts: NotifyOpts = {}): Promise<void> {
+    const { companyId, photo, caption, parseMode = 'HTML' } = opts;
+
+    for (const chat of this.chats) {
+      if (!chat.categories.includes(category)) continue;
+      // Компания: глобальный чат (companyId=null) получает всё;
+      // чат компании — только события своей компании.
+      if (chat.companyId != null && chat.companyId !== companyId) continue;
+
+      const token = chat.token || this.defaultToken;
+      if (!token) continue;
+      const bot = this.getBot(token);
+      if (!bot) continue;
+
+      try {
+        if (photo) {
+          await bot.sendPhoto(chat.chatId, photo, { caption: caption ?? text, parse_mode: 'HTML' });
+        } else {
+          await bot.sendMessage(chat.chatId, text, parseMode ? { parse_mode: parseMode } : {});
+        }
+      } catch (err) {
+        // Если фото не ушло — пробуем текстом
+        if (photo) {
+          await bot.sendMessage(chat.chatId, caption ?? text, { parse_mode: 'HTML' }).catch(() => {});
+        }
+        this.logger.error(`Ошибка Telegram (${category}, chat=${chat.chatId}): ${err.message}`);
+      }
+    }
+  }
+
+  /** Тестовая отправка в конкретный чат (из админки) */
+  async sendTest(token: string, chatId: string, text: string): Promise<void> {
+    if (!this.TelegramBot) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      this.TelegramBot = require('node-telegram-bot-api');
+    }
+    const bot = this.getBot(token);
+    if (!bot) throw new Error('Токен бота не задан');
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
   }
 
   async onApplicationBootstrap() {
-    const now = this.formatTime(new Date());
-    await this.sendMessage(`✅ Сервер КАДРЫ запущен\n⏰ ${now}`);
+    await this.notify('system', `✅ Сервер КАДРЫ запущен\n⏰ ${this.formatTime(new Date())}`);
   }
 
   async onApplicationShutdown() {
-    const now = this.formatTime(new Date());
-    await this.sendMessage(`🛑 Сервер КАДРЫ остановлен\n⏰ ${now}`);
+    await this.notify('system', `🛑 Сервер КАДРЫ остановлен\n⏰ ${this.formatTime(new Date())}`);
   }
 
-  /** Алерты, системные сообщения, бэкапы → TELEGRAM_CHAT_IDS */
-  async sendMessage(text: string, parseMode: 'HTML' | 'Markdown' | 'MarkdownV2' | null = 'HTML'): Promise<void> {
-    if (!this.alertBot || this.alertChatIds.length === 0) return;
+  // ─────────── Совместимость со старым кодом ───────────
 
-    for (const chatId of this.alertChatIds) {
-      try {
-        await this.alertBot.sendMessage(chatId, text, parseMode ? { parse_mode: parseMode } : {});
-      } catch (err) {
-        this.logger.error(`Ошибка Telegram alert (chatId=${chatId}): ${err.message}`);
-      }
-    }
+  /** Алерты/системные сообщения → категория system */
+  async sendMessage(text: string, parseMode: 'HTML' | 'Markdown' | 'MarkdownV2' | null = 'HTML'): Promise<void> {
+    await this.notify('system', text, { parseMode });
   }
 
   async sendPhoto(photo: Buffer, caption: string): Promise<void> {
-    if (!this.alertBot || this.alertChatIds.length === 0) return;
-
-    for (const chatId of this.alertChatIds) {
-      try {
-        await this.alertBot.sendPhoto(chatId, photo, { caption, parse_mode: 'HTML' });
-      } catch (err) {
-        this.logger.warn(`sendPhoto failed (chatId=${chatId}): ${err.message}, sending text`);
-        await this.alertBot.sendMessage(chatId, caption, { parse_mode: 'HTML' }).catch(() => {});
-      }
-    }
+    await this.notify('system', caption, { photo, caption });
   }
 
-  /** Вход/Выход сотрудника → TELEGRAM_ATTENDANCE_TOKEN + TELEGRAM_ATTENDANCE_CHAT_IDS */
-  async sendAttendance(text: string): Promise<void> {
-    if (!this.attendanceBot || this.attendanceChatIds.length === 0) return;
-
-    for (const chatId of this.attendanceChatIds) {
-      try {
-        await this.attendanceBot.sendMessage(chatId, text, { parse_mode: 'HTML' });
-      } catch (err) {
-        this.logger.error(`Ошибка Telegram attendance (chatId=${chatId}): ${err.message}`);
-      }
-    }
+  /** Вход/Выход сотрудника → категория attendance */
+  async sendAttendance(text: string, companyId?: number | null): Promise<void> {
+    await this.notify('attendance', text, { companyId });
   }
 
-  /** Вход/Выход с фото → TELEGRAM_ATTENDANCE_TOKEN + TELEGRAM_ATTENDANCE_CHAT_IDS */
-  async sendAttendancePhoto(photo: Buffer, caption: string): Promise<void> {
-    if (!this.attendanceBot || this.attendanceChatIds.length === 0) return;
-
-    for (const chatId of this.attendanceChatIds) {
-      try {
-        await this.attendanceBot.sendPhoto(chatId, photo, { caption, parse_mode: 'HTML' });
-      } catch (err) {
-        this.logger.warn(`sendAttendancePhoto failed (chatId=${chatId}): ${err.message}, sending text`);
-        await this.attendanceBot.sendMessage(chatId, caption, { parse_mode: 'HTML' }).catch(() => {});
-      }
-    }
+  async sendAttendancePhoto(photo: Buffer, caption: string, companyId?: number | null): Promise<void> {
+    await this.notify('attendance', caption, { photo, caption, companyId });
   }
 
   private formatTime(date: Date): string {

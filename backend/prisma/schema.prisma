@@ -40,6 +40,7 @@ model Company {
   hikvisionDevices     HikvisionDevice[]
   agents               Agent[]
   registrationTokens   RegistrationToken[]
+  telegramChats        TelegramChat[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 }
@@ -455,4 +456,29 @@ model HikvisionAccess {
   @@unique([deviceId, employeeId])
   @@index([employeeId])
   @@index([deviceId])
+}
+
+// ─────────── Telegram уведомления (настраиваемые) ───────────
+
+// Глобальная конфигурация Telegram (singleton, id=1)
+model TelegramConfig {
+  id           Int      @id @default(1)
+  defaultToken String?  // Токен бота по умолчанию (если у чата не задан свой)
+  updatedAt    DateTime @updatedAt
+}
+
+// Чат-получатель уведомлений с маршрутизацией по категориям и компаниям
+model TelegramChat {
+  id         Int      @id @default(autoincrement())
+  title      String                                 // Удобное имя ("Кадры Фавз", "Директор" и т.п.)
+  chatId     String                                 // Telegram chat id (например -100123 или 12345)
+  token      String?                                // Свой токен бота; если null — берётся defaultToken
+  categories String   @default("")                  // CSV ключей категорий, напр. "attendance,late,registration"
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId  Int?                                   // null = глобально (все компании + системные)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([companyId])
 }

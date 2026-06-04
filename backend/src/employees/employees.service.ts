@@ -288,12 +288,14 @@ export class EmployeesService {
       .map(a => `• ${a.device.officeName || `Устройство #${a.device.id}`} (${a.device.direction === 'IN' ? 'Вход' : 'Выход'})`)
       .join('\n');
 
-    await this.telegram.sendMessage(
+    await this.telegram.notify(
+      'access',
       `🔒 <b>Face ID автоматически отозван</b>\n\n` +
       `👤 <b>${fullName}</b>\n` +
       `📋 Новый статус: <b>${newStatus}</b>\n\n` +
       `🚪 Устройства (${accesses.length}):\n${deviceList}\n\n` +
       `🤖 Relay-агент выполнит отзыв при следующем подключении`,
+      { companyId: accesses[0]?.device.companyId },
     );
   }
 

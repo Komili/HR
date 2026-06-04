@@ -308,27 +308,28 @@ export class CheckinService {
     ].filter(s => s !== null).join('\n');
 
     // Send selfie if available, else stored photo
+    const checkinCompanyId = (employee as any).companyId as number | undefined;
     if (selfiePath && fs.existsSync(selfiePath)) {
       try {
         const photo = fs.readFileSync(selfiePath);
-        await this.telegramService.sendAttendancePhoto(photo, caption);
+        await this.telegramService.sendAttendancePhoto(photo, caption, checkinCompanyId);
       } catch {
-        await this.telegramService.sendAttendance(caption);
+        await this.telegramService.sendAttendance(caption, checkinCompanyId);
       }
     } else if (employee.photoPath) {
       try {
         const normPath = (employee.photoPath as string).replace(/photo\.jpg$/, 'photo_norm.jpg');
         const absPath = path.resolve(fs.existsSync(normPath) ? normPath : employee.photoPath as string);
         if (fs.existsSync(absPath)) {
-          await this.telegramService.sendAttendancePhoto(fs.readFileSync(absPath), caption);
+          await this.telegramService.sendAttendancePhoto(fs.readFileSync(absPath), caption, checkinCompanyId);
         } else {
-          await this.telegramService.sendAttendance(caption);
+          await this.telegramService.sendAttendance(caption, checkinCompanyId);
         }
       } catch {
-        await this.telegramService.sendAttendance(caption);
+        await this.telegramService.sendAttendance(caption, checkinCompanyId);
       }
     } else {
-      await this.telegramService.sendAttendance(caption);
+      await this.telegramService.sendAttendance(caption, checkinCompanyId);
     }
 
     return {

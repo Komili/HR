@@ -408,7 +408,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     ].filter(s => s !== null).join('\n');
 
     if (facePhoto && facePhoto.length > 1000) {
-      await this.telegramService.sendAttendancePhoto(facePhoto, caption);
+      await this.telegramService.sendAttendancePhoto(facePhoto, caption, employee.companyId);
     } else if (employee.photoPath) {
       // Устройство не прислало фото — отправляем нормализованное фото из хранилища
       try {
@@ -416,15 +416,15 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
         const absPath = path.resolve(fs.existsSync(normPath) ? normPath : employee.photoPath);
         if (fs.existsSync(absPath)) {
           const storedPhoto = fs.readFileSync(absPath);
-          await this.telegramService.sendAttendancePhoto(storedPhoto, caption);
+          await this.telegramService.sendAttendancePhoto(storedPhoto, caption, employee.companyId);
         } else {
-          await this.telegramService.sendAttendance(caption);
+          await this.telegramService.sendAttendance(caption, employee.companyId);
         }
       } catch {
-        await this.telegramService.sendAttendance(caption);
+        await this.telegramService.sendAttendance(caption, employee.companyId);
       }
     } else {
-      await this.telegramService.sendAttendance(caption);
+      await this.telegramService.sendAttendance(caption, employee.companyId);
     }
     this.logger.log(`${isIn ? 'Вход' : 'Выход'}: ${fullName} — ${officeName} (${timeStr})`);
   }

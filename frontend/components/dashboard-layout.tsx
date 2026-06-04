@@ -29,6 +29,7 @@ import {
   Smartphone,
   QrCode,
   ClipboardList,
+  Send,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -241,6 +242,7 @@ export default function DashboardLayout({
                 </div>
                 <NavLink path="/admin" icon={Shield} name="Админ-панель" description="Управление" />
                 <NavLink path="/doors" icon={DoorOpen} name="Двери (СКУД)" description="Face ID доступ" />
+                <NavLink path="/telegram" icon={Send} name="Telegram" description="Уведомления" />
               </>
             )}
           </nav>
@@ -317,6 +319,7 @@ export default function DashboardLayout({
                   </div>
                   <NavLink path="/admin" icon={Shield} name="Админ-панель" description="Управление" onClick={() => setMobileMenuOpen(false)} />
                   <NavLink path="/doors" icon={DoorOpen} name="Двери (СКУД)" description="Face ID доступ" onClick={() => setMobileMenuOpen(false)} />
+                  <NavLink path="/telegram" icon={Send} name="Telegram" description="Уведомления" onClick={() => setMobileMenuOpen(false)} />
                 </>
               )}
             </nav>

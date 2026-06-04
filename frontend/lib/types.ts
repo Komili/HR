@@ -135,6 +135,28 @@ export type EmployeeDocument = {
   filePath?: string;
 };
 
+export type TelegramCategoryDef = { key: string; label: string };
+
+export type TelegramChat = {
+  id: number;
+  title: string;
+  chatId: string;
+  token: string | null;
+  categories: string; // CSV ключей категорий
+  companyId: number | null;
+  company?: { id: number; name: string } | null;
+  isActive: boolean;
+};
+
+export type TelegramChatInput = {
+  title: string;
+  chatId: string;
+  token?: string | null;
+  categories: string[];
+  companyId?: number | null;
+  isActive?: boolean;
+};
+
 export type CreateEmployeeInput = {
   firstName: string;
   lastName: string;

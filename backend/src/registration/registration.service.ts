@@ -72,7 +72,8 @@ export class RegistrationService {
 
     // Telegram уведомление кадровику
     const companyName = regToken.company.shortName || regToken.company.name;
-    this.telegram.sendMessage(
+    this.telegram.notify(
+      'registration',
       `📋 <b>Новая заявка на регистрацию</b>\n\n` +
       `👤 ${dto.lastName} ${dto.firstName}${dto.patronymic ? ' ' + dto.patronymic : ''}\n` +
       `🏢 Компания: ${companyName}\n` +
@@ -80,6 +81,7 @@ export class RegistrationService {
       `📧 Email: ${dto.email || '—'}\n` +
       `🎂 Дата рождения: ${dto.birthDate ? new Date(dto.birthDate).toLocaleDateString('ru-RU') : '—'}\n\n` +
       `👉 Войдите в систему → Регистрации → Заявки`,
+      { companyId: regToken.companyId },
     ).catch(() => {});
 
     return { success: true, message: 'Заявка успешно отправлена' };
