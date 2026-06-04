@@ -232,7 +232,7 @@ export default function DashboardLayout({
             {menuItems.map((item) => (
               <NavLink key={item.path} {...item} />
             ))}
-            {isHoldingAdmin && (
+            {isHoldingAdmin && user?.role !== 'Директор' && (
               <>
                 <div className="my-3 border-t border-gray-100" />
                 <div className="mb-2 px-3">
@@ -311,7 +311,7 @@ export default function DashboardLayout({
               {menuItems.map((item) => (
                 <NavLink key={item.path} {...item} onClick={() => setMobileMenuOpen(false)} />
               ))}
-              {isHoldingAdmin && (
+              {isHoldingAdmin && user?.role !== 'Директор' && (
                 <>
                   <div className="my-3 border-t border-gray-100" />
                   <div className="mb-2 px-3">
