@@ -21,6 +21,10 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
+  // Доверяем первому прокси (Nginx) — чтобы req.ip = реальный IP клиента из X-Forwarded-For
+  // Без этого ThrottlerGuard видит IP Nginx-а и rate limit не работает per-client
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   // Захватываем raw body для Hikvision ДО всех body-parser'ов (multipart не парсится стандартно)
   app.use('/api/hikvision/event', (req: any, _res: any, next: any) => {
     const chunks: Buffer[] = [];

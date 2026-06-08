@@ -49,7 +49,7 @@ export class CheckinController {
   }
 
   // Поиск сотрудника по номеру телефона — строгий лимит против перебора
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Get('lookup')
   lookupByPhone(@Query('phone') phone: string) {
     if (!phone?.trim()) throw new BadRequestException('Укажите номер телефона');

@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useCallback, useEffect } from "react"
-import { Loader2, CheckCircle2, Clock, LogOut, LogIn, ChevronRight, Phone, Camera, RotateCcw } from "lucide-react"
+import { Loader2, CheckCircle2, Clock, LogOut, LogIn, ChevronRight, Phone, Camera, RotateCcw, ShieldCheck } from "lucide-react"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7272/api"
 
@@ -178,6 +178,14 @@ function SelfieCamera({ onCapture }: { onCapture: (blob: Blob) => void }) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+function generateCaptcha() {
+  const a = Math.floor(Math.random() * 10) + 1
+  const b = Math.floor(Math.random() * 9) + 1
+  return { a, b, answer: a + b }
+}
+
+const CAPTCHA_THRESHOLD = 3
+
 export default function PhoneCheckinPage() {
   const [step, setStep] = useState<"phone" | "greeting" | "photo" | "loading" | "result">("phone")
   const [phone, setPhone] = useState("")
@@ -187,15 +195,53 @@ export default function PhoneCheckinPage() {
   const [error, setError] = useState<string | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
 
+  const [attempts, setAttempts] = useState(0)
+  const [captcha, setCaptcha] = useState(generateCaptcha)
+  const [captchaInput, setCaptchaInput] = useState("")
+  const [captchaError, setCaptchaError] = useState(false)
+  const [rateLimitCooldown, setRateLimitCooldown] = useState(0)
+
+  const captchaRequired = attempts >= CAPTCHA_THRESHOLD
+
+  const refreshCaptcha = () => {
+    setCaptcha(generateCaptcha())
+    setCaptchaInput("")
+    setCaptchaError(false)
+  }
+
+  // Обратный отсчёт после 429
+  useEffect(() => {
+    if (rateLimitCooldown <= 0) return
+    const t = setTimeout(() => setRateLimitCooldown(n => n - 1), 1000)
+    return () => clearTimeout(t)
+  }, [rateLimitCooldown])
+
   const handlePhoneNext = async () => {
+    if (rateLimitCooldown > 0) return
     const digits = phone.replace(/\D/g, "")
     if (digits.length < 9) { setError("Введите оставшиеся цифры номера"); return }
+
+    if (captchaRequired) {
+      if (String(captcha.answer) !== captchaInput.trim()) {
+        setCaptchaError(true)
+        refreshCaptcha()
+        return
+      }
+      refreshCaptcha()
+    }
+
     setError(null)
+    setAttempts(n => n + 1)
     setLookupLoading(true)
     const fullPhone = `992${digits}`
     try {
       const res = await fetch(`${API_URL}/checkin/lookup?phone=${encodeURIComponent(fullPhone)}`)
       const data = await res.json()
+      if (res.status === 429) {
+        setRateLimitCooldown(60)
+        setError("Слишком много попыток. Подождите 60 секунд.")
+        return
+      }
       if (!res.ok) throw new Error(data.message || "Сотрудник не найден")
       setEmployee(data)
       setStep("greeting")
@@ -232,6 +278,8 @@ export default function PhoneCheckinPage() {
     setPhotoBlob(null)
     setResult(null)
     setError(null)
+    setAttempts(0)
+    refreshCaptcha()
   }
 
   return (
@@ -269,12 +317,51 @@ export default function PhoneCheckinPage() {
                   className="flex-1 px-4 text-xl font-mono tracking-wider focus:outline-none bg-transparent"
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && (
+                <p className="text-sm text-red-500">
+                  {rateLimitCooldown > 0
+                    ? `Слишком много попыток. Подождите ${rateLimitCooldown} сек.`
+                    : error}
+                </p>
+              )}
               <p className="text-xs text-gray-400">Введите 9 цифр после 992</p>
             </div>
+            {captchaRequired && (
+              <div className="space-y-2 pt-1">
+                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  Подтвердите, что вы не робот
+                </label>
+                <div className="flex items-center gap-3 rounded-xl bg-emerald-50 border-2 border-emerald-200 px-4 py-3">
+                  <span className="text-lg font-mono font-bold text-emerald-800 select-none">
+                    {captcha.a} + {captcha.b} =
+                  </span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={captchaInput}
+                    onChange={e => { setCaptchaInput(e.target.value); setCaptchaError(false) }}
+                    onKeyDown={e => e.key === "Enter" && handlePhoneNext()}
+                    placeholder="?"
+                    className="w-20 h-10 rounded-lg border-2 border-emerald-300 text-center text-lg font-bold focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={refreshCaptcha}
+                    className="text-emerald-600 hover:text-emerald-800 transition-colors"
+                    title="Обновить"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                </div>
+                {captchaError && (
+                  <p className="text-sm text-red-500">Неверный ответ, попробуйте ещё раз</p>
+                )}
+              </div>
+            )}
             <button
               onClick={handlePhoneNext}
-              disabled={lookupLoading}
+              disabled={lookupLoading || rateLimitCooldown > 0 || (captchaRequired && !captchaInput.trim())}
               className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold flex items-center justify-center gap-2 transition-colors"
             >
               {lookupLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Далее <ChevronRight className="h-5 w-5" /></>}
