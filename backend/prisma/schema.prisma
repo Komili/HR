@@ -40,6 +40,7 @@ model Company {
   hikvisionDevices     HikvisionDevice[]
   agents               Agent[]
   registrationTokens   RegistrationToken[]
+  unknownFaces         UnknownFace[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 }
@@ -227,10 +228,32 @@ model AttendanceEvent {
   officeId   Int?
   source     String?  @default("HIKVISION") // "HIKVISION" | "QR_CHECKIN"
   selfiePath String?
+  note       String?  @db.Text // комментарий сотрудника при мобильном чекине (где / на каком объекте)
   createdAt  DateTime @default(now())
 
   @@index([employeeId, timestamp])
   @@index([companyId, timestamp])
+}
+
+// Журнал «неизвестных людей» с устройств Hikvision:
+// лицо не определено, отказ в доступе, либо ID не найден в БД
+model UnknownFace {
+  id            Int      @id @default(autoincrement())
+  timestamp     DateTime
+  reason        String   // no_id | face_not_matched | unknown_employee
+  photoPath     String?  // фото с устройства (storage/unknown/...)
+  rawEmployeeNo String?  // ID, пришедший с устройства (если был)
+  deviceMac     String?
+  deviceIp      String?
+  officeName    String?
+  direction     String?  // IN | OUT
+  company       Company? @relation(fields: [companyId], references: [id])
+  companyId     Int?
+  reviewed      Boolean  @default(false) // отметка «разобрано»
+  createdAt     DateTime @default(now())
+
+  @@index([companyId, timestamp])
+  @@index([timestamp])
 }
 
 model Attendance {

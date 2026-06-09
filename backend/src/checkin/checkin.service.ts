@@ -166,7 +166,7 @@ export class CheckinService {
   }
 
   // Публичный чекин по номеру телефона
-  async phoneCheckin(phone: string, photoFile?: Express.Multer.File) {
+  async phoneCheckin(phone: string, photoFile?: Express.Multer.File, note?: string) {
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 9) throw new BadRequestException('Неверный формат номера телефона');
 
@@ -269,6 +269,7 @@ export class CheckinService {
         deviceName: 'Мобильный чекин',
         source: 'QR_CHECKIN',
         selfiePath,
+        note: note || null,
       },
     });
 
@@ -304,6 +305,7 @@ export class CheckinService {
       ``,
       `🏢 ${companyName}`,
       `⏰ ${timeStr}`,
+      note ? `📍 ${note}` : null,
       workedLine,
     ].filter(s => s !== null).join('\n');
 
@@ -340,6 +342,7 @@ export class CheckinService {
       workedMinutes,
       companyName,
       position: positionName,
+      note: note || null,
     };
   }
 }

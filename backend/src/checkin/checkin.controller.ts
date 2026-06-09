@@ -69,11 +69,12 @@ export class CheckinController {
   }))
   async phoneCheckin(
     @Body('phone') phone: string,
+    @Body('note') note?: string,
     @UploadedFile() photo?: Express.Multer.File,
   ) {
     if (!phone?.trim()) throw new BadRequestException('Укажите номер телефона');
     if (!photo) throw new BadRequestException('Фото обязательно для отметки');
-    return this.checkinService.phoneCheckin(phone.trim(), photo);
+    return this.checkinService.phoneCheckin(phone.trim(), photo, note?.trim() || undefined);
   }
 }
 

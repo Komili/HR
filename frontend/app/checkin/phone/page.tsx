@@ -28,6 +28,7 @@ type Result = {
   workedMinutes: number | null
   companyName: string
   position: string
+  note: string | null
 }
 
 // ── Inline camera component ──────────────────────────────────────────────────
@@ -191,6 +192,7 @@ export default function PhoneCheckinPage() {
   const [phone, setPhone] = useState("")
   const [employee, setEmployee] = useState<EmployeeInfo | null>(null)
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null)
+  const [note, setNote] = useState("")
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
@@ -258,6 +260,7 @@ export default function PhoneCheckinPage() {
     try {
       const form = new FormData()
       form.append("phone", `992${phone.replace(/\D/g, "")}`)
+      if (note.trim()) form.append("note", note.trim())
       if (photoBlob) form.append("photo", photoBlob, "selfie.jpg")
 
       const res = await fetch(`${API_URL}/checkin/phone`, { method: "POST", body: form })
@@ -276,6 +279,7 @@ export default function PhoneCheckinPage() {
     setPhone("")
     setEmployee(null)
     setPhotoBlob(null)
+    setNote("")
     setResult(null)
     setError(null)
     setAttempts(0)
@@ -407,6 +411,21 @@ export default function PhoneCheckinPage() {
               <p className="text-sm text-gray-500">Смотрите прямо в камеру</p>
             </div>
             <SelfieCamera onCapture={blob => setPhotoBlob(blob)} />
+
+            {/* Комментарий: где / на каком объекте */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-gray-700">
+                Где вы сейчас? <span className="font-normal text-gray-400">(объект / адрес)</span>
+              </label>
+              <input
+                type="text"
+                value={note}
+                onChange={e => setNote(e.target.value.slice(0, 300))}
+                placeholder="Например: объект «Зелёный квартал», ул. Рудаки 25"
+                className="w-full h-12 rounded-xl border-2 border-gray-200 px-3 text-sm focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-colors"
+              />
+            </div>
+
             {error && <p className="text-sm text-red-500 text-center">{error}</p>}
             <div className="flex gap-3">
               <button
@@ -451,6 +470,12 @@ export default function PhoneCheckinPage() {
               <p className="font-semibold text-lg">{result.employeeName}</p>
               {result.position && <p className="text-sm opacity-80">{result.position}</p>}
               {result.companyName && <p className="text-sm opacity-70">{result.companyName}</p>}
+              {result.note && (
+                <p className="text-sm opacity-90 flex items-start gap-1.5 pt-1">
+                  <span>📍</span>
+                  <span>{result.note}</span>
+                </p>
+              )}
             </div>
 
             <div className={`rounded-xl p-4 space-y-2 ${result.type === "in" ? "bg-emerald-700/50" : "bg-indigo-700/50"}`}>

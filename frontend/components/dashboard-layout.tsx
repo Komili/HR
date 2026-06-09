@@ -57,7 +57,7 @@ const menuItems = [
   { name: "Отделы", path: "/departments", icon: Building2, description: "Структура" },
   { name: "Должности", path: "/positions", icon: Briefcase, description: "Роли" },
   // { name: "Инвентарь", path: "/inventory", icon: Package, description: "Имущество" },  // скрыто по решению руководства
-  { name: "Посещаемость", path: "/attendance", icon: Clock, description: "Учёт времени" },
+  // { name: "Посещаемость", path: "/attendance", ... }  // объединено с Главной
   // { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },  // скрыто по решению руководства
   { name: "Оргструктура", path: "/org-structure", icon: Network, description: "Иерархия" },
   { name: "Чекин по телефону", path: "/checkin/phone", icon: Smartphone, description: "Удалённая отметка" },

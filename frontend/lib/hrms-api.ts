@@ -388,6 +388,22 @@ export function getAttendanceSelfieUrl(eventId: number): string {
   return `${API_URL}/attendance/events/${eventId}/selfie`;
 }
 
+// ============ UNKNOWN FACES (журнал неизвестных лиц) ============
+
+export async function getUnknownFaces(date: string): Promise<import('./types').UnknownFace[]> {
+  const params = withCompanyId(new URLSearchParams({ date }));
+  return apiFetch(`/hikvision/unknown?${params.toString()}`);
+}
+
+export function getUnknownFacePhotoUrl(id: number): string {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+  return `${API_URL}/hikvision/unknown/${id}/photo`;
+}
+
+export async function markUnknownFaceReviewed(id: number, reviewed: boolean): Promise<{ ok: boolean; reviewed: boolean }> {
+  return apiFetch(`/hikvision/unknown/${id}/review`, { method: "PATCH", body: { reviewed } });
+}
+
 export async function correctAttendance(
   id: number,
   data: {

@@ -1,11 +1,11 @@
 import {
   Controller, Post, Get, Patch, Delete,
-  Param, Body, Req, Query,
+  Param, Body, Req, Query, Res,
   HttpCode, HttpStatus, ForbiddenException, ParseIntPipe,
-  UseGuards, Request,
+  UseGuards, Request, StreamableFile,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { Request as ExpressRequest } from 'express';
+import { Request as ExpressRequest, Response } from 'express';
 import { HikvisionService } from './hikvision.service';
 import { HikvisionIsupService } from './hikvision-isup.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -192,6 +192,48 @@ export class HikvisionController {
     @Request() req: { user: RequestUser },
   ) {
     return this.hikvisionService.checkAccess(deviceId, employeeId, req.user);
+  }
+
+  // ─── Журнал неизвестных лиц ───
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  @Get('unknown')
+  getUnknownFaces(
+    @Query('date') date: string | undefined,
+    @Query('companyId') companyId: string | undefined,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.hikvisionService.getUnknownFaces(
+      date,
+      req.user,
+      companyId ? parseInt(companyId) : undefined,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  @Get('unknown/:id/photo')
+  async getUnknownFacePhoto(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: RequestUser },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, mimeType } = await this.hikvisionService.getUnknownFacePhoto(id, req.user);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return new StreamableFile(buffer);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  @Patch('unknown/:id/review')
+  markUnknownReviewed(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { reviewed: boolean },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.hikvisionService.markUnknownReviewed(id, body.reviewed ?? true, req.user);
   }
 
   // ─── ISUP статус ───

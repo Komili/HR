@@ -269,13 +269,30 @@ export type AttendanceSummary = {
     direction: "IN" | "OUT";
     deviceName: string | null;
     source: string | null;
+    note?: string | null;
   }>;
   lastEvent?: {
     timestamp: string;
     direction: "IN" | "OUT";
     deviceName: string | null;
     source: string | null;
+    note?: string | null;
   } | null;
+  lastNote?: string | null;
+};
+
+export type UnknownFace = {
+  id: number;
+  timestamp: string;
+  reason: "no_id" | "face_not_matched" | "unknown_employee";
+  rawEmployeeNo: string | null;
+  officeName: string | null;
+  direction: "IN" | "OUT" | null;
+  deviceMac: string | null;
+  deviceIp: string | null;
+  companyName: string | null;
+  hasPhoto: boolean;
+  reviewed: boolean;
 };
 
 export type SalaryRecord = {

@@ -271,19 +271,14 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     // Незарегистрированное лицо — устройство не смогло определить ID
     if (!employeeNo) {
       if (facePhoto && facePhoto.length > 1000) {
-        // Сохраняем в storage/unknown/YYYY-MM-DD/HHMMSS_IP.jpg
-        try {
-          const pad = (n: number) => String(n).padStart(2, '0');
-          const dateFolder = `${timestamp.getFullYear()}-${pad(timestamp.getMonth() + 1)}-${pad(timestamp.getDate())}`;
-          const timeLabel = `${pad(timestamp.getHours())}${pad(timestamp.getMinutes())}${pad(timestamp.getSeconds())}`;
-          const safeIp = ipAddress.replace(/\./g, '-');
-          const dir = path.join('storage', 'unknown', dateFolder);
-          await fs.promises.mkdir(dir, { recursive: true });
-          await fs.promises.writeFile(path.join(dir, `${timeLabel}_${safeIp}.jpg`), facePhoto);
-          this.logger.warn(`Незарегистрированное лицо сохранено: ${dir}/${timeLabel}_${safeIp}.jpg`);
-        } catch (e) {
-          this.logger.error(`Не удалось сохранить фото незарегистрированного лица: ${e.message}`);
-        }
+        await this.recordUnknownFace({
+          reason: 'no_id',
+          timestamp, facePhoto, ipAddress, macAddress,
+          officeName, direction,
+          companyId: device?.status === 'active' ? device.companyId ?? null : null,
+          rawEmployeeNo: null,
+        });
+        this.logger.warn(`Незарегистрированное лицо зафиксировано (IP ${ipAddress})`);
 
         const caption = [
           `⚠️ <b>Незарегистрированное лицо</b>`,
@@ -311,6 +306,13 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     if (isDenied) {
       this.logger.warn(`Отказ в доступе: СКУД №${employeeNo} subType=${subType} (${officeName})`);
+      await this.recordUnknownFace({
+        reason: 'face_not_matched',
+        timestamp, facePhoto, ipAddress, macAddress,
+        officeName, direction,
+        companyId: device?.status === 'active' ? device.companyId ?? null : null,
+        rawEmployeeNo: employeeNo,
+      });
       const caption = [
         `🚫 <b>Отказ в доступе</b>`,
         ``,
@@ -352,6 +354,13 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     if (!employee) {
       this.logger.warn(`Сотрудник не найден по СКУД ID: ${employeeNo} (IP: ${ipAddress})`);
+      await this.recordUnknownFace({
+        reason: 'unknown_employee',
+        timestamp, facePhoto, ipAddress, macAddress,
+        officeName, direction,
+        companyId: device?.status === 'active' ? device.companyId ?? null : null,
+        rawEmployeeNo: employeeNo,
+      });
       const caption = [
         `⚠️ <b>Неизвестный сотрудник</b>`,
         ``,
@@ -1017,6 +1026,75 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  // ─────────── журнал неизвестных лиц ───────────
+
+  async getUnknownFaces(date: string | undefined, user: RequestUser, requestedCompanyId?: number) {
+    // Диапазон одного дня (по таджикскому времени UTC+5)
+    const base = date ? new Date(`${date}T00:00:00+05:00`) : new Date();
+    if (!date) {
+      // сегодня в Душанбе
+      const tz = 5 * 60 * 60 * 1000;
+      const local = new Date(Date.now() + tz);
+      base.setTime(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - tz);
+    }
+    const dayStart = base;
+    const dayEnd = new Date(base.getTime() + 24 * 60 * 60 * 1000);
+
+    // Фильтр по компании: суперадмин видит всё (или выбранную компанию), остальные — только свою
+    const where: any = { timestamp: { gte: dayStart, lt: dayEnd } };
+    if (user.isHoldingAdmin) {
+      if (requestedCompanyId) where.companyId = requestedCompanyId;
+    } else {
+      where.companyId = user.companyId ?? -1;
+    }
+
+    const items = await this.prisma.unknownFace.findMany({
+      where,
+      orderBy: { timestamp: 'desc' },
+      include: { company: { select: { shortName: true, name: true } } },
+    });
+
+    return items.map((u) => ({
+      id: u.id,
+      timestamp: u.timestamp.toISOString(),
+      reason: u.reason,
+      rawEmployeeNo: u.rawEmployeeNo,
+      officeName: u.officeName,
+      direction: u.direction,
+      deviceMac: u.deviceMac,
+      deviceIp: u.deviceIp,
+      companyName: (u as any).company?.shortName || (u as any).company?.name || null,
+      hasPhoto: !!u.photoPath,
+      reviewed: u.reviewed,
+    }));
+  }
+
+  async getUnknownFacePhoto(id: number, user: RequestUser): Promise<{ buffer: Buffer; mimeType: string }> {
+    const item = await this.prisma.unknownFace.findUnique({
+      where: { id },
+      select: { photoPath: true, companyId: true },
+    });
+    if (!item || !item.photoPath) throw new NotFoundException('Фото не найдено');
+    if (!user.isHoldingAdmin && item.companyId !== user.companyId) {
+      throw new ForbiddenException('Нет доступа');
+    }
+    const fullPath = item.photoPath.startsWith('storage')
+      ? item.photoPath
+      : path.join('storage', item.photoPath);
+    if (!fs.existsSync(fullPath)) throw new NotFoundException('Файл не найден');
+    return { buffer: fs.readFileSync(fullPath), mimeType: 'image/jpeg' };
+  }
+
+  async markUnknownReviewed(id: number, reviewed: boolean, user: RequestUser) {
+    const item = await this.prisma.unknownFace.findUnique({ where: { id } });
+    if (!item) throw new NotFoundException('Запись не найдена');
+    if (!user.isHoldingAdmin && item.companyId !== user.companyId) {
+      throw new ForbiddenException('Нет доступа');
+    }
+    await this.prisma.unknownFace.update({ where: { id }, data: { reviewed } });
+    return { ok: true, reviewed };
+  }
+
   // ─────────── Hikvision ISAPI helpers ───────────
 
   private async pushToDevice(
@@ -1191,6 +1269,54 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     await this.telegramService.sendMessage(message);
     return message;
+  }
+
+  // Сохранить фото неизвестного лица в storage/unknown + запись в журнал UnknownFace
+  private async recordUnknownFace(params: {
+    reason: 'no_id' | 'face_not_matched' | 'unknown_employee';
+    timestamp: Date;
+    facePhoto: Buffer | null;
+    ipAddress: string;
+    macAddress: string | null;
+    officeName: string | null;
+    direction: 'IN' | 'OUT' | null;
+    companyId: number | null;
+    rawEmployeeNo: string | null;
+  }): Promise<void> {
+    let photoPath: string | null = null;
+    if (params.facePhoto && params.facePhoto.length > 1000) {
+      try {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const t = params.timestamp;
+        const dateFolder = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+        const timeLabel = `${pad(t.getHours())}${pad(t.getMinutes())}${pad(t.getSeconds())}`;
+        const safeIp = (params.ipAddress || 'na').replace(/\./g, '-');
+        const dir = path.join('storage', 'unknown', dateFolder);
+        await fs.promises.mkdir(dir, { recursive: true });
+        const filename = `${timeLabel}_${params.reason}_${safeIp}.jpg`;
+        await fs.promises.writeFile(path.join(dir, filename), params.facePhoto);
+        photoPath = path.join('unknown', dateFolder, filename);
+      } catch (e) {
+        this.logger.error(`Не удалось сохранить фото неизвестного лица: ${e.message}`);
+      }
+    }
+    try {
+      await this.prisma.unknownFace.create({
+        data: {
+          timestamp: params.timestamp,
+          reason: params.reason,
+          photoPath,
+          rawEmployeeNo: params.rawEmployeeNo,
+          deviceMac: params.macAddress,
+          deviceIp: params.ipAddress,
+          officeName: params.officeName,
+          direction: params.direction,
+          companyId: params.companyId,
+        },
+      });
+    } catch (e) {
+      this.logger.error(`Не удалось записать UnknownFace: ${e.message}`);
+    }
   }
 
   private async saveSelfieToStorage(

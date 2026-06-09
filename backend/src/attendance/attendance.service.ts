@@ -147,7 +147,7 @@ export class AttendanceService implements OnModuleInit {
           },
           select: {
             id: true, employeeId: true, timestamp: true,
-            direction: true, deviceName: true, source: true, selfiePath: true,
+            direction: true, deviceName: true, source: true, selfiePath: true, note: true,
           },
           orderBy: { timestamp: 'asc' },
         })
@@ -188,6 +188,7 @@ export class AttendanceService implements OnModuleInit {
           isLate: false,
           isEarlyLeave: false,
           lastEvent: null,
+          lastNote: null,
           selfieEventIds: [] as number[],
           selfieEvents: [] as any[],
         };
@@ -203,7 +204,10 @@ export class AttendanceService implements OnModuleInit {
         direction: e.direction as 'IN' | 'OUT',
         deviceName: resolveDeviceName(e.deviceName, e.source),
         source: e.source,
+        note: e.note,
       }));
+      // Последний комментарий сотрудника (где / на каком объекте) — берём из самого свежего события с note
+      const lastNote = [...empEvents].reverse().find((e) => e.note)?.note ?? null;
       return {
         ...this.mapAttendance({ ...a, employee: emp }),
         lastEvent: last
@@ -212,8 +216,10 @@ export class AttendanceService implements OnModuleInit {
               direction: last.direction as 'IN' | 'OUT',
               deviceName: resolveDeviceName(last.deviceName, last.source),
               source: last.source,
+              note: last.note,
             }
           : null,
+        lastNote,
         selfieEventIds,
         selfieEvents,
       };
