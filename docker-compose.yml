@@ -42,7 +42,7 @@ services:
       - proxy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').request({ host: 'localhost', port: 7070, path: '/' }, res => process.exit(res.statusCode === 200 ? 0 : 1)).end()"]
+      test: ["CMD", "node", "-e", "require('http').request({ host: 'localhost', port: 7070, path: '/api/' }, res => process.exit(res.statusCode === 200 ? 0 : 1)).end()"]
       interval: 10s
       timeout: 5s
       retries: 5
