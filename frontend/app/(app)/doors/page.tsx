@@ -121,7 +121,7 @@ export default function DoorsPage() {
   function openBind(device: HikvisionDevice) {
     setBindDevice(device)
     setBindForm({
-      companyId: companies[0]?.id ?? 0,
+      companyId: device.companyId ?? 0,
       officeName: device.officeName || "",
       direction: device.direction || "IN",
       login: device.login || "admin",

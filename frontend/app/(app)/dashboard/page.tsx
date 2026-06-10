@@ -3,11 +3,12 @@
 import * as React from "react"
 import * as XLSX from "xlsx"
 import { ColumnDef } from "@tanstack/react-table"
-import type { AttendanceSummary, Employee, Office, UnknownFace } from "@/lib/types"
+import type { AttendanceSummary, UnknownFace } from "@/lib/types"
 import { DataTable } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { RuDateInput, toRuDate } from "@/components/ru-date-input"
 import {
   Dialog,
   DialogContent,
@@ -21,8 +22,7 @@ import {
   getAttendanceRange,
   correctAttendance,
   registerAttendanceEvent,
-  getEmployees,
-  getOffices,
+  markAttendanceExcused,
   getCompany,
   getAttendanceSelfieUrl,
   getUnknownFaces,
@@ -37,7 +37,6 @@ import {
   UserMinus,
   ShieldCheck,
   Download,
-  Plus,
   Search,
   Pencil,
   LogIn,
@@ -95,6 +94,7 @@ const ROW_BG: Record<string, string> = {
 }
 
 function getRowBg(row: AttendanceSummary): string {
+  if (row.status === "excused") return ROW_BG.excused // отпросился — янтарный
   if (row.correctionType) {
     // Проверяем истёк ли срок
     if (row.correctionDeadline && new Date(row.correctionDeadline) < new Date()) {
@@ -223,7 +223,7 @@ function UnknownFacesSection({ date }: { date: string }) {
             onClick={() => setShowReviewed((v) => !v)}
             className="text-xs px-3 h-8 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors"
           >
-            {showReviewed ? "Скрыть разобранные" : "Показать все"}
+            {showReviewed ? "Скрыть проверенные" : "Показать все"}
           </button>
           <button
             onClick={load}
@@ -244,7 +244,7 @@ function UnknownFacesSection({ date }: { date: string }) {
         ) : visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
             <ScanFace className="h-10 w-10 text-gray-300" />
-            <span className="text-sm">{items.length === 0 ? "Неизвестных лиц за этот день нет" : "Все разобраны"}</span>
+            <span className="text-sm">{items.length === 0 ? "Неизвестных лиц за этот день нет" : "Все проверены"}</span>
           </div>
         ) : (
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -286,7 +286,7 @@ function UnknownFacesSection({ date }: { date: string }) {
                       className={`mt-1 w-full flex items-center justify-center gap-1 h-7 rounded-lg text-[11px] font-medium border transition-colors ${it.reviewed ? "border-gray-200 text-gray-500 hover:bg-gray-50" : "border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100"}`}
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" />
-                      {it.reviewed ? "Разобрано" : "Отметить"}
+                      {it.reviewed ? "Проверено" : "Отметить проверено"}
                     </button>
                   </div>
                 </div>
@@ -302,7 +302,6 @@ function UnknownFacesSection({ date }: { date: string }) {
 export default function DashboardPage() {
   const { user, token, currentCompanyName } = useAuth()
   const canCorrect = user && (user.isHoldingAdmin || user.role === "Кадровик" || user.role === "Руководитель")
-  const canRegister = user && (user.isHoldingAdmin || user.role === "Кадровик")
 
   const [data, setData] = React.useState<AttendanceSummary[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -315,26 +314,12 @@ export default function DashboardPage() {
 
   // Correction dialog
   const [correcting, setCorrecting] = React.useState<AttendanceSummary | null>(null)
-  const [corrType, setCorrType] = React.useState<"minutes" | "manual_in" | "manual_out" | "remote">("minutes")
+  const [corrType, setCorrType] = React.useState<"minutes" | "manual_in" | "manual_out" | "remote" | "excused_left" | "excused_absent">("minutes")
   const [corrMinutes, setCorrMinutes] = React.useState(0)
   const [corrTime, setCorrTime] = React.useState("09:00")
   const [corrDeadline, setCorrDeadline] = React.useState("")
   const [corrNote, setCorrNote] = React.useState("")
   const [corrSaving, setCorrSaving] = React.useState(false)
-
-  // Register event extra fields
-  const [regNote, setRegNote] = React.useState("")
-  const [regDeadline, setRegDeadline] = React.useState("")
-
-  // Register event dialog
-  const [registerOpen, setRegisterOpen] = React.useState(false)
-  const [employees, setEmployees] = React.useState<Employee[]>([])
-  const [offices, setOffices] = React.useState<Office[]>([])
-  const [regEmployeeId, setRegEmployeeId] = React.useState<number | "">("")
-  const [regDirection, setRegDirection] = React.useState<"IN" | "OUT">("IN")
-  const [regOfficeId, setRegOfficeId] = React.useState<number | "">("")
-  const [regSaving, setRegSaving] = React.useState(false)
-  const [empSearch, setEmpSearch] = React.useState("")
 
   // Table search
   const [tableSearch, setTableSearch] = React.useState("")
@@ -451,7 +436,8 @@ export default function DashboardPage() {
     const hh = String(now.getHours()).padStart(2, "0")
     const mm = String(now.getMinutes()).padStart(2, "0")
     setCorrecting(row)
-    setCorrType("minutes")
+    // Для отсутствующих (нет записи, id ≤ 0) сразу предлагаем отметить приход
+    setCorrType(row.id > 0 ? "minutes" : "manual_in")
     setCorrMinutes(0)
     setCorrTime(`${hh}:${mm}`)
     setCorrDeadline("")
@@ -459,66 +445,48 @@ export default function DashboardPage() {
   }
 
   const handleCorrect = async () => {
-    if (!correcting || !corrNote.trim()) return
+    if (!correcting) return
+    const isCheck = corrType === "manual_in" || corrType === "manual_out"
+    const isExcused = corrType === "excused_left" || corrType === "excused_absent"
+    if (isCheck && !corrTime) return
+    if (!isCheck && !corrNote.trim()) return
     if (corrType === "minutes" && corrMinutes === 0) return
-    if ((corrType === "manual_in" || corrType === "manual_out") && !corrTime) return
     setCorrSaving(true)
     try {
-      await correctAttendance(correcting.id, {
-        type: corrType,
-        correctionMinutes: corrType === "minutes" ? corrMinutes : undefined,
-        time: (corrType === "manual_in" || corrType === "manual_out") ? corrTime : undefined,
-        note: corrNote,
-        deadline: corrDeadline || undefined,
-      })
+      if (isExcused) {
+        // Отпросился: ушёл (с временем ухода) или не пришёл — помечаем день уважительным
+        await markAttendanceExcused(
+          correcting.employeeId,
+          correcting.date,
+          corrType === "excused_left" ? "left" : "absent",
+          corrNote.trim(),
+          corrType === "excused_left" ? corrTime : undefined,
+        )
+      } else if (isCheck) {
+        // Отметка прихода/ухода за сотрудника — создаём реальное событие (работает и без записи)
+        await registerAttendanceEvent(
+          correcting.employeeId,
+          corrType === "manual_in" ? "IN" : "OUT",
+          undefined,
+          corrNote.trim() || undefined,
+          corrDeadline || undefined,
+          correcting.date,
+          corrTime,
+        )
+      } else {
+        await correctAttendance(correcting.id, {
+          type: corrType,
+          correctionMinutes: corrType === "minutes" ? corrMinutes : undefined,
+          note: corrNote,
+          deadline: corrDeadline || undefined,
+        })
+      }
       setCorrecting(null)
       loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка корректировки")
     } finally {
       setCorrSaving(false)
-    }
-  }
-
-  // Register event handlers
-  const openRegister = async () => {
-    setRegisterOpen(true)
-    setRegEmployeeId("")
-    setRegDirection("IN")
-    setRegOfficeId("")
-    setEmpSearch("")
-    setRegNote("")
-    setRegDeadline("")
-    try {
-      const [empResult, officeResult] = await Promise.all([
-        getEmployees(1, 1000, ""),
-        getOffices(),
-      ])
-      setEmployees(empResult.data)
-      setOffices(officeResult)
-    } catch {
-      setEmployees([])
-      setOffices([])
-    }
-  }
-
-  const handleRegister = async () => {
-    if (!regEmployeeId) return
-    setRegSaving(true)
-    try {
-      await registerAttendanceEvent(
-        regEmployeeId as number,
-        regDirection,
-        regOfficeId ? (regOfficeId as number) : undefined,
-        regNote || undefined,
-        regDeadline || undefined,
-      )
-      setRegisterOpen(false)
-      loadData()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка регистрации")
-    } finally {
-      setRegSaving(false)
     }
   }
 
@@ -548,9 +516,7 @@ export default function DashboardPage() {
     const lunchDurMins = timeToMins(lunchBreakEnd) - timeToMins(lunchBreakStart)
     const workdayMins = workEndMins - workStartMins - lunchDurMins
 
-    const dateFormatted = new Date(selectedDate + "T00:00:00").toLocaleDateString("ru-RU", {
-      day: "2-digit", month: "long", year: "numeric",
-    })
+    const dateFormatted = toRuDate(selectedDate)
     const exportTime = new Date().toLocaleString("ru-RU", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
@@ -658,7 +624,7 @@ export default function DashboardPage() {
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Посещаемость")
-    XLSX.writeFile(wb, `Посещаемость_${selectedDate}.xlsx`)
+    XLSX.writeFile(wb, `Посещаемость_${toRuDate(selectedDate)}.xlsx`)
   }
 
   // Range Excel export
@@ -673,6 +639,7 @@ export default function DashboardPage() {
       let workDayEnd = "18:00"
       let lunchBreakStart = "12:00"
       let lunchBreakEnd = "13:00"
+      let workDays = "1,2,3,4,5"
 
       if (companyId) {
         try {
@@ -681,10 +648,15 @@ export default function DashboardPage() {
           workDayEnd = company.workDayEnd || "18:00"
           lunchBreakStart = company.lunchBreakStart || "12:00"
           lunchBreakEnd = company.lunchBreakEnd || "13:00"
+          workDays = company.workDays || "1,2,3,4,5"
         } catch { /* use defaults */ }
       }
 
       const workStartMins = timeToMins(workDayStart)
+      const workEndMins = timeToMins(workDayEnd)
+      const LATE_GRACE = 15 // порог опоздания, мин
+      const GRACE = 5 // порог переработки/раннего ухода, мин
+      const localMins = (iso: string) => { const d = new Date(iso); return d.getHours() * 60 + d.getMinutes() }
 
       const rangeData = await getAttendanceRange(rangeFrom, rangeTo)
 
@@ -694,75 +666,74 @@ export default function DashboardPage() {
       const dates = Array.from(datesSet).sort()
 
       // Group by employee
-      const employeeMap = new Map<number, {
-        name: string
-        department: string
-        days: Map<string, { entry: string | null; exit: string | null; minutes: number }>
-        lateDays: number
-        lateMinutes: number
+      type DayInfo = { entry: string | null; exit: string | null; minutes: number; late: number; over: number; early: boolean }
+      type EmpAgg = {
+        name: string; department: string
+        days: Map<string, DayInfo>
+        lateDays: number; lateMinutes: number
+        overDays: number; overMinutes: number
         absentCount: number
-      }>()
+      }
+      const employeeMap = new Map<number, EmpAgg>()
 
       rangeData.forEach((r) => {
         if (!employeeMap.has(r.employeeId)) {
           employeeMap.set(r.employeeId, {
-            name: r.employeeName,
-            department: r.departmentName || "",
-            days: new Map(),
-            lateDays: 0,
-            lateMinutes: 0,
-            absentCount: 0,
+            name: r.employeeName, department: r.departmentName || "",
+            days: new Map(), lateDays: 0, lateMinutes: 0, overDays: 0, overMinutes: 0, absentCount: 0,
           })
         }
         const emp = employeeMap.get(r.employeeId)!
-        emp.days.set(r.date, { entry: r.firstEntry, exit: r.lastExit, minutes: r.totalMinutes })
-        if (r.isLate && r.firstEntry) {
-          const entryDate = new Date(r.firstEntry)
-          const entryMins = entryDate.getHours() * 60 + entryDate.getMinutes()
-          const lateMin = Math.max(0, entryMins - workStartMins)
-          emp.lateDays++
-          emp.lateMinutes += lateMin
+        const entryMins = r.firstEntry ? localMins(r.firstEntry) : null
+        const exitMins = r.lastExit ? localMins(r.lastExit) : null
+
+        let late = 0
+        if (entryMins !== null) { const l = entryMins - workStartMins; if (l > LATE_GRACE) late = l }
+        let over = 0
+        if (entryMins !== null) { const before = workStartMins - entryMins; if (before > GRACE) over += before }
+        if (exitMins !== null) { const after = exitMins - workEndMins; if (after > GRACE) over += after }
+        const early = exitMins !== null && (workEndMins - exitMins) > GRACE
+
+        emp.days.set(r.date, { entry: r.firstEntry, exit: r.lastExit, minutes: r.totalMinutes, late, over, early })
+        if (late > 0) { emp.lateDays++; emp.lateMinutes += late }
+        if (over > 0) { emp.overDays++; emp.overMinutes += over }
+      })
+
+      // Рабочие дни недели компании (ISO: 1=Пн..7=Вс)
+      const workDaySet = new Set(
+        workDays.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => n >= 1 && n <= 7),
+      )
+      if (workDaySet.size === 0) [1, 2, 3, 4, 5].forEach((d) => workDaySet.add(d))
+
+      // Все рабочие дни в выбранном диапазоне (для подсчёта прогулов)
+      const workingDaysInRange: string[] = []
+      {
+        const start = new Date(rangeFrom + "T00:00:00")
+        const end = new Date(rangeTo + "T00:00:00")
+        for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
+          const d = new Date(t)
+          const iso = d.getDay() === 0 ? 7 : d.getDay()
+          if (workDaySet.has(iso)) {
+            workingDaysInRange.push(
+              `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+            )
+          }
         }
-        if (r.status === "absent") emp.absentCount++
+      }
+
+      // Прогул = рабочий день без единой записи
+      employeeMap.forEach((emp) => {
+        emp.absentCount = workingDaysInRange.reduce((n, day) => (emp.days.has(day) ? n : n + 1), 0)
       })
 
       // Map preserves insertion order — server data already sorted by sortOrder
       const employees = Array.from(employeeMap.entries())
 
-      // Format dates for headers
-      const dateHeaders = dates.map((d) => {
-        const dt = new Date(d + "T00:00:00")
-        return dt.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })
-      })
-
-      const fromFormatted = new Date(rangeFrom + "T00:00:00").toLocaleDateString("ru-RU")
-      const toFormatted = new Date(rangeTo + "T00:00:00").toLocaleDateString("ru-RU")
       const exportTime = new Date().toLocaleString("ru-RU", {
         day: "2-digit", month: "2-digit", year: "numeric",
         hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
       })
       const companyLabel = currentCompanyName || "Все компании"
-
-      // Title + meta
-      const titleRow = [`Отчёт посещаемости за период ${fromFormatted} — ${toFormatted}`]
-      const metaRow: string[] = [`Компания: ${companyLabel}`, "", "", `Дата экспорта: ${exportTime}`]
-      const scheduleRow: string[] = [`Рабочий день: ${workDayStart}–${workDayEnd}  |  Обед: ${lunchBreakStart}–${lunchBreakEnd}`]
-
-      // Headers: №, ФИО, [date Вход, date Выход] ..., Всего часов, Опозданий, Пропусков
-      const headerRow1 = ["№", "ФИО"]
-      const headerRow2 = ["", ""]
-      dates.forEach((_, i) => {
-        headerRow1.push(dateHeaders[i], "")
-        headerRow2.push("Вход", "Выход")
-      })
-      headerRow1.push("Всего", "Опозданий", "Пропусков")
-      headerRow2.push("часов", "(дней/время)", "дней")
-
-      // Accumulators
-      let grandTotalMinutes = 0
-      let grandTotalLateDays = 0
-      let grandTotalLateMinutes = 0
-      let grandTotalAbsent = 0
 
       const fmtLate = (days: number, mins: number): string => {
         if (days === 0) return ""
@@ -771,69 +742,182 @@ export default function DashboardPage() {
         const timeStr = h > 0 ? (m > 0 ? `${h}ч ${m}м` : `${h}ч`) : `${m}м`
         return `${days} дн. (${timeStr})`
       }
+      const isWeekend = (d: string) => { const wd = new Date(d + "T00:00:00").getDay(); return wd === 0 || wd === 6 }
 
-      // Data rows
-      const dataRows = employees.map(([, emp], idx) => {
-        const row: (string | number)[] = [idx + 1, emp.name]
+      // ───────── Красочный Excel через ExcelJS ─────────
+      const ExcelJS = (await import("exceljs")).default
+      const wb = new ExcelJS.Workbook()
+      wb.creator = "КАДРЫ"; wb.created = new Date()
+
+      const nCols = 2 + dates.length * 2 + 4
+      const sumStart = 3 + dates.length * 2 // первая сводная колонка (Всего)
+      const ws = wb.addWorksheet("Отчёт за период", {
+        views: [{ state: "frozen", xSplit: 2, ySplit: 5 }],
+        pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      })
+
+      const COL = {
+        title: "FF6D28D9", meta: "FFF5F3FF", sched: "FFFEF3C7",
+        emp: "FF334155", dateH: "FF2563EB", dateW: "FFBE185D", sub: "FF64748B",
+        tot: "FF0F766E", late: "FFB45309", miss: "FFB91C1C", over: "FF15803D",
+        white: "FFFFFFFF", border: "FFE2E8F0", zebra: "FFF8FAFC", totals: "FFE2E8F0",
+        lLate: "FFFEF3C7", lEarly: "FFFFEDD5", lMiss: "FFFEE2E2", lOver: "FFDCFCE7", weekend: "FFFDF2F8",
+      }
+      const setFill = (cell: any, argb: string) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb } } }
+      const allBorder = (cell: any) => {
+        cell.border = {
+          top: { style: "thin", color: { argb: COL.border } },
+          left: { style: "thin", color: { argb: COL.border } },
+          bottom: { style: "thin", color: { argb: COL.border } },
+          right: { style: "thin", color: { argb: COL.border } },
+        }
+      }
+
+      // Ширины
+      ws.getColumn(1).width = 5
+      ws.getColumn(2).width = 30
+      dates.forEach((_, i) => { ws.getColumn(3 + i * 2).width = 8; ws.getColumn(4 + i * 2).width = 8 })
+      ws.getColumn(sumStart).width = 11
+      ws.getColumn(sumStart + 1).width = 16
+      ws.getColumn(sumStart + 2).width = 11
+      ws.getColumn(sumStart + 3).width = 16
+
+      // Row 1 — заголовок
+      ws.mergeCells(1, 1, 1, nCols)
+      const tCell = ws.getRow(1).getCell(1)
+      tCell.value = `Отчёт посещаемости за период ${toRuDate(rangeFrom)} — ${toRuDate(rangeTo)}`
+      tCell.font = { bold: true, size: 14, color: { argb: COL.white } }
+      tCell.alignment = { vertical: "middle", horizontal: "center" }
+      setFill(tCell, COL.title); ws.getRow(1).height = 28
+
+      // Row 2 — мета
+      ws.mergeCells(2, 1, 2, nCols)
+      const mCell = ws.getRow(2).getCell(1)
+      mCell.value = `Компания: ${companyLabel}        Дата экспорта: ${exportTime}`
+      mCell.font = { size: 10, color: { argb: "FF475569" } }
+      mCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 }
+      setFill(mCell, COL.meta); ws.getRow(2).height = 18
+
+      // Row 3 — расписание
+      ws.mergeCells(3, 1, 3, nCols)
+      const sCell = ws.getRow(3).getCell(1)
+      sCell.value = `Рабочий день: ${workDayStart}–${workDayEnd}    |    Обед: ${lunchBreakStart}–${lunchBreakEnd} (вычитается из часов)    |    Опоздание — от +${LATE_GRACE} мин, переработка — от +${GRACE} мин`
+      sCell.font = { size: 10, bold: true, color: { argb: "FF92400E" } }
+      sCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 }
+      setFill(sCell, COL.sched); ws.getRow(3).height = 18
+
+      // Row 4-5 — шапка
+      const r4 = ws.getRow(4), r5 = ws.getRow(5)
+      ws.mergeCells(4, 1, 5, 1); ws.mergeCells(4, 2, 5, 2)
+      const styleHead = (cell: any, val: string, argb: string, size = 9) => {
+        cell.value = val
+        cell.font = { bold: true, size, color: { argb: COL.white } }
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true }
+        setFill(cell, argb); allBorder(cell)
+      }
+      styleHead(r4.getCell(1), "№", COL.emp, 10)
+      styleHead(r4.getCell(2), "ФИО", COL.emp, 10)
+
+      dates.forEach((d, i) => {
+        const c = 3 + i * 2
+        const we = isWeekend(d)
+        ws.mergeCells(4, c, 4, c + 1)
+        styleHead(r4.getCell(c), toRuDate(d), we ? COL.dateW : COL.dateH, 9)
+        styleHead(r5.getCell(c), "Вход", COL.sub, 8)
+        styleHead(r5.getCell(c + 1), "Выход", COL.sub, 8)
+      })
+
+      const sums = [
+        { label: "Всего", sub: "часов", color: COL.tot },
+        { label: "Опозданий", sub: "дней / время", color: COL.late },
+        { label: "Переработка", sub: "дней / время", color: COL.over },
+        { label: "Пропусков", sub: "дней", color: COL.miss },
+      ]
+      sums.forEach((s, i) => {
+        const c = sumStart + i
+        styleHead(r4.getCell(c), s.label, s.color, 9)
+        styleHead(r5.getCell(c), s.sub, s.color, 8)
+      })
+      r4.height = 18; r5.height = 16
+
+      // Данные
+      let rowIdx = 6
+      let gMin = 0, gLateD = 0, gLateM = 0, gAbs = 0, gOverD = 0, gOverM = 0
+      employees.forEach(([, emp], idx) => {
+        const row = ws.getRow(rowIdx)
+        row.getCell(1).value = idx + 1
+        row.getCell(2).value = emp.name
+
         let totalMin = 0
-        dates.forEach((date) => {
+        dates.forEach((date, i) => {
+          const c = 3 + i * 2
+          const inCell = row.getCell(c), outCell = row.getCell(c + 1)
           const day = emp.days.get(date)
           if (day) {
-            row.push(
-              day.entry ? formatTime(day.entry) : "—",
-              day.exit ? formatTime(day.exit) : "—",
-            )
+            inCell.value = day.entry ? formatTime(day.entry) : "—"
+            outCell.value = day.exit ? formatTime(day.exit) : "—"
             totalMin += day.minutes
+            if (day.late > 0) { setFill(inCell, COL.lLate); inCell.font = { size: 9, bold: true, color: { argb: "FF92400E" } } }
+            else if (!day.entry) setFill(inCell, COL.lMiss)
+            else if (day.over > 0 && day.entry && localMins(day.entry) < workStartMins) setFill(inCell, COL.lOver)
+            if (day.early) { setFill(outCell, COL.lEarly); outCell.font = { size: 9, bold: true, color: { argb: "FFC2410C" } } }
+            else if (!day.exit) setFill(outCell, COL.lMiss)
+            else if (day.over > 0 && day.exit && localMins(day.exit) > workEndMins) setFill(outCell, COL.lOver)
           } else {
-            row.push("—", "—")
+            inCell.value = "—"; outCell.value = "—"
+            if (isWeekend(date)) { setFill(inCell, COL.weekend); setFill(outCell, COL.weekend) }
           }
         })
-        const h = Math.floor(totalMin / 60)
-        const m = totalMin % 60
-        row.push(`${h}ч ${m}м`, fmtLate(emp.lateDays, emp.lateMinutes), emp.absentCount)
-        grandTotalMinutes += totalMin
-        grandTotalLateDays += emp.lateDays
-        grandTotalLateMinutes += emp.lateMinutes
-        grandTotalAbsent += emp.absentCount
-        return row
+
+        const h = Math.floor(totalMin / 60), m = totalMin % 60
+        row.getCell(sumStart).value = `${h}ч ${m}м`
+        row.getCell(sumStart + 1).value = fmtLate(emp.lateDays, emp.lateMinutes)
+        row.getCell(sumStart + 2).value = fmtLate(emp.overDays, emp.overMinutes)
+        row.getCell(sumStart + 3).value = emp.absentCount || ""
+
+        const zebra = idx % 2 === 1
+        for (let c = 1; c <= nCols; c++) {
+          const cell = row.getCell(c)
+          allBorder(cell)
+          if (!cell.font) cell.font = { size: 9, color: { argb: "FF1E293B" } }
+          cell.alignment = { vertical: "middle", horizontal: c === 2 ? "left" : "center" }
+          if (zebra && !cell.fill) setFill(cell, COL.zebra)
+        }
+        row.getCell(2).font = { size: 9, bold: true, color: { argb: "FF0F172A" } }
+        if (emp.lateDays > 0) row.getCell(sumStart + 1).font = { size: 9, bold: true, color: { argb: "FF92400E" } }
+        if (emp.overDays > 0) { setFill(row.getCell(sumStart + 2), COL.lOver); row.getCell(sumStart + 2).font = { size: 9, bold: true, color: { argb: "FF166534" } } }
+        if (emp.absentCount > 0) { setFill(row.getCell(sumStart + 3), COL.lMiss); row.getCell(sumStart + 3).font = { size: 9, bold: true, color: { argb: "FF991B1B" } } }
+        row.height = 16
+
+        gMin += totalMin; gLateD += emp.lateDays; gLateM += emp.lateMinutes
+        gAbs += emp.absentCount; gOverD += emp.overDays; gOverM += emp.overMinutes
+        rowIdx++
       })
 
-      // Totals row
-      const gH = Math.floor(grandTotalMinutes / 60)
-      const gM = grandTotalMinutes % 60
-      const totalsRow: (string | number)[] = ["", "ИТОГО:"]
-      dates.forEach(() => totalsRow.push("", ""))
-      totalsRow.push(`${gH}ч ${gM}м`, fmtLate(grandTotalLateDays, grandTotalLateMinutes), grandTotalAbsent)
+      // Итог
+      const gh = Math.floor(gMin / 60), gm = gMin % 60
+      const tRow = ws.getRow(rowIdx)
+      tRow.getCell(2).value = "ИТОГО"
+      tRow.getCell(sumStart).value = `${gh}ч ${gm}м`
+      tRow.getCell(sumStart + 1).value = fmtLate(gLateD, gLateM)
+      tRow.getCell(sumStart + 2).value = fmtLate(gOverD, gOverM)
+      tRow.getCell(sumStart + 3).value = gAbs || ""
+      for (let c = 1; c <= nCols; c++) {
+        const cell = tRow.getCell(c)
+        allBorder(cell); setFill(cell, COL.totals)
+        cell.font = { bold: true, size: 9, color: { argb: "FF0F172A" } }
+        cell.alignment = { vertical: "middle", horizontal: c === 2 ? "left" : "center" }
+      }
+      tRow.height = 20
 
-      // Build worksheet
-      const wsData = [titleRow, metaRow, scheduleRow, [], headerRow1, headerRow2, ...dataRows, [], totalsRow]
-      const ws = XLSX.utils.aoa_to_sheet(wsData)
-
-      // Column widths
-      const cols: { wch: number }[] = [
-        { wch: 5 },   // №
-        { wch: 30 },  // ФИО
-      ]
-      dates.forEach(() => cols.push({ wch: 8 }, { wch: 8 })) // Вход, Выход
-      cols.push({ wch: 12 }, { wch: 12 }, { wch: 12 }) // Всего, Опозданий, Пропусков
-      ws["!cols"] = cols
-
-      // Merge rows
-      const totalCols = 2 + dates.length * 2 + 3
-      ws["!merges"] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } }, // title
-        { s: { r: 2, c: 0 }, e: { r: 2, c: totalCols - 1 } }, // schedule
-      ]
-
-      // Merge date headers (row 4 = headerRow1, offset by 3 metaRows + 1 empty)
-      dates.forEach((_, i) => {
-        const colStart = 2 + i * 2
-        ws["!merges"]!.push({ s: { r: 4, c: colStart }, e: { r: 4, c: colStart + 1 } })
-      })
-
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, "Отчёт за период")
-      XLSX.writeFile(wb, `Посещаемость_${rangeFrom}_${rangeTo}.xlsx`)
+      const buf = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Посещаемость_${toRuDate(rangeFrom)}_${toRuDate(rangeTo)}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
       setRangeOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка загрузки данных за период")
@@ -841,13 +925,6 @@ export default function DashboardPage() {
       setRangeLoading(false)
     }
   }
-
-  const filteredEmployees = employees.filter((emp) => {
-    if (!empSearch) return true
-    const q = empSearch.toLowerCase()
-    const fullName = `${emp.lastName} ${emp.firstName} ${emp.patronymic || ""}`.toLowerCase()
-    return fullName.includes(q)
-  })
 
   const columns: ColumnDef<AttendanceSummary>[] = [
     {
@@ -995,17 +1072,6 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {canRegister && (
-            <Button
-              onClick={openRegister}
-              size="sm"
-              className="h-9 sm:h-10 px-3 sm:px-5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 shadow-lg shadow-blue-500/25 text-xs sm:text-sm"
-            >
-              <Plus className="mr-1 sm:mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Отметить приход/уход</span>
-              <span className="sm:hidden">Отметить</span>
-            </Button>
-          )}
           <Button
             variant="outline"
             size="sm"
@@ -1048,12 +1114,12 @@ export default function DashboardPage() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Input
+            <RuDateInput
               id="date"
-              type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="h-10 w-36 sm:w-44 rounded-xl border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              onChange={setSelectedDate}
+              className="w-36 sm:w-44"
+              inputClassName="border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
             />
             <Button
               variant="outline"
@@ -1269,13 +1335,13 @@ export default function DashboardPage() {
                                   <Camera className="h-4 w-4 text-violet-500" />
                                 </Button>
                               )}
-                              {canCorrect && row.id > 0 && (
+                              {canCorrect && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-50"
                                   onClick={() => openCorrection(row)}
-                                  title="Корректировка"
+                                  title="Корректировка / отметка"
                                 >
                                   <Pencil className="h-4 w-4 text-blue-600" />
                                 </Button>
@@ -1302,34 +1368,48 @@ export default function DashboardPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-5 w-5 text-blue-600" />
-              Корректировка
+              Корректировка / отметка
             </DialogTitle>
             <DialogDescription>
-              {correcting?.employeeName} — {correcting?.date}
+              {correcting?.employeeName} — {correcting && toRuDate(correcting.date)}
+              {correcting && correcting.id <= 0 && (
+                <span className="block mt-1 text-amber-600">
+                  Сотрудник ещё не отмечался — отметьте за него приход или уход.
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {/* Тип */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-wrap gap-2">
               {([
-                { key: "minutes", label: "±Минуты", icon: Pencil, color: "blue" },
+                // ±Минуты и «отпросился и ушёл» — только для существующей записи
+                ...(correcting && correcting.id > 0
+                  ? [
+                      { key: "minutes", label: "±Минуты", icon: Pencil, color: "blue" },
+                    ] as const
+                  : []),
                 { key: "manual_in", label: "Check-In", icon: LogIn, color: "emerald" },
                 { key: "manual_out", label: "Check-Out", icon: LogOut, color: "red" },
+                ...(correcting && correcting.id > 0
+                  ? [{ key: "excused_left", label: "Отпросился, ушёл", icon: ShieldCheck, color: "amber" }] as const
+                  : [{ key: "excused_absent", label: "Отпросился, не пришёл", icon: ShieldCheck, color: "amber" }] as const),
               ] as const).map(({ key, label, icon: Icon, color }) => (
                 <button
                   key={key}
                   onClick={() => setCorrType(key)}
-                  className={`flex items-center gap-2 h-10 px-3 rounded-xl border text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs sm:text-sm font-medium transition-colors ${
                     corrType === key
                       ? color === "blue" ? "bg-blue-500 border-blue-500 text-white"
                         : color === "emerald" ? "bg-emerald-500 border-emerald-500 text-white"
                         : color === "red" ? "bg-red-500 border-red-500 text-white"
+                        : color === "amber" ? "bg-amber-500 border-amber-500 text-white"
                         : "bg-purple-500 border-purple-500 text-white"
                       : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   {label}
                 </button>
               ))}
@@ -1372,7 +1452,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {(corrType === "manual_in" || corrType === "manual_out") && (
+            {(corrType === "manual_in" || corrType === "manual_out" || corrType === "excused_left") && (
               <div className="space-y-2">
                 <Label className="text-sm font-medium">
                   {corrType === "manual_in" ? "Время прихода" : "Время ухода"}
@@ -1401,7 +1481,8 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Срок */}
+            {/* Срок (не для «отпросился») */}
+            {corrType !== "excused_left" && corrType !== "excused_absent" && (
             <div className="space-y-2">
               <Label className="text-sm font-medium">Срок — ожидается в офисе до (необязательно)</Label>
               <div className="flex items-center gap-2">
@@ -1431,14 +1512,20 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+            )}
 
             {/* Комментарий */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Комментарий *</Label>
+              <Label className="text-sm font-medium">
+                {corrType === "excused_left" || corrType === "excused_absent" ? "Причина" : "Комментарий"}
+                {corrType === "manual_in" || corrType === "manual_out" ? " (необязательно)" : " *"}
+              </Label>
               <textarea
                 value={corrNote}
                 onChange={(e) => setCorrNote(e.target.value)}
-                placeholder="Укажите причину корректировки..."
+                placeholder={corrType === "manual_in" || corrType === "manual_out"
+                  ? "Например: задерживается, позвонил в 9:00..."
+                  : "Укажите причину корректировки..."}
                 rows={2}
                 className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300"
               />
@@ -1448,7 +1535,9 @@ export default function DashboardPage() {
               <Button variant="outline" onClick={() => setCorrecting(null)} className="rounded-xl">Отмена</Button>
               <Button
                 onClick={handleCorrect}
-                disabled={!corrNote.trim() || (corrType === "minutes" && corrMinutes === 0) || corrSaving}
+                disabled={corrSaving
+                  || (corrType === "minutes" && corrMinutes === 0)
+                  || (corrType !== "manual_in" && corrType !== "manual_out" && !corrNote.trim())}
                 className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
               >
                 {corrSaving
@@ -1456,177 +1545,6 @@ export default function DashboardPage() {
                   : "Сохранить"}
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Register Event Dialog */}
-      <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-blue-600" />
-              Отметить приход/уход
-            </DialogTitle>
-            <DialogDescription>
-              Зарегистрировать вход или выход сотрудника
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 flex-1 overflow-y-auto">
-            {/* Direction */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Направление:</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant={regDirection === "IN" ? "default" : "outline"}
-                  className={`h-12 rounded-xl ${
-                    regDirection === "IN"
-                      ? "bg-emerald-500 hover:bg-emerald-600 text-white"
-                      : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                  }`}
-                  onClick={() => setRegDirection("IN")}
-                >
-                  <LogIn className="mr-2 h-5 w-5" />
-                  Вход
-                </Button>
-                <Button
-                  variant={regDirection === "OUT" ? "default" : "outline"}
-                  className={`h-12 rounded-xl ${
-                    regDirection === "OUT"
-                      ? "bg-red-500 hover:bg-red-600 text-white"
-                      : "border-red-200 text-red-700 hover:bg-red-50"
-                  }`}
-                  onClick={() => setRegDirection("OUT")}
-                >
-                  <LogOut className="mr-2 h-5 w-5" />
-                  Выход
-                </Button>
-              </div>
-            </div>
-
-            {/* Employee search */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Сотрудник *</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Поиск по ФИО..."
-                  value={empSearch}
-                  onChange={(e) => setEmpSearch(e.target.value)}
-                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300"
-                />
-              </div>
-              <div className="max-h-40 overflow-y-auto rounded-xl border border-gray-200">
-                {filteredEmployees.length === 0 ? (
-                  <div className="py-4 text-center text-sm text-muted-foreground">Нет сотрудников</div>
-                ) : (
-                  filteredEmployees.slice(0, 50).map((emp) => {
-                    const fullName = `${emp.lastName} ${emp.firstName} ${emp.patronymic || ""}`.trim()
-                    const isSelected = regEmployeeId === emp.id
-                    return (
-                      <button
-                        key={emp.id}
-                        onClick={() => setRegEmployeeId(emp.id)}
-                        className={`w-full text-left px-4 py-2.5 text-sm border-b border-gray-100 last:border-0 transition-colors ${
-                          isSelected
-                            ? "bg-blue-50 text-blue-700 font-medium"
-                            : "hover:bg-gray-50"
-                        }`}
-                      >
-                        {fullName}
-                        {emp.department?.name && (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            — {emp.department.name}
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Office */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Офис</Label>
-              <select
-                value={regOfficeId}
-                onChange={(e) => setRegOfficeId(e.target.value ? Number(e.target.value) : "")}
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Не указан</option>
-                {offices.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}{o.address ? ` — ${o.address}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Комментарий */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Комментарий (необязательно)</Label>
-              <textarea
-                value={regNote}
-                onChange={(e) => setRegNote(e.target.value)}
-                placeholder="Например: работает на объекте, позвонил в 9:00..."
-                rows={2}
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-
-            {/* Срок */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Ожидается в офисе до (необязательно)</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number" min={0} max={23}
-                  value={regDeadline ? regDeadline.split(":")[0] : ""}
-                  placeholder="ЧЧ"
-                  onChange={(e) => {
-                    const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
-                    setRegDeadline(`${h}:${regDeadline ? regDeadline.split(":")[1] : "00"}`)
-                  }}
-                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                />
-                <span className="text-lg font-bold">:</span>
-                <input
-                  type="number" min={0} max={59}
-                  value={regDeadline ? regDeadline.split(":")[1] : ""}
-                  placeholder="ММ"
-                  onChange={(e) => {
-                    const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
-                    setRegDeadline(`${regDeadline ? regDeadline.split(":")[0] : "00"}:${m}`)
-                  }}
-                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                />
-                {regDeadline && (
-                  <button onClick={() => setRegDeadline("")} className="text-xs text-muted-foreground hover:text-red-500 ml-1">✕ убрать</button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button variant="outline" onClick={() => setRegisterOpen(false)} className="rounded-xl">
-              Отмена
-            </Button>
-            <Button
-              onClick={handleRegister}
-              disabled={!regEmployeeId || regSaving}
-              className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
-            >
-              {regSaving ? (
-                <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-              ) : (
-                <>
-                  {regDirection === "IN" ? <LogIn className="mr-2 h-4 w-4" /> : <LogOut className="mr-2 h-4 w-4" />}
-                  Зарегистрировать
-                </>
-              )}
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1746,30 +1664,30 @@ export default function DashboardPage() {
                 <Label htmlFor="rangeFrom" className="text-sm font-medium">
                   С даты
                 </Label>
-                <Input
+                <RuDateInput
                   id="rangeFrom"
-                  type="date"
                   value={rangeFrom}
-                  onChange={(e) => setRangeFrom(e.target.value)}
-                  className="h-10 rounded-xl border-purple-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+                  max={rangeTo || undefined}
+                  onChange={setRangeFrom}
+                  inputClassName="border-purple-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rangeTo" className="text-sm font-medium">
                   По дату
                 </Label>
-                <Input
+                <RuDateInput
                   id="rangeTo"
-                  type="date"
                   value={rangeTo}
-                  onChange={(e) => setRangeTo(e.target.value)}
-                  className="h-10 rounded-xl border-purple-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+                  min={rangeFrom || undefined}
+                  onChange={setRangeTo}
+                  inputClassName="border-purple-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
                 />
               </div>
             </div>
 
             <div className="rounded-xl bg-purple-50 border border-purple-200 p-4 text-sm text-purple-700">
-              Отчёт содержит: ФИО сотрудника, время входа и выхода за каждый день периода, и общее количество часов.
+              Отчёт содержит: ФИО, вход/выход за каждый день, общее количество часов (без обеда), опоздания, пропуски и переработку. Цветная подсветка отклонений.
             </div>
 
             <div className="flex justify-end gap-3">

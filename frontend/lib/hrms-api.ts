@@ -67,7 +67,7 @@ export async function deleteCompany(id: number): Promise<void> {
 
 export async function updateCompanySchedule(
   id: number,
-  data: { lunchBreakStart?: string; lunchBreakEnd?: string; workDayStart?: string; workDayEnd?: string },
+  data: { lunchBreakStart?: string; lunchBreakEnd?: string; workDayStart?: string; workDayEnd?: string; workDays?: string },
 ): Promise<Company> {
   return apiFetch(`/companies/${id}/schedule`, { method: "PATCH", body: data });
 }
@@ -375,6 +375,38 @@ export async function getAttendanceRange(
   return apiFetch(`/attendance/range?${params.toString()}`);
 }
 
+export type AttendanceReportRow = {
+  employeeId: number;
+  employeeName: string;
+  departmentName: string | null;
+  positionName: string | null;
+  workedMinutes: number;
+  presentDays: number;
+  workingDays: number;
+  absentDays: number;
+  lateDays: number;
+  lateMinutes: number;
+  missingInDays: number;
+  missingOutDays: number;
+  earlyLeaveDays: number;
+  earlyLeaveMinutes: number;
+  overworkDays: number;
+  overworkMinutes: number;
+};
+
+export type AttendanceReport = {
+  period: { dateFrom: string; dateTo: string };
+  rows: AttendanceReportRow[];
+};
+
+export async function getAttendanceReport(
+  dateFrom: string,
+  dateTo: string,
+): Promise<AttendanceReport> {
+  const params = withCompanyId(new URLSearchParams({ dateFrom, dateTo }));
+  return apiFetch(`/attendance/report?${params.toString()}`);
+}
+
 export async function getEmployeeAttendance(
   employeeId: number,
   month: number,
@@ -423,12 +455,28 @@ export async function registerAttendanceEvent(
   officeId?: number,
   note?: string,
   deadline?: string,
+  date?: string,
+  time?: string,
 ): Promise<any> {
   const payload: any = { employeeId, direction };
   if (officeId) payload.officeId = officeId;
   if (note) payload.note = note;
   if (deadline) payload.deadline = deadline;
+  if (date) payload.date = date;
+  if (time) payload.time = time;
   return apiFetch("/attendance/event", { method: "POST", body: payload });
+}
+
+export async function markAttendanceExcused(
+  employeeId: number,
+  date: string,
+  mode: "left" | "absent",
+  note: string,
+  time?: string,
+): Promise<any> {
+  const payload: any = { employeeId, date, mode, note };
+  if (time) payload.time = time;
+  return apiFetch("/attendance/excused", { method: "POST", body: payload });
 }
 
 // ============ SALARY ============

@@ -685,6 +685,18 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       update: { grantedBy: user.email },
     });
 
+    // Telegram-уведомление о выдаче доступа (категория door_access)
+    try {
+      await this.telegramService.notify(
+        'door_access',
+        `🔑 <b>Выдан доступ к двери</b>\n` +
+        `👤 <b>${employee.lastName} ${employee.firstName}</b>\n` +
+        `🚪 ${device.officeName || `Устройство #${device.id}`} (${device.direction === 'IN' ? 'Вход' : device.direction === 'OUT' ? 'Выход' : '—'})\n` +
+        `👮 ${user.email}`,
+        { companyId: device.companyId },
+      );
+    } catch { /* не критично */ }
+
     // Пробуем отправить через ISUP напрямую
     const isupResult = await this.tryIsupGrant(device, employee);
     if (isupResult.sent) {
@@ -830,6 +842,18 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.prisma.hikvisionAccess.deleteMany({ where: { deviceId, employeeId } });
+
+    // Telegram-уведомление об отзыве доступа (категория door_access)
+    try {
+      await this.telegramService.notify(
+        'door_access',
+        `🔒 <b>Отозван доступ к двери</b>\n` +
+        `👤 <b>${employee.lastName} ${employee.firstName}</b>\n` +
+        `🚪 ${device.officeName || `Устройство #${device.id}`} (${device.direction === 'IN' ? 'Вход' : device.direction === 'OUT' ? 'Выход' : '—'})\n` +
+        `👮 ${user.email}`,
+        { companyId: device.companyId },
+      );
+    } catch { /* не критично */ }
 
     // Пробуем отправить через ISUP напрямую
     const isupResult = await this.tryIsupRevoke(device, employee);
@@ -1316,6 +1340,33 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (e) {
       this.logger.error(`Не удалось записать UnknownFace: ${e.message}`);
+    }
+
+    // Telegram-уведомление о неизвестном лице (категория unknown_face)
+    try {
+      const reasonLabel: Record<string, string> = {
+        no_id: 'нет ID-карты',
+        face_not_matched: 'лицо не распознано',
+        unknown_employee: 'неизвестный сотрудник',
+      };
+      const dirLabel = params.direction === 'IN' ? '🟢 Вход' : params.direction === 'OUT' ? '🔴 Выход' : '—';
+      const timeStr = params.timestamp.toLocaleString('ru-RU', {
+        timeZone: 'Asia/Dushanbe', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+      });
+      const caption =
+        `⚠️ <b>Неизвестное лицо</b>\n` +
+        `📋 Причина: <b>${reasonLabel[params.reason] || params.reason}</b>\n` +
+        `🏢 Офис: ${params.officeName || '—'}\n` +
+        `🚪 ${dirLabel}\n` +
+        (params.rawEmployeeNo ? `🆔 СКУД №: ${params.rawEmployeeNo}\n` : '') +
+        `⏰ ${timeStr}`;
+      const hasPhoto = params.facePhoto && params.facePhoto.length > 1000;
+      await this.telegramService.notify('unknown_face', caption, {
+        companyId: params.companyId,
+        ...(hasPhoto ? { photo: params.facePhoto as Buffer, caption } : {}),
+      });
+    } catch (e) {
+      this.logger.error(`Не удалось отправить TG (unknown_face): ${e.message}`);
     }
   }
 

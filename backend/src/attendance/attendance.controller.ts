@@ -20,6 +20,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AttendanceService } from './attendance.service';
 import { CorrectAttendanceDto } from './dto/correct-attendance.dto';
 import { RegisterEventDto } from './dto/register-event.dto';
+import { ExcusedDto } from './dto/excused.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -66,6 +67,18 @@ export class AttendanceController {
     return this.attendanceService.getRangeAttendance(dateFrom, dateTo, req!.user, requestedCompanyId);
   }
 
+  @Get('report')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер')
+  getRangeReport(
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+    @Query('companyId') companyId?: string,
+    @Request() req?: { user: RequestUser },
+  ) {
+    const requestedCompanyId = companyId ? parseInt(companyId, 10) : undefined;
+    return this.attendanceService.getRangeReport(dateFrom, dateTo, req!.user, requestedCompanyId);
+  }
+
   @Get('employee/:id')
   @Roles('Суперадмин', 'Кадровик', 'Руководитель', 'Бухгалтер')
   getEmployeeAttendance(
@@ -93,12 +106,21 @@ export class AttendanceController {
   }
 
   @Post('event')
-  @Roles('Суперадмин', 'Кадровик')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
   registerEvent(
     @Body() dto: RegisterEventDto,
     @Request() req: { user: RequestUser },
   ) {
     return this.attendanceService.registerEvent(dto, req.user);
+  }
+
+  @Post('excused')
+  @Roles('Суперадмин', 'Кадровик', 'Руководитель')
+  markExcused(
+    @Body() dto: ExcusedDto,
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.attendanceService.markExcused(dto, req.user);
   }
 
   @Get('events/:id/selfie')

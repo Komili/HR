@@ -136,7 +136,12 @@
       "Bash(xxd agent/AGENT.bat)",
       "Bash(unix2dos agent/AGENT.bat)",
       "Bash(git add *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(cp \"frontend/app/\\(app\\)/attendance/page.tsx\" \"frontend/app/\\(app\\)/dashboard/page.tsx\")",
+      "Bash(rm -rf \"frontend/app/\\(app\\)/attendance\")",
+      "Bash(sed -i '1520,1690d' \"/c/repos/HR/frontend/app/\\(app\\)/dashboard/page.tsx\")",
+      "Bash(sed -n '1515,1524p' \"/c/repos/HR/frontend/app/\\(app\\)/dashboard/page.tsx\")",
+      "Bash(npx eslint *)"
     ]
   }
 }

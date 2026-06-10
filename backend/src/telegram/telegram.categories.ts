@@ -4,6 +4,9 @@ export const TELEGRAM_CATEGORIES = [
   { key: 'attendance', label: 'Посещаемость (вход/выход, опоздания)' },
   { key: 'correction', label: 'Корректировки посещаемости' },
   { key: 'registration', label: 'Регистрация сотрудников' },
+  { key: 'employee', label: 'Сотрудники (добавление / удаление)' },
+  { key: 'door_access', label: 'Доступ к дверям (выдача / отзыв сотрудникам)' },
+  { key: 'unknown_face', label: 'Неизвестные лица (Face ID не распознал)' },
   { key: 'access', label: 'СКУД / двери (доступы, ошибки)' },
   { key: 'system', label: 'Системные (старт/стоп сервера, СКУД-алерты)' },
 ] as const;

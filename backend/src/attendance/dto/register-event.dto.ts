@@ -25,4 +25,14 @@ export class RegisterEventDto {
   @IsString()
   @IsOptional()
   deadline?: string;
+
+  // Дата события, формат YYYY-MM-DD (опционально; по умолчанию сегодня)
+  @IsString()
+  @IsOptional()
+  date?: string;
+
+  // Время события, формат HH:mm (опционально; по умолчанию текущее)
+  @IsString()
+  @IsOptional()
+  time?: string;
 }

@@ -264,6 +264,175 @@ export class AttendanceService implements OnModuleInit {
     return attendances.map((a) => this.mapAttendance(a));
   }
 
+  /**
+   * Сводный отчёт по сотрудникам за период.
+   * По каждому сотруднику считает: отработанное время, опоздания (дни + минуты),
+   * дни без отметки входа/выхода, прогулы (рабочий день без отметок) и переработку.
+   * Порог отклонения GRACE_MIN минут (мелкие отклонения игнорируются).
+   * Время рабочего дня сравнивается в часовом поясе Душанбе (UTC+5).
+   */
+  async getRangeReport(dateFrom: string, dateTo: string, user: RequestUser, requestedCompanyId?: number) {
+    const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
+    const LATE_GRACE_MIN = 15;  // порог опоздания
+    const GRACE_MIN = 5;        // порог переработки/раннего ухода
+    const TZ_OFFSET_MIN = 300;  // Asia/Dushanbe = UTC+5
+
+    // Минуты от полуночи в местном времени (Душанбе) для UTC-инстанта
+    const localMinutes = (d: Date): number =>
+      ((d.getUTCHours() * 60 + d.getUTCMinutes()) + TZ_OFFSET_MIN) % 1440;
+    const parseHM = (s: string | null | undefined, fallback: number): number => {
+      if (!s) return fallback;
+      const [h, m] = s.split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+
+    // 1. Сотрудники (тот же набор, что и в списке: без заявок и уволенных)
+    const empWhere: any = { status: { notIn: ['Ожидает', 'Отклонён', 'Уволен'] } };
+    if (companyFilter) empWhere.companyId = companyFilter;
+    const employees = await this.prisma.employee.findMany({
+      where: empWhere,
+      select: {
+        id: true, firstName: true, lastName: true, patronymic: true,
+        companyId: true, sortOrder: true,
+        department: { select: { name: true, sortOrder: true } },
+        position: { select: { name: true } },
+      },
+    });
+    employees.sort((a, b) => {
+      const dA = (a as any).department?.sortOrder ?? 0;
+      const dB = (b as any).department?.sortOrder ?? 0;
+      if (dA !== dB) return dA - dB;
+      const eA = a.sortOrder ?? 0;
+      const eB = b.sortOrder ?? 0;
+      if (eA !== eB) return eA - eB;
+      return a.id - b.id;
+    });
+    if (employees.length === 0) return { period: { dateFrom, dateTo }, rows: [] };
+
+    // 2. Расписания компаний (рабочее время + рабочие дни недели)
+    const companyIds = [...new Set(employees.map((e) => e.companyId))];
+    const companies = await this.prisma.company.findMany({
+      where: { id: { in: companyIds } },
+      select: { id: true, workDayStart: true, workDayEnd: true, workDays: true },
+    });
+    const schedById = new Map<number, { startMin: number; endMin: number; days: Set<number> }>();
+    for (const c of companies) {
+      const days = (c.workDays || '1,2,3,4,5')
+        .split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => n >= 1 && n <= 7);
+      schedById.set(c.id, {
+        startMin: parseHM(c.workDayStart, 9 * 60),
+        endMin: parseHM(c.workDayEnd, 18 * 60),
+        days: new Set(days.length ? days : [1, 2, 3, 4, 5]),
+      });
+    }
+
+    // 3. Записи посещаемости за период → map empId → (dateKey → att)
+    const startDate = new Date(dateFrom + 'T00:00:00.000Z');
+    const endDate = new Date(dateTo + 'T00:00:00.000Z');
+    const attWhere: any = { date: { gte: startDate, lte: endDate } };
+    if (companyFilter) attWhere.companyId = companyFilter;
+    const attendances = await this.prisma.attendance.findMany({
+      where: attWhere,
+      select: { employeeId: true, date: true, firstEntry: true, lastExit: true, totalMinutes: true },
+    });
+    const attByEmp = new Map<number, Map<string, (typeof attendances)[number]>>();
+    for (const a of attendances) {
+      const key = a.date.toISOString().split('T')[0];
+      let m = attByEmp.get(a.employeeId);
+      if (!m) { m = new Map(); attByEmp.set(a.employeeId, m); }
+      m.set(key, a);
+    }
+
+    // 4. Список всех календарных дат периода (UTC-полночь) + ISO-день недели
+    const days: { key: string; iso: number }[] = [];
+    for (let t = startDate.getTime(); t <= endDate.getTime(); t += 86400000) {
+      const d = new Date(t);
+      const wd = d.getUTCDay(); // 0=Вс..6=Сб
+      days.push({ key: d.toISOString().split('T')[0], iso: wd === 0 ? 7 : wd });
+    }
+
+    // 5. Агрегация по каждому сотруднику
+    const rows = employees.map((emp) => {
+      const sched = schedById.get(emp.companyId) || { startMin: 540, endMin: 1080, days: new Set([1, 2, 3, 4, 5]) };
+      const attMap = attByEmp.get(emp.id) || new Map();
+
+      let workedMinutes = 0;
+      let presentDays = 0;
+      let workingDays = 0;
+      let absentDays = 0;
+      let lateDays = 0, lateMinutes = 0;
+      let earlyLeaveDays = 0, earlyLeaveMinutes = 0;
+      let missingInDays = 0, missingOutDays = 0;
+      let overworkDays = 0, overworkMinutes = 0;
+
+      for (const day of days) {
+        const isWorkingDay = sched.days.has(day.iso);
+        const att = attMap.get(day.key);
+
+        if (isWorkingDay) workingDays++;
+
+        if (!att) {
+          if (isWorkingDay) absentDays++; // прогул — рабочий день без отметок
+          continue;
+        }
+
+        // Сотрудник отметился (запись существует)
+        presentDays++;
+        workedMinutes += att.totalMinutes;
+
+        const hasIn = !!att.firstEntry;
+        const hasOut = !!att.lastExit;
+        if (!hasIn) missingInDays++;
+        if (!hasOut) missingOutDays++;
+
+        let dayOver = 0;
+
+        if (isWorkingDay) {
+          if (hasIn) {
+            const inMin = localMinutes(att.firstEntry!);
+            const late = inMin - sched.startMin;
+            if (late > LATE_GRACE_MIN) { lateDays++; lateMinutes += late; }
+            const before = sched.startMin - inMin; // пришёл раньше начала
+            if (before > GRACE_MIN) dayOver += before;
+          }
+          if (hasOut) {
+            const outMin = localMinutes(att.lastExit!);
+            const early = sched.endMin - outMin;
+            if (early > GRACE_MIN) { earlyLeaveDays++; earlyLeaveMinutes += early; }
+            const after = outMin - sched.endMin; // ушёл позже конца
+            if (after > GRACE_MIN) dayOver += after;
+          }
+        } else {
+          // Работа в выходной/нерабочий день — целиком переработка
+          if (att.totalMinutes > GRACE_MIN) dayOver += att.totalMinutes;
+        }
+
+        if (dayOver > 0) { overworkDays++; overworkMinutes += dayOver; }
+      }
+
+      return {
+        employeeId: emp.id,
+        employeeName: `${emp.lastName} ${emp.firstName}${emp.patronymic ? ' ' + emp.patronymic : ''}`,
+        departmentName: (emp as any).department?.name || null,
+        positionName: (emp as any).position?.name || null,
+        workedMinutes,
+        presentDays,
+        workingDays,
+        absentDays,
+        lateDays,
+        lateMinutes,
+        missingInDays,
+        missingOutDays,
+        earlyLeaveDays,
+        earlyLeaveMinutes,
+        overworkDays,
+        overworkMinutes,
+      };
+    });
+
+    return { period: { dateFrom, dateTo }, rows };
+  }
+
   async getEmployeeAttendance(employeeId: number, month: number, year: number, user: RequestUser) {
     const employee = await this.prisma.employee.findUnique({ where: { id: employeeId } });
     if (!employee) throw new NotFoundException(`Employee with ID ${employeeId} not found`);
@@ -459,7 +628,7 @@ export class AttendanceService implements OnModuleInit {
   // ─────────── register event ───────────
 
   async registerEvent(
-    data: { employeeId: number; direction: string; officeId?: number; deviceName?: string; note?: string; deadline?: string },
+    data: { employeeId: number; direction: string; officeId?: number; deviceName?: string; note?: string; deadline?: string; date?: string; time?: string },
     user: RequestUser,
   ) {
     const employee = await this.prisma.employee.findUnique({ where: { id: data.employeeId } });
@@ -467,24 +636,27 @@ export class AttendanceService implements OnModuleInit {
     if (!user.isHoldingAdmin && employee.companyId !== user.companyId)
       throw new ForbiddenException('Access denied to this employee');
 
-    const now = new Date();
+    // Время события: если переданы дата+время — берём их, иначе текущий момент
+    const timestamp = (data.date && data.time)
+      ? this.buildDeadlineDate(new Date(data.date + 'T00:00:00'), data.time)
+      : new Date();
 
     const event = await this.prisma.attendanceEvent.create({
       data: {
         employeeId: data.employeeId,
         companyId: employee.companyId,
-        timestamp: now,
+        timestamp,
         direction: data.direction,
         deviceName: data.deviceName || `Ручной ввод — ${user.email}`,
         officeId: data.officeId || null,
       },
     });
 
-    await this.recalculateDay(data.employeeId, now);
+    await this.recalculateDay(data.employeeId, timestamp);
 
     // Если кадровик добавил комментарий или срок — пишем в attendance
     if (data.note || data.deadline) {
-      const dateOnly = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const dateOnly = new Date(Date.UTC(timestamp.getFullYear(), timestamp.getMonth(), timestamp.getDate()));
       const deadlineDate = data.deadline ? this.buildDeadlineDate(dateOnly, data.deadline) : null;
 
       await this.prisma.attendance.update({
@@ -502,7 +674,7 @@ export class AttendanceService implements OnModuleInit {
     // TG уведомление
     const empName = `${employee.lastName} ${employee.firstName}`;
     const dirLabel = data.direction === 'IN' ? '🟢 Check-In' : '🔴 Check-Out';
-    const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dushanbe' });
+    const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dushanbe' });
     await this.telegram.notify(
       'correction',
       `${dirLabel} (ручной)\n👤 ${empName}  ⏰ ${timeStr}${data.note ? `\n💬 ${data.note}` : ''}${data.deadline ? `\n⏳ Срок: до ${data.deadline}` : ''}\n👮 ${user.email}`,
@@ -510,6 +682,77 @@ export class AttendanceService implements OnModuleInit {
     );
 
     return event;
+  }
+
+  // ─────────── excused (отпросился) ───────────
+
+  /**
+   * Пометить день как уважительный («отпросился»):
+   *  - mode='left'   — отпросился и ушёл (если указано время — создаётся событие OUT)
+   *  - mode='absent' — отпросился и не пришёл (запись дня без событий, не считается прогулом)
+   */
+  async markExcused(
+    data: { employeeId: number; date: string; mode: 'left' | 'absent'; note: string; time?: string },
+    user: RequestUser,
+  ) {
+    const employee = await this.prisma.employee.findUnique({ where: { id: data.employeeId } });
+    if (!employee) throw new NotFoundException(`Employee with ID ${data.employeeId} not found`);
+    if (!user.isHoldingAdmin && employee.companyId !== user.companyId)
+      throw new ForbiddenException('Access denied to this employee');
+
+    const [y, m, d] = data.date.split('-').map(Number);
+    const dateOnly = new Date(Date.UTC(y, m - 1, d));
+    const correctionType = data.mode === 'left' ? 'excused_left' : 'excused_absent';
+
+    // «Отпросился и ушёл» с указанным временем — фиксируем уход событием OUT и пересчитываем день
+    if (data.mode === 'left' && data.time) {
+      const ts = this.buildDeadlineDate(new Date(`${data.date}T00:00:00`), data.time);
+      await this.prisma.attendanceEvent.create({
+        data: {
+          employeeId: data.employeeId,
+          companyId: employee.companyId,
+          timestamp: ts,
+          direction: 'OUT',
+          deviceName: `Отпросился — ${user.email}`,
+        },
+      });
+      await this.recalculateDay(data.employeeId, ts);
+    }
+
+    await this.prisma.attendance.upsert({
+      where: { employeeId_date: { employeeId: data.employeeId, date: dateOnly } },
+      update: {
+        status: 'excused',
+        correctionType,
+        correctedBy: user.email,
+        correctionNote: data.note,
+        correctionDeadline: null,
+        correctionDeadlineNotified: false,
+      },
+      create: {
+        employeeId: data.employeeId,
+        companyId: employee.companyId,
+        date: dateOnly,
+        status: 'excused',
+        totalMinutes: 0,
+        firstEntry: null,
+        lastExit: null,
+        correctionType,
+        correctedBy: user.email,
+        correctionNote: data.note,
+      },
+    });
+
+    const empName = `${employee.lastName} ${employee.firstName}`;
+    const label = data.mode === 'left' ? '🟡 Отпросился и ушёл' : '🟡 Отпросился (не пришёл)';
+    await this.telegram.notify(
+      'correction',
+      `${label}\n👤 ${empName}\n📅 ${data.date}${data.mode === 'left' && data.time ? `  ⏰ ${data.time}` : ''}\n💬 ${data.note}\n👮 ${user.email}`,
+      { companyId: employee.companyId },
+    );
+
+    this.updates$.next({ companyId: employee.companyId, date: data.date });
+    return { ok: true };
   }
 
   // ─────────── deadline checker ───────────

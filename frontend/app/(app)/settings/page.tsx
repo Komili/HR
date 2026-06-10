@@ -83,6 +83,7 @@ export default function SettingsPage() {
   const [lunchEnd, setLunchEnd] = React.useState("13:00")
   const [workStart, setWorkStart] = React.useState("09:00")
   const [workEnd, setWorkEnd] = React.useState("18:00")
+  const [workDays, setWorkDays] = React.useState<number[]>([1, 2, 3, 4, 5])
   const [scheduleSaving, setScheduleSaving] = React.useState(false)
   const [scheduleSuccess, setScheduleSuccess] = React.useState(false)
   const [scheduleError, setScheduleError] = React.useState<string | null>(null)
@@ -91,19 +92,12 @@ export default function SettingsPage() {
     if (!canEditSchedule) return
     getCompanies().then((companies) => {
       setAllCompanies(companies)
-      // Попытаться взять текущую выбранную компанию из localStorage (CompanySelector)
-      const storedId = typeof window !== "undefined" ? localStorage.getItem("currentCompanyId") : null
-      const initialCompany = storedId
-        ? companies.find((x) => x.id === parseInt(storedId, 10)) || companies[0]
-        : companies[0]
-      if (initialCompany) {
-        setSelectedCompanyId(initialCompany.id)
-      }
+      // Компанию не выбираем по умолчанию — пользователь выбирает сам
     })
   }, [canEditSchedule])
 
   React.useEffect(() => {
-    if (!selectedCompanyId || allCompanies.length === 0) return
+    if (!selectedCompanyId || allCompanies.length === 0) { setCompany(null); return }
     const c = allCompanies.find((x) => x.id === selectedCompanyId) || null
     setCompany(c)
     if (c) {
@@ -111,8 +105,20 @@ export default function SettingsPage() {
       setLunchEnd(c.lunchBreakEnd || "13:00")
       setWorkStart(c.workDayStart || "09:00")
       setWorkEnd(c.workDayEnd || "18:00")
+      setWorkDays(
+        (c.workDays || "1,2,3,4,5")
+          .split(",")
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((n) => n >= 1 && n <= 7),
+      )
     }
   }, [selectedCompanyId, allCompanies])
+
+  const toggleWorkDay = (day: number) => {
+    setWorkDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b),
+    )
+  }
 
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -126,6 +132,7 @@ export default function SettingsPage() {
         lunchBreakEnd: lunchEnd,
         workDayStart: workStart,
         workDayEnd: workEnd,
+        workDays: workDays.join(","),
       })
       setScheduleSuccess(true)
       setTimeout(() => setScheduleSuccess(false), 3000)
@@ -200,20 +207,27 @@ export default function SettingsPage() {
             <CardContent className="p-4 sm:p-5">
               <form onSubmit={handleSaveSchedule} className="space-y-5">
                 {/* Выбор компании */}
-                {allCompanies.length > 1 && (
+                {allCompanies.length > 0 && (
                   <div className="space-y-2">
                     <Label htmlFor="companySelect">Компания</Label>
                     <select
                       id="companySelect"
                       value={selectedCompanyId ?? ""}
-                      onChange={(e) => setSelectedCompanyId(Number(e.target.value))}
+                      onChange={(e) => setSelectedCompanyId(e.target.value ? Number(e.target.value) : null)}
                       className="w-full h-10 rounded-xl border border-amber-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
                     >
+                      <option value="">— Выберите компанию —</option>
                       {allCompanies.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
                   </div>
+                )}
+
+                {!company && (
+                  <p className="text-sm text-muted-foreground">
+                    Выберите компанию, чтобы настроить рабочее расписание.
+                  </p>
                 )}
 
                 {company && (
@@ -246,6 +260,41 @@ export default function SettingsPage() {
                           <TimeInput value={lunchEnd} onChange={setLunchEnd} />
                         </div>
                       </div>
+                    </div>
+
+                    {/* Рабочие дни недели */}
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-slate-700">Рабочие дни недели</p>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { d: 1, label: "Пн" },
+                          { d: 2, label: "Вт" },
+                          { d: 3, label: "Ср" },
+                          { d: 4, label: "Чт" },
+                          { d: 5, label: "Пт" },
+                          { d: 6, label: "Сб" },
+                          { d: 7, label: "Вс" },
+                        ].map(({ d, label }) => {
+                          const active = workDays.includes(d)
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => toggleWorkDay(d)}
+                              className={`h-10 w-12 rounded-xl border text-sm font-semibold transition-all ${
+                                active
+                                  ? "border-amber-400 bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/25"
+                                  : "border-slate-200 bg-white text-slate-400 hover:border-amber-200 hover:text-slate-600"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Дни без отметок засчитываются как прогул только в выбранные рабочие дни.
+                      </p>
                     </div>
 
                     {/* Итоговая сводка */}

@@ -58,6 +58,21 @@ export class EmployeesService {
     // Создаём папку для документов сотрудника
     await this.createEmployeeFolder(employee);
 
+    // Telegram-уведомление о добавлении (категория employee)
+    try {
+      const fullName = `${employee.lastName} ${employee.firstName}${employee.patronymic ? ' ' + employee.patronymic : ''}`;
+      await this.telegram.notify(
+        'employee',
+        `➕ <b>Новый сотрудник</b>\n` +
+        `👤 <b>${fullName}</b>\n` +
+        `🏢 ${employee.company?.name || '—'}\n` +
+        (employee.department?.name ? `🗂 Отдел: ${employee.department.name}\n` : '') +
+        (employee.position?.name ? `💼 Должность: ${employee.position.name}\n` : '') +
+        `👮 Добавил: ${user.email}`,
+        { companyId: employee.companyId },
+      );
+    } catch { /* уведомление не критично */ }
+
     return employee;
   }
 
@@ -304,7 +319,7 @@ export class EmployeesService {
       await this.findOne(id, user);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const deleted = await this.prisma.$transaction(async (tx) => {
       // Открепляем весь инвентарь сотрудника перед удалением
       await tx.inventoryItem.updateMany({
         where: { employeeId: id },
@@ -321,6 +336,21 @@ export class EmployeesService {
         },
       });
     });
+
+    // Telegram-уведомление об удалении (категория employee)
+    try {
+      const fullName = `${deleted.lastName} ${deleted.firstName}${deleted.patronymic ? ' ' + deleted.patronymic : ''}`;
+      await this.telegram.notify(
+        'employee',
+        `🗑 <b>Сотрудник удалён</b>\n` +
+        `👤 <b>${fullName}</b>\n` +
+        `🏢 ${deleted.company?.name || '—'}\n` +
+        (user ? `👮 Удалил: ${user.email}` : ''),
+        { companyId: deleted.companyId },
+      );
+    } catch { /* уведомление не критично */ }
+
+    return deleted;
   }
 
   async uploadPhoto(id: number, file: Express.Multer.File, user: RequestUser) {

@@ -66,7 +66,7 @@ export class TelegramService implements OnModuleInit, OnApplicationBootstrap, On
           title: `.env чат ${chatId}`,
           chatId,
           token: null,
-          categories: ['attendance', 'correction', 'registration', 'access', 'system'],
+          categories: ['attendance', 'correction', 'registration', 'employee', 'door_access', 'unknown_face', 'access', 'system'],
           companyIds: [],
         }));
         this.logger.log(`ℹ️  Чаты из БД не настроены — использую .env (${ids.length} чат(ов))`);

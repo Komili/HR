@@ -41,6 +41,7 @@ export type Company = {
   lunchBreakEnd?: string | null;
   workDayStart?: string | null;
   workDayEnd?: string | null;
+  workDays?: string | null;
   _count?: {
     employees: number;
     departments: number;

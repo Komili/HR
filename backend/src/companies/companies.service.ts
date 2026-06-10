@@ -97,7 +97,7 @@ export class CompaniesService {
 
   async updateSchedule(
     id: number,
-    data: { lunchBreakStart?: string; lunchBreakEnd?: string; workDayStart?: string; workDayEnd?: string },
+    data: { lunchBreakStart?: string; lunchBreakEnd?: string; workDayStart?: string; workDayEnd?: string; workDays?: string },
     user: RequestUser,
   ): Promise<Company> {
     // Только суперадмин может менять расписание
