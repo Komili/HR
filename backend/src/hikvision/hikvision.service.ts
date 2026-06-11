@@ -685,21 +685,24 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       update: { grantedBy: user.email },
     });
 
-    // Telegram-уведомление о выдаче доступа (категория door_access)
-    try {
-      await this.telegramService.notify(
+    // Telegram-уведомление о фактической записи на устройство.
+    // Отправляем ТОЛЬКО после успешной записи, а не сразу после upsert.
+    const notifyGranted = (via: string) => {
+      this.telegramService.notify(
         'door_access',
         `🔑 <b>Выдан доступ к двери</b>\n` +
         `👤 <b>${employee.lastName} ${employee.firstName}</b>\n` +
         `🚪 ${device.officeName || `Устройство #${device.id}`} (${device.direction === 'IN' ? 'Вход' : device.direction === 'OUT' ? 'Выход' : '—'})\n` +
+        `${via}\n` +
         `👮 ${user.email}`,
         { companyId: device.companyId },
-      );
-    } catch { /* не критично */ }
+      ).catch(() => { /* не критично */ });
+    };
 
     // Пробуем отправить через ISUP напрямую
     const isupResult = await this.tryIsupGrant(device, employee);
     if (isupResult.sent) {
+      notifyGranted('🤖 Записан через ISUP');
       return { ok: true, message: isupResult.message };
     }
 
@@ -710,13 +713,16 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
           { lastSeenIp: device.externalIp, login: device.login, password: device.password, directPort: (device as any).directPort },
           employee, 'grant',
         );
+        notifyGranted('🌐 Записан напрямую (port forwarding)');
         return { ok: true, message: `✅ Записан на устройство напрямую (port forwarding)${warn ? '. ' + warn : ''}` };
       } catch (e) {
         this.logger.warn(`Port-forward grant failed: ${e.message}`);
       }
     }
 
-    // Fallback: очередь команды для relay-агента
+    // Fallback: очередь команды для relay-агента.
+    // Здесь НЕ шлём уведомление — оно придёт из updateHikCommand,
+    // когда relay-агент реально запишет сотрудника и отчитается о выполнении.
     await this.prisma.hikvisionCommand.create({
       data: { deviceId, employeeId, action: 'grant', initiatedById: user.userId },
     });
@@ -843,21 +849,24 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
     await this.prisma.hikvisionAccess.deleteMany({ where: { deviceId, employeeId } });
 
-    // Telegram-уведомление об отзыве доступа (категория door_access)
-    try {
-      await this.telegramService.notify(
+    // Telegram-уведомление об отзыве доступа (категория door_access).
+    // Отправляем ТОЛЬКО после фактического удаления с устройства, а не сразу после deleteMany.
+    const notifyRevoked = (via: string) => {
+      this.telegramService.notify(
         'door_access',
         `🔒 <b>Отозван доступ к двери</b>\n` +
         `👤 <b>${employee.lastName} ${employee.firstName}</b>\n` +
         `🚪 ${device.officeName || `Устройство #${device.id}`} (${device.direction === 'IN' ? 'Вход' : device.direction === 'OUT' ? 'Выход' : '—'})\n` +
+        `${via}\n` +
         `👮 ${user.email}`,
         { companyId: device.companyId },
-      );
-    } catch { /* не критично */ }
+      ).catch(() => { /* не критично */ });
+    };
 
     // Пробуем отправить через ISUP напрямую
     const isupResult = await this.tryIsupRevoke(device, employee);
     if (isupResult.sent) {
+      notifyRevoked('🤖 Удалён через ISUP');
       return { ok: true, message: isupResult.message };
     }
 
@@ -868,13 +877,16 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
           { lastSeenIp: device.externalIp, login: device.login, password: device.password, directPort: (device as any).directPort },
           employee, 'revoke',
         );
+        notifyRevoked('🌐 Удалён напрямую (port forwarding)');
         return { ok: true, message: '✅ Удалён с устройства напрямую (port forwarding)' };
       } catch (e) {
         this.logger.warn(`Port-forward revoke failed: ${e.message}`);
       }
     }
 
-    // Fallback: очередь команды для relay-агента
+    // Fallback: очередь команды для relay-агента.
+    // Здесь НЕ шлём уведомление — оно придёт из updateHikCommand,
+    // когда relay-агент реально удалит сотрудника и отчитается о выполнении.
     await this.prisma.hikvisionCommand.create({
       data: { deviceId, employeeId, action: 'revoke', initiatedById: user.userId },
     });
