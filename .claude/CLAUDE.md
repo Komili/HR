@@ -434,6 +434,14 @@ Hikvision устройство → HTTP Webhook → POST /api/hikvision/event
 - **HikvisionDevice** — новая модель (mac, lastSeenIp, companyId). Через `/api/agent/hik-commands`
 - HikvisionDevice автоматически создаётся при первом webhook от устройства
 
+### Мониторинг доступности (категория Telegram `device_status`)
+- `HikvisionService.runMonitorLoop()` проверяет связь **каждые 2 минуты** (`CHECK_INTERVAL_MS`)
+- **Устройство** считается офлайн при отсутствии сигнала **> 5 минут** (`OFFLINE_THRESHOLD_MS`)
+- **Агент** считается офлайн при отсутствии heartbeat **> 3 минут** (`AGENT_OFFLINE_MS`, агент пингует каждые 5 сек)
+- При смене состояния (online↔offline) шлёт Telegram 🔴/🟢 в категорию `device_status` с маршрутизацией по `companyId`
+- Пороги задаются константами в `backend/src/hikvision/hikvision.service.ts`
+- Скрипт `backend/prisma/add-device-status-category.js` — добавляет `device_status` чатам, где включена `system` (идемпотентный)
+
 ## Important Notes
 - Next.js 15 uses Promise-based params — use `React.use(params)` in client components
 - Frontend uses `output: "standalone"` for Docker
