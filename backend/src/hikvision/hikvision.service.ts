@@ -665,12 +665,60 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     }));
   }
 
+  /**
+   * Формирует подробное Telegram-сообщение о выдаче/отзыве доступа к двери.
+   * Включает: сотрудника (должность, отдел), компанию, устройство (направление, IP),
+   * способ записи, инициатора и время.
+   */
+  private buildDoorAccessMessage(
+    action: 'grant' | 'revoke',
+    employee: { firstName: string; lastName: string; position?: { name: string } | null; department?: { name: string } | null },
+    device: { id: number; deviceName?: string | null; officeName?: string | null; direction?: string | null; lastSeenIp?: string | null; externalIp?: string | null; directPort?: number | null; company?: { name: string; shortName: string | null } | null },
+    initiator: { firstName?: string | null; lastName?: string | null; email: string } | null,
+    initiatorEmail: string,
+    via: string,
+  ): string {
+    const empName = `${employee.lastName} ${employee.firstName}`;
+    const empInfo = [employee.position?.name, employee.department?.name].filter(Boolean).join(' · ');
+    const companyName = device.company?.shortName || device.company?.name || '';
+    const devName = device.deviceName || device.officeName || `Устройство #${device.id}`;
+    const dirLabel = device.direction === 'IN' ? 'Вход ↑' : device.direction === 'OUT' ? 'Выход ↓' : '—';
+    const ipLabel = device.directPort ? `${device.lastSeenIp}:${device.directPort}` : device.lastSeenIp;
+    const now = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Dushanbe', hour12: false });
+    const initiatorName = initiator
+      ? [initiator.lastName, initiator.firstName].filter(Boolean).join(' ') || initiator.email
+      : initiatorEmail;
+
+    const header = action === 'grant' ? '🔑 <b>Выдан доступ к двери</b>' : '🔒 <b>Отозван доступ к двери</b>';
+    const lines = [header, '', `👤 <b>${empName}</b>`];
+    if (empInfo) lines.push(`   ${empInfo}`);
+    if (companyName) lines.push(`   🏢 ${companyName}`);
+    lines.push('', `🚪 <b>${devName}</b>  ·  ${dirLabel}`);
+    if (ipLabel) lines.push(`   🔗 <code>${ipLabel}</code>`);
+    if (device.externalIp) lines.push(`   🌐 <code>${device.externalIp}</code>`);
+    lines.push('', via, `👮 Инициатор: ${initiatorName}`);
+    if (initiator && initiatorName !== initiator.email) lines.push(`   ✉️ ${initiator.email}`);
+    lines.push(`🕐 ${now}`);
+    return lines.join('\n');
+  }
+
   async grantAccess(deviceId: number, employeeId: number, user: RequestUser) {
-    const [device, employee] = await Promise.all([
-      this.prisma.hikvisionDevice.findUnique({ where: { id: deviceId } }),
+    const [device, employee, initiator] = await Promise.all([
+      this.prisma.hikvisionDevice.findUnique({
+        where: { id: deviceId },
+        include: { company: { select: { name: true, shortName: true } } },
+      }),
       this.prisma.employee.findUnique({
         where: { id: employeeId },
-        select: { id: true, firstName: true, lastName: true, photoPath: true, companyId: true },
+        select: {
+          id: true, firstName: true, lastName: true, photoPath: true, companyId: true,
+          position: { select: { name: true } },
+          department: { select: { name: true } },
+        },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { firstName: true, lastName: true, email: true },
       }),
     ]);
     if (!device) throw new NotFoundException('Устройство не найдено');
@@ -690,11 +738,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     const notifyGranted = (via: string) => {
       this.telegramService.notify(
         'door_access',
-        `🔑 <b>Выдан доступ к двери</b>\n` +
-        `👤 <b>${employee.lastName} ${employee.firstName}</b>\n` +
-        `🚪 ${device.officeName || `Устройство #${device.id}`} (${device.direction === 'IN' ? 'Вход' : device.direction === 'OUT' ? 'Выход' : '—'})\n` +
-        `${via}\n` +
-        `👮 ${user.email}`,
+        this.buildDoorAccessMessage('grant', employee, device, initiator, user.email, via),
         { companyId: device.companyId },
       ).catch(() => { /* не критично */ });
     };
@@ -834,11 +878,22 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async revokeAccess(deviceId: number, employeeId: number, user: RequestUser) {
-    const [device, employee] = await Promise.all([
-      this.prisma.hikvisionDevice.findUnique({ where: { id: deviceId } }),
+    const [device, employee, initiator] = await Promise.all([
+      this.prisma.hikvisionDevice.findUnique({
+        where: { id: deviceId },
+        include: { company: { select: { name: true, shortName: true } } },
+      }),
       this.prisma.employee.findUnique({
         where: { id: employeeId },
-        select: { id: true, firstName: true, lastName: true, companyId: true },
+        select: {
+          id: true, firstName: true, lastName: true, companyId: true,
+          position: { select: { name: true } },
+          department: { select: { name: true } },
+        },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { firstName: true, lastName: true, email: true },
       }),
     ]);
     if (!device) throw new NotFoundException('Устройство не найдено');
@@ -854,11 +909,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     const notifyRevoked = (via: string) => {
       this.telegramService.notify(
         'door_access',
-        `🔒 <b>Отозван доступ к двери</b>\n` +
-        `👤 <b>${employee.lastName} ${employee.firstName}</b>\n` +
-        `🚪 ${device.officeName || `Устройство #${device.id}`} (${device.direction === 'IN' ? 'Вход' : device.direction === 'OUT' ? 'Выход' : '—'})\n` +
-        `${via}\n` +
-        `👮 ${user.email}`,
+        this.buildDoorAccessMessage('revoke', employee, device, initiator, user.email, via),
         { companyId: device.companyId },
       ).catch(() => { /* не критично */ });
     };
