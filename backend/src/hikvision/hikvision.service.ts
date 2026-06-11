@@ -76,20 +76,29 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       this.agentOnlineState.set(agent.agentId, isOnline);
       const minsAgo = lastSeen ? Math.floor((now - lastSeen) / 60000) : null;
 
+      const now2 = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Dushanbe', hour12: false });
       if (isOnline) {
         this.logger.log(`🟢 Агент восстановлен: "${agent.name}"`);
-        this.telegramService.sendMessage(
-          `🟢 <b>Агент восстановлен</b>\n` +
+        this.telegramService.notify(
+          'device_status',
+          `🟢 <b>Агент снова на связи</b>\n` +
           `🖥 Имя: ${agent.name}\n` +
-          `✅ Связь восстановлена`,
+          (agent.version ? `🔢 Версия: ${agent.version}\n` : '') +
+          `✅ Связь восстановлена\n` +
+          `🕐 ${now2}`,
+          { companyId: agent.companyId },
         ).catch(() => {});
       } else {
         this.logger.warn(`🔴 Агент недоступен: "${agent.name}", последний сигнал ${minsAgo} мин назад`);
-        this.telegramService.sendMessage(
+        this.telegramService.notify(
+          'device_status',
           `🔴 <b>Агент недоступен</b>\n` +
           `🖥 Имя: ${agent.name}\n` +
+          (agent.version ? `🔢 Версия: ${agent.version}\n` : '') +
           `⏰ Последний сигнал: ${minsAgo !== null ? `${minsAgo} мин назад` : 'никогда'}\n` +
-          `⚠️ Проверь компьютер с агентом`,
+          `⚠️ Проверь компьютер с агентом (питание, сеть, процесс relay-agent)\n` +
+          `🕐 ${now2}`,
+          { companyId: agent.companyId },
         ).catch(() => {});
       }
     }
@@ -120,26 +129,39 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       const companyName = (device as any).company?.shortName || (device as any).company?.name || '—';
       const minsAgo = lastSeen ? Math.floor((now - lastSeen) / 60000) : null;
 
+      const devLabel = device.deviceName || device.officeName || `Устройство #${device.id}`;
+      const dirLabel = device.direction === 'IN' ? 'Вход ↑' : device.direction === 'OUT' ? 'Выход ↓' : '—';
+      const now2 = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Dushanbe', hour12: false });
+      const lastSeenLabel = lastSeen
+        ? new Date(lastSeen).toLocaleString('ru-RU', { timeZone: 'Asia/Dushanbe', hour12: false })
+        : 'никогда';
+
       if (isOnline) {
         this.logger.log(`🟢 Устройство восстановлено: ${device.officeName} (${device.macAddress})`);
-        this.telegramService.sendMessage(
-          `🟢 <b>Устройство восстановлено</b>\n` +
-          `🏛 Офис: ${device.officeName} (${device.direction === 'IN' ? 'Вход' : 'Выход'})\n` +
+        this.telegramService.notify(
+          'device_status',
+          `🟢 <b>Устройство снова на связи</b>\n` +
+          `🚪 ${devLabel} · ${dirLabel}\n` +
           `🏢 Компания: ${companyName}\n` +
-          `📟 MAC: ${device.macAddress}\n` +
-          `🏠 IP: ${device.lastSeenIp}\n` +
-          `✅ Связь восстановлена`,
+          `📟 MAC: <code>${device.macAddress}</code>\n` +
+          `🏠 IP: <code>${device.lastSeenIp}</code>${device.externalIp ? ` · 🌐 <code>${device.externalIp}</code>` : ''}\n` +
+          `✅ Связь восстановлена\n` +
+          `🕐 ${now2}`,
+          { companyId: device.companyId },
         ).catch(() => {});
       } else {
         this.logger.warn(`🔴 Устройство недоступно: ${device.officeName} (${device.macAddress}), последний сигнал ${minsAgo} мин назад`);
-        this.telegramService.sendMessage(
+        this.telegramService.notify(
+          'device_status',
           `🔴 <b>Устройство недоступно</b>\n` +
-          `🏛 Офис: ${device.officeName} (${device.direction === 'IN' ? 'Вход' : 'Выход'})\n` +
+          `🚪 ${devLabel} · ${dirLabel}\n` +
           `🏢 Компания: ${companyName}\n` +
-          `📟 MAC: ${device.macAddress}\n` +
-          `🏠 IP: ${device.lastSeenIp}\n` +
-          `⏰ Последний сигнал: ${minsAgo !== null ? `${minsAgo} мин назад` : 'никогда'}\n` +
-          `⚠️ Проверь питание и сеть устройства`,
+          `📟 MAC: <code>${device.macAddress}</code>\n` +
+          `🏠 IP: <code>${device.lastSeenIp}</code>${device.externalIp ? ` · 🌐 <code>${device.externalIp}</code>` : ''}\n` +
+          `⏰ Последний сигнал: ${minsAgo !== null ? `${minsAgo} мин назад` : 'никогда'} (${lastSeenLabel})\n` +
+          `⚠️ Проверь питание и сеть устройства\n` +
+          `🕐 ${now2}`,
+          { companyId: device.companyId },
         ).catch(() => {});
       }
     }

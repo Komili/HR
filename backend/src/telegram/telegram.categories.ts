@@ -8,6 +8,7 @@ export const TELEGRAM_CATEGORIES = [
   { key: 'door_access', label: 'Доступ к дверям (выдача / отзыв сотрудникам)' },
   { key: 'unknown_face', label: 'Неизвестные лица (Face ID не распознал)' },
   { key: 'access', label: 'СКУД / двери (доступы, ошибки)' },
+  { key: 'device_status', label: 'Связь с устройствами / агентом (потеря / восстановление)' },
   { key: 'system', label: 'Системные (старт/стоп сервера, СКУД-алерты)' },
 ] as const;
 
