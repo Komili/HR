@@ -190,7 +190,7 @@ export class AgentController {
     const cmd = await this.prisma.doorCommand.findUnique({
       where: { id },
       include: {
-        door: { select: { name: true } },
+        door: { select: { name: true, companyId: true } },
         employee: { select: { firstName: true, lastName: true } },
       },
     });
@@ -201,12 +201,13 @@ export class AgentController {
     if (cmd) {
       const empName = `${cmd.employee.lastName} ${cmd.employee.firstName}`;
       const doorName = cmd.door.name;
+      const companyId = cmd.door.companyId;
       if (body.status === 'done') {
         const actionText = cmd.action === 'grant' ? '✅ Доступ добавлен на устройство' : '✅ Доступ удалён с устройства';
-        this.telegram.sendMessage(`${actionText}\n👤 Сотрудник: *${empName}*\n🚪 Дверь: *${doorName}*\n🤖 Выполнено агентом`).catch(() => {});
+        this.telegram.notify('door_access', `${actionText}\n👤 Сотрудник: *${empName}*\n🚪 Дверь: *${doorName}*\n🤖 Выполнено агентом`, { companyId }).catch(() => {});
       } else {
         const actionText = cmd.action === 'grant' ? 'добавить доступ' : 'удалить доступ';
-        this.telegram.sendMessage(`❌ <b>Ошибка СКУД — не удалось ${actionText}</b>\n👤 Сотрудник: *${empName}*\n🚪 Дверь: *${doorName}*\n⚠️ Ошибка: ${body.error || 'неизвестно'}`).catch(() => {});
+        this.telegram.notify('door_access', `❌ <b>Ошибка СКУД — не удалось ${actionText}</b>\n👤 Сотрудник: *${empName}*\n🚪 Дверь: *${doorName}*\n⚠️ Ошибка: ${body.error || 'неизвестно'}`, { companyId }).catch(() => {});
       }
     }
     return updated;
@@ -383,6 +384,7 @@ export class AgentController {
           select: {
             officeName: true, direction: true, deviceName: true,
             lastSeenIp: true, externalIp: true, directPort: true,
+            companyId: true,
             company: { select: { name: true, shortName: true } },
           },
         },
@@ -422,7 +424,7 @@ export class AgentController {
         lines.push('', `🚪 <b>${devName}</b>  ·  ${dirLabel}`, `   🔗 <code>${ipLabel}</code>`);
         if (cmd.device.externalIp) lines.push(`   🌐 <code>${cmd.device.externalIp}</code>`);
         lines.push('', `👮 ${initiator}`, `🕐 ${now}  ·  Relay-агент`);
-        this.telegram.sendMessage(lines.join('\n')).catch(() => {});
+        this.telegram.notify('door_access', lines.join('\n'), { companyId: cmd.device.companyId }).catch(() => {});
       } else {
         const actionText = cmd.action === 'grant' ? 'добавить Face ID' : 'удалить Face ID';
         const lines = [`❌ <b>Ошибка — не удалось ${actionText}</b>`, '', `👤 <b>${empName}</b>`];
@@ -431,7 +433,7 @@ export class AgentController {
         lines.push('', `🚪 <b>${devName}</b>  ·  ${dirLabel}`, `   🔗 <code>${ipLabel}</code>`);
         if (cmd.device.externalIp) lines.push(`   🌐 <code>${cmd.device.externalIp}</code>`);
         lines.push('', `⚠️ ${body.error || 'неизвестно'}`, `👮 ${initiator}`, `🕐 ${now}`);
-        this.telegram.sendMessage(lines.join('\n')).catch(() => {});
+        this.telegram.notify('door_access', lines.join('\n'), { companyId: cmd.device.companyId }).catch(() => {});
       }
     }
     return updated;
