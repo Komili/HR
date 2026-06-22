@@ -117,14 +117,17 @@ import { useAuth } from "@/app/contexts/AuthContext";
 
 // Предопределённые типы документов для HR
 const DOCUMENT_TYPES = [
+  { id: "resume", name: "Резюме", required: true, icon: FileText },
   { id: "passport", name: "Паспорт", required: true, icon: FileText },
-  { id: "snils", name: "СНИЛС", required: true, icon: FileType },
-  { id: "inn", name: "ИНН", required: true, icon: FileType },
-  { id: "employment_contract", name: "Трудовой договор", required: true, icon: FileText },
+  { id: "photo", name: "Фотография 3×4", required: true, icon: FileImage },
+  { id: "diploma", name: "Диплом / Аттестат", required: true, icon: FileText },
   { id: "employment_order", name: "Приказ о приёме", required: true, icon: FileText },
-  { id: "diploma", name: "Диплом / Аттестат", required: false, icon: FileText },
-  { id: "photo", name: "Фотография 3x4", required: false, icon: FileImage },
+  { id: "residence_certificate", name: "Справка с места жительства", required: true, icon: FileText },
+  { id: "employment_contract", name: "Трудовой договор", required: true, icon: FileText },
+  { id: "work_record", name: "Трудовая книжка", required: false, icon: FileType },
+  { id: "inn", name: "ИНН", required: false, icon: FileType },
   { id: "medical", name: "Медицинская справка", required: false, icon: FileText },
+  { id: "sin", name: "СИН", required: false, icon: FileType },
   { id: "military_id", name: "Военный билет", required: false, icon: FileType },
   { id: "other", name: "Прочие документы", required: false, icon: File },
 ];
@@ -728,9 +731,15 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
   };
 
-  // Получить загруженный документ по типу
+  // Получить загруженный документ по типу (первый найденный)
   const getDocumentByType = (typeId: string): EmployeeDocument | undefined => {
     return documents.find((doc) => doc.type === typeId || doc.type === DOCUMENT_TYPES.find(t => t.id === typeId)?.name);
+  };
+
+  // Получить все загруженные документы по типу (для мультифайловых типов)
+  const getDocumentsByType = (typeId: string): EmployeeDocument[] => {
+    const typeName = DOCUMENT_TYPES.find(t => t.id === typeId)?.name;
+    return documents.filter((doc) => doc.type === typeId || doc.type === typeName);
   };
 
   // Проверить, является ли файл изображением или PDF
@@ -1128,9 +1137,135 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 </TableHeader>
                 <TableBody>
                   {DOCUMENT_TYPES.map((docType) => {
+                    const IconComponent = docType.icon;
+
+                    // Прочие документы — мультифайловый тип
+                    if (docType.id === 'other') {
+                      const otherDocs = getDocumentsByType('other');
+                      const hasFiles = otherDocs.length > 0;
+                      return (
+                        <TableRow
+                          key="other"
+                          className={`group transition-colors ${hasFiles ? 'bg-emerald-50/30 hover:bg-emerald-50/50' : 'hover:bg-gray-50/50'}`}
+                        >
+                          <TableCell className="text-center align-top pt-4">
+                            <div className="flex justify-center">
+                              <div className={`flex h-8 w-8 items-center justify-center rounded-full ${hasFiles ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+                                {hasFiles
+                                  ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                                  : <XCircle className="h-5 w-5 text-gray-400" />
+                                }
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="align-top pt-4">
+                            <div className="flex items-start gap-3">
+                              <div className={`flex h-10 w-10 items-center justify-center rounded-xl shrink-0 ${hasFiles ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+                                <IconComponent className={`h-5 w-5 ${hasFiles ? 'text-emerald-600' : 'text-gray-400'}`} />
+                              </div>
+                              <div>
+                                <p className="font-medium text-gray-900">{docType.name}</p>
+                                {hasFiles && (
+                                  <span className="text-xs text-gray-500">
+                                    {otherDocs.length} {otherDocs.length === 1 ? 'файл' : otherDocs.length < 5 ? 'файла' : 'файлов'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell align-top pt-4">
+                            {hasFiles ? (
+                              <div className="space-y-1.5">
+                                {otherDocs.map(doc => (
+                                  <div key={doc.id} className="flex items-center gap-2">
+                                    <File className="h-4 w-4 text-emerald-600 shrink-0" />
+                                    <span className="text-sm text-gray-600 truncate max-w-[200px]">{doc.fileName}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400 italic">Не загружен</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right align-top pt-3">
+                            <div className="flex flex-col items-end gap-2">
+                              {otherDocs.map(doc => (
+                                <div key={doc.id} className="flex items-center gap-1">
+                                  {isPreviewable(doc.fileName) && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs rounded-md border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300"
+                                      onClick={() => handlePreview(doc)}
+                                    >
+                                      <Eye className="h-3 w-3 sm:mr-1" />
+                                      <span className="hidden sm:inline">Просмотр</span>
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs rounded-md border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-300"
+                                    onClick={() => handleDownload(doc)}
+                                  >
+                                    <Download className="h-3 w-3 sm:mr-1" />
+                                    <span className="hidden sm:inline">Скачать</span>
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs rounded-md border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300"
+                                    disabled={deletingDocId === doc.id}
+                                    onClick={() => setDeleteConfirmDoc(doc)}
+                                  >
+                                    {deletingDocId === doc.id ? (
+                                      <div className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3 w-3" />
+                                    )}
+                                  </Button>
+                                </div>
+                              ))}
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white"
+                                disabled={uploading === 'other'}
+                                onClick={() => fileInputRefs.current['other']?.click()}
+                              >
+                                {uploading === 'other' ? (
+                                  <>
+                                    <div className="h-4 w-4 mr-1 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                                    Загрузка...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Upload className="h-4 w-4 mr-1" />
+                                    {hasFiles ? 'Добавить' : 'Загрузить'}
+                                  </>
+                                )}
+                              </Button>
+                              <input
+                                type="file"
+                                ref={(el) => { fileInputRefs.current['other'] = el; }}
+                                className="hidden"
+                                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                onChange={(e) => {
+                                  if (e.target.files?.[0]) {
+                                    handleUpload(e.target.files[0], 'other');
+                                    e.target.value = '';
+                                  }
+                                }}
+                              />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
+
+                    // Стандартный однофайловый тип
                     const uploadedDoc = getDocumentByType(docType.id);
                     const isUploaded = !!uploadedDoc;
-                    const IconComponent = docType.icon;
 
                     return (
                       <TableRow
@@ -1146,8 +1281,8 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                             </div>
                           ) : (
                             <div className="flex justify-center">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-100">
-                                <XCircle className="h-5 w-5 text-red-500" />
+                              <div className={`flex h-8 w-8 items-center justify-center rounded-full ${docType.required ? 'bg-red-100' : 'bg-gray-100'}`}>
+                                <XCircle className={`h-5 w-5 ${docType.required ? 'text-red-500' : 'text-gray-400'}`} />
                               </div>
                             </div>
                           )}
@@ -1165,7 +1300,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           {isUploaded ? (
                             <div className="flex items-center gap-2">
                               <File className="h-4 w-4 text-emerald-600" />
