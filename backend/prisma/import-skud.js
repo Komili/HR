@@ -311,9 +311,10 @@ async function main() {
     path.join(__dirname, '../../skud.sql'),     // локально: backend/prisma/../../skud.sql
     path.join(__dirname, '../skud.sql'),         // backend/skud.sql
     path.join(process.cwd(), 'skud.sql'),        // текущая папка
+    '/tmp/skud.sql',                             // Docker: /tmp/skud.sql
     '/app/skud.sql',                             // Docker: /app/skud.sql
   ];
-  const sqlPath = possiblePaths.find(p => fs.existsSync(p));
+  const sqlPath = possiblePaths.find(p => fs.existsSync(p) && fs.statSync(p).isFile());
   if (!sqlPath) {
     console.error('❌ Файл skud.sql не найден! Проверенные пути:', possiblePaths.join(', '));
     process.exit(1);

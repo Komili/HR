@@ -116,9 +116,10 @@ function NavLink({
 }
 
 function CompanySelector() {
-  const { isHoldingAdmin, companies, currentCompanyId, currentCompanyName, setCurrentCompany } = useAuth();
+  const { isHoldingAdmin, isMultiCompany, companies, currentCompanyId, currentCompanyName, setCurrentCompany, user } = useAuth();
 
-  if (!isHoldingAdmin) {
+  // Только одна компания — просто показываем название
+  if (!isHoldingAdmin && !isMultiCompany) {
     if (currentCompanyName) {
       return (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200">
@@ -130,39 +131,56 @@ function CompanySelector() {
     return null;
   }
 
+  // Для мультидоступа фильтруем список только по разрешённым компаниям
+  const visibleCompanies = isMultiCompany && user?.companyIds
+    ? companies.filter((c) => user.companyIds!.includes(c.id))
+    : companies;
+
+  const accentColor = isHoldingAdmin ? "amber" : "blue";
+  const bgClass = isHoldingAdmin
+    ? "bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200 hover:from-amber-100 hover:to-orange-100"
+    : "bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 hover:from-blue-100 hover:to-indigo-100";
+  const iconClass = isHoldingAdmin ? "text-amber-600" : "text-blue-600";
+  const checkClass = isHoldingAdmin ? "text-amber-500" : "text-blue-500";
+  const labelClass = isHoldingAdmin ? "text-amber-600" : "text-blue-600";
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="flex items-center gap-2 px-3 py-2 h-auto rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-gray-700 hover:from-amber-100 hover:to-orange-100 hover:text-gray-900 w-full justify-start"
+          className={`flex items-center gap-2 px-3 py-2 h-auto rounded-lg border text-gray-700 hover:text-gray-900 w-full justify-start ${bgClass}`}
         >
-          <Building className="h-4 w-4 text-amber-600" />
+          <Building className={`h-4 w-4 ${iconClass}`} />
           <span className="text-sm truncate max-w-[140px]">
-            {currentCompanyName || "Все компании"}
+            {currentCompanyName || (isHoldingAdmin ? "Все компании" : "Выберите компанию")}
           </span>
-          <ChevronDown className="h-4 w-4 text-amber-600 ml-auto" />
+          <ChevronDown className={`h-4 w-4 ${iconClass} ml-auto`} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuLabel className="text-amber-600">
+        <DropdownMenuLabel className={labelClass}>
           Выбор компании
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => {
-            localStorage.removeItem("currentCompanyId");
-            localStorage.removeItem("currentCompanyName");
-            window.location.reload();
-          }}
-          className="cursor-pointer"
-        >
-          <Building className="mr-2 h-4 w-4" />
-          Все компании
-          {!currentCompanyId && <Check className="ml-auto h-4 w-4 text-amber-500" />}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {companies.map((company) => (
+        {isHoldingAdmin && (
+          <>
+            <DropdownMenuItem
+              onClick={() => {
+                localStorage.removeItem("currentCompanyId");
+                localStorage.removeItem("currentCompanyName");
+                window.location.reload();
+              }}
+              className="cursor-pointer"
+            >
+              <Building className="mr-2 h-4 w-4" />
+              Все компании
+              {!currentCompanyId && <Check className={`ml-auto h-4 w-4 ${checkClass}`} />}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {visibleCompanies.map((company) => (
           <DropdownMenuItem
             key={company.id}
             onClick={() => {
@@ -174,7 +192,7 @@ function CompanySelector() {
             <Building2 className="mr-2 h-4 w-4" />
             <span className="truncate">{company.shortName || company.name}</span>
             {currentCompanyId === company.id && (
-              <Check className="ml-auto h-4 w-4 text-amber-500" />
+              <Check className={`ml-auto h-4 w-4 ${checkClass}`} />
             )}
           </DropdownMenuItem>
         ))}
@@ -189,10 +207,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { user, logout, isHoldingAdmin, currentCompanyId } = useAuth();
+  const { user, logout, isHoldingAdmin, isMultiCompany, currentCompanyId } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
-  const needsCompanySelection = isHoldingAdmin && !currentCompanyId;
+  const needsCompanySelection = (isHoldingAdmin || isMultiCompany) && !currentCompanyId;
 
   const handleGlobalSearch = (e: React.FormEvent) => {
     e.preventDefault();

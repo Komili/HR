@@ -28,6 +28,7 @@ model Company {
   workDayEnd      String?    @default("18:00") // Конец рабочего дня (HH:mm)
   workDays        String?    @default("1,2,3,4,5") // Рабочие дни недели (ISO: 1=Пн..7=Вс), через запятую
   users       User[]
+  userAccesses UserCompany[]
   employees      Employee[]
   departments    Department[]
   positions      Position[]
@@ -58,9 +59,21 @@ model User {
   companyId      Int?     // null для суперадминов холдинга
   isHoldingAdmin    Boolean           @default(false) // Суперадмин холдинга
   isActive          Boolean           @default(true)
+  extraCompanies    UserCompany[]     // Дополнительные компании (мультидоступ)
   initiatedCommands HikvisionCommand[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
+}
+
+model UserCompany {
+  userId    Int
+  companyId Int
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
 }
 
 model Role {

@@ -29,7 +29,7 @@ export class UsersController {
   @Post()
   @Roles('Суперадмин')
   create(
-    @Body() body: { email: string; password: string; firstName?: string; lastName?: string; roleId: number; companyId?: number },
+    @Body() body: { email: string; password: string; firstName?: string; lastName?: string; roleId: number; companyId?: number; extraCompanyIds?: number[] },
     @Request() req: { user: RequestUser },
   ) {
     return this.usersService.createUser(body, req.user);
@@ -39,10 +39,20 @@ export class UsersController {
   @Roles('Суперадмин')
   update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { email?: string; firstName?: string; lastName?: string; roleId?: number; companyId?: number | null; isActive?: boolean },
+    @Body() body: { email?: string; firstName?: string; lastName?: string; roleId?: number; companyId?: number | null; isActive?: boolean; extraCompanyIds?: number[] },
     @Request() req: { user: RequestUser },
   ) {
     return this.usersService.updateUser(id, body, req.user);
+  }
+
+  @Patch(':id/companies')
+  @Roles('Суперадмин')
+  setCompanies(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { companyIds: number[] },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.usersService.setUserCompanies(id, body.companyIds, req.user);
   }
 
   @Patch(':id/password')

@@ -5,6 +5,7 @@ export type AuthUser = {
   companyId: number | null;
   companyName: string | null;
   isHoldingAdmin: boolean;
+  companyIds?: number[]; // Все разрешённые компании (мультидоступ)
   iat?: number;
   exp?: number;
 };
@@ -18,6 +19,7 @@ export type SystemUser = {
   role: { name: string };
   companyId: number | null;
   company: { id: number; name: string; shortName: string | null } | null;
+  extraCompanies: { companyId: number; company: { id: number; name: string; shortName: string | null } }[];
   isHoldingAdmin: boolean;
   isActive: boolean;
   createdAt: string;

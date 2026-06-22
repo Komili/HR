@@ -141,6 +141,13 @@ export async function deleteEmployee(id: number): Promise<void> {
   await apiFetch(`/employees/${id}`, { method: "DELETE" });
 }
 
+export async function transferEmployee(
+  id: number,
+  data: { targetCompanyId: number; departmentId?: number; positionId?: number },
+): Promise<Employee> {
+  return apiFetch(`/employees/${id}/transfer`, { method: "POST", body: data });
+}
+
 export async function uploadEmployeePhoto(employeeId: number, file: File): Promise<Employee> {
   const formData = new FormData();
   formData.append("photo", file);
@@ -510,15 +517,19 @@ export async function getRoles(): Promise<import("./types").Role[]> {
 }
 
 export async function createUser(data: {
-  email: string; password: string; firstName?: string; lastName?: string; roleId: number; companyId?: number;
+  email: string; password: string; firstName?: string; lastName?: string; roleId: number; companyId?: number; extraCompanyIds?: number[];
 }): Promise<import("./types").SystemUser> {
   return apiFetch("/users", { method: "POST", body: data });
 }
 
 export async function updateUser(id: number, data: {
-  email?: string; firstName?: string; lastName?: string; roleId?: number; companyId?: number | null; isActive?: boolean;
+  email?: string; firstName?: string; lastName?: string; roleId?: number; companyId?: number | null; isActive?: boolean; extraCompanyIds?: number[];
 }): Promise<import("./types").SystemUser> {
   return apiFetch(`/users/${id}`, { method: "PATCH", body: data });
+}
+
+export async function setUserCompanies(id: number, companyIds: number[]): Promise<void> {
+  await apiFetch(`/users/${id}/companies`, { method: "PATCH", body: { companyIds } });
 }
 
 export async function changeUserPassword(id: number, newPassword: string): Promise<void> {

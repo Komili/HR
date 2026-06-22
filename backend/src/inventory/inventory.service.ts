@@ -2,19 +2,14 @@ import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../auth/jwt.strategy';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 
 @Injectable()
 export class InventoryService {
   constructor(private prisma: PrismaService) {}
 
-  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
-    if (user.isHoldingAdmin) {
-      return requestedCompanyId || undefined;
-    }
-    if (!user.companyId) {
-      throw new ForbiddenException('User is not assigned to any company');
-    }
-    return user.companyId;
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number) {
+    return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
   private async logHistory(
@@ -104,10 +99,8 @@ export class InventoryService {
       throw new NotFoundException(`Inventory item with ID ${id} not found`);
     }
 
-    if (user && !user.isHoldingAdmin) {
-      if (item.companyId !== user.companyId) {
-        throw new ForbiddenException('Access denied to this inventory item');
-      }
+    if (user && !isAuthorizedForCompany(user, item.companyId)) {
+      throw new ForbiddenException('Access denied to this inventory item');
     }
 
     return item;
@@ -119,7 +112,7 @@ export class InventoryService {
       const employee = await this.prisma.employee.findUnique({
         where: { id: employeeId },
       });
-      if (!employee || employee.companyId !== user.companyId) {
+      if (!employee || !isAuthorizedForCompany(user, employee.companyId)) {
         throw new ForbiddenException('Access denied to this employee');
       }
     }
@@ -229,7 +222,7 @@ export class InventoryService {
       throw new NotFoundException(`Employee with ID ${employeeId} not found`);
     }
 
-    if (!user.isHoldingAdmin && employee.companyId !== user.companyId) {
+    if (!isAuthorizedForCompany(user, employee.companyId)) {
       throw new ForbiddenException('Cannot assign to employee from another company');
     }
 

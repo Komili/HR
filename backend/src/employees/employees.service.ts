@@ -1,4 +1,5 @@
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { Prisma } from '@prisma/client';
@@ -25,16 +26,8 @@ export class EmployeesService {
     private telegram: TelegramService,
   ) {}
 
-  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
-    // Суперадмин холдинга может выбрать любую компанию или видеть все
-    if (user.isHoldingAdmin) {
-      return requestedCompanyId || undefined;
-    }
-    // Обычный пользователь видит только свою компанию
-    if (!user.companyId) {
-      throw new ForbiddenException('User is not assigned to any company');
-    }
-    return user.companyId;
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number) {
+    return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
   async create(data: Prisma.EmployeeCreateInput, user: RequestUser): Promise<EmployeeWithRelations> {
@@ -225,10 +218,8 @@ export class EmployeesService {
     });
 
     // Проверяем доступ к сотруднику
-    if (employee && user && !user.isHoldingAdmin) {
-      if (employee.companyId !== user.companyId) {
-        throw new ForbiddenException('Access denied to this employee');
-      }
+    if (employee && user && !isAuthorizedForCompany(user, employee.companyId)) {
+      throw new ForbiddenException('Access denied to this employee');
     }
 
     return employee;
@@ -475,6 +466,138 @@ export class EmployeesService {
     }
 
     return roots;
+  }
+
+  async transfer(
+    id: number,
+    dto: { targetCompanyId: number; departmentId?: number; positionId?: number },
+    user: RequestUser,
+  ) {
+    if (!user.isHoldingAdmin) {
+      throw new ForbiddenException('Только суперадмин может переводить сотрудников');
+    }
+
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+      include: { company: true },
+    });
+    if (!employee) throw new NotFoundException('Сотрудник не найден');
+
+    const targetCompany = await this.prisma.company.findUnique({ where: { id: dto.targetCompanyId } });
+    if (!targetCompany) throw new NotFoundException('Компания назначения не найдена');
+
+    if (employee.companyId === dto.targetCompanyId) {
+      throw new BadRequestException('Сотрудник уже работает в этой компании');
+    }
+
+    // Перемещаем файлы из папки старой компании в новую
+    const oldCompanyFolder = EmployeesService.sanitizeCompany(employee.company?.name || 'unknown');
+    const newCompanyFolder = EmployeesService.sanitizeCompany(targetCompany.name);
+    const employeeDir = EmployeesService.employeeDirName(employee);
+    const oldDir = path.join('storage', 'companies', oldCompanyFolder, 'employees', employeeDir);
+    const newDir = path.join('storage', 'companies', newCompanyFolder, 'employees', employeeDir);
+
+    let newPhotoPath: string | null = employee.photoPath;
+    try {
+      await fs.mkdir(path.join(newDir, 'docs'), { recursive: true });
+
+      // Перемещаем файлы в корне папки (фото и кэши)
+      const rootFiles = await fs.readdir(oldDir);
+      for (const file of rootFiles) {
+        const src = path.join(oldDir, file);
+        const dest = path.join(newDir, file);
+        try {
+          const stat = await fs.stat(src);
+          if (!stat.isDirectory()) {
+            await fs.rename(src, dest);
+          }
+        } catch { /* пропускаем */ }
+      }
+
+      // Перемещаем документы из docs/
+      const docsDir = path.join(oldDir, 'docs');
+      try {
+        const docFiles = await fs.readdir(docsDir);
+        for (const file of docFiles) {
+          const src = path.join(docsDir, file);
+          const dest = path.join(newDir, 'docs', file);
+          try {
+            await fs.rename(src, dest);
+          } catch { /* пропускаем */ }
+        }
+      } catch { /* docs/ может не существовать */ }
+
+      if (employee.photoPath) {
+        newPhotoPath = employee.photoPath.replace(
+          path.join('storage', 'companies', oldCompanyFolder),
+          path.join('storage', 'companies', newCompanyFolder),
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`Не удалось переместить файлы сотрудника ${id}: ${e}`);
+    }
+
+    // Обновляем всё в транзакции
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Сам сотрудник
+      const emp = await tx.employee.update({
+        where: { id },
+        data: {
+          companyId: dto.targetCompanyId,
+          departmentId: dto.departmentId ?? null,
+          positionId: dto.positionId ?? null,
+          managerId: null,
+          photoPath: newPhotoPath,
+        },
+        include: { department: true, position: true, company: true, documents: { select: { type: true } } },
+      });
+
+      // Переносим документы
+      await tx.employeeDocument.updateMany({
+        where: { employeeId: id },
+        data: { companyId: dto.targetCompanyId },
+      });
+
+      // Переносим записи посещаемости
+      await tx.attendance.updateMany({
+        where: { employeeId: id },
+        data: { companyId: dto.targetCompanyId },
+      });
+
+      await tx.attendanceEvent.updateMany({
+        where: { employeeId: id },
+        data: { companyId: dto.targetCompanyId },
+      });
+
+      // Переносим историю должностей
+      await tx.positionHistory.updateMany({
+        where: { employeeId: id },
+        data: { companyId: dto.targetCompanyId },
+      });
+
+      // Переносим зарплату
+      await tx.salary.updateMany({
+        where: { employeeId: id },
+        data: { companyId: dto.targetCompanyId },
+      });
+
+      return emp;
+    });
+
+    // Telegram-уведомление о трансфере
+    try {
+      const fullName = `${employee.lastName} ${employee.firstName}${employee.patronymic ? ' ' + employee.patronymic : ''}`;
+      await this.telegram.notify(
+        'employee',
+        `🔄 <b>Трансфер сотрудника</b>\n` +
+        `👤 <b>${fullName}</b>\n` +
+        `🏢 ${employee.company?.name || '—'} → ${targetCompany.name}\n` +
+        `👮 Перевёл: ${user.email}`,
+        { companyId: dto.targetCompanyId },
+      );
+    } catch { /* уведомление не критично */ }
+
+    return updated;
   }
 
   // Метод для получения всех сотрудников всех компаний (только для суперадминов)

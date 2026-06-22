@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, BadRequestException, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../auth/jwt.strategy';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 
 type DepartmentWithCompany = Prisma.DepartmentGetPayload<{
   include: { company: true };
@@ -11,14 +12,8 @@ type DepartmentWithCompany = Prisma.DepartmentGetPayload<{
 export class DepartmentsService {
   constructor(private prisma: PrismaService) {}
 
-  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
-    if (user.isHoldingAdmin) {
-      return requestedCompanyId || undefined;
-    }
-    if (!user.companyId) {
-      throw new ForbiddenException('User is not assigned to any company');
-    }
-    return user.companyId;
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number) {
+    return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
   async create(data: Prisma.DepartmentCreateInput): Promise<DepartmentWithCompany> {
@@ -59,10 +54,8 @@ export class DepartmentsService {
       include: { company: true },
     });
 
-    if (department && user && !user.isHoldingAdmin) {
-      if (department.companyId !== user.companyId) {
-        throw new ForbiddenException('Access denied to this department');
-      }
+    if (department && user && !isAuthorizedForCompany(user, department.companyId)) {
+      throw new ForbiddenException('Access denied to this department');
     }
 
     return department;

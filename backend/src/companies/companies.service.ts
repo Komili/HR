@@ -23,12 +23,16 @@ export class CompaniesService {
   async findAll(user?: RequestUser): Promise<CompanyWithStats[]> {
     // Только суперадмины могут видеть все компании
     if (user && !user.isHoldingAdmin) {
-      // Обычный пользователь видит только свою компанию
-      if (!user.companyId) {
+      // Пользователь видит только свои компании (основная + дополнительные)
+      const allowedIds = user.companyIds && user.companyIds.length > 0
+        ? user.companyIds
+        : user.companyId ? [user.companyId] : [];
+      if (allowedIds.length === 0) {
         return [];
       }
       return this.prisma.company.findMany({
-        where: { id: user.companyId },
+        where: { id: { in: allowedIds } },
+        orderBy: { name: 'asc' },
         include: {
           _count: {
             select: {

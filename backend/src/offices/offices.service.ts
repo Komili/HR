@@ -1,19 +1,14 @@
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestUser } from '../auth/jwt.strategy';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 
 @Injectable()
 export class OfficesService {
   constructor(private prisma: PrismaService) {}
 
-  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
-    if (user.isHoldingAdmin) {
-      return requestedCompanyId || undefined;
-    }
-    if (!user.companyId) {
-      throw new ForbiddenException('User is not assigned to any company');
-    }
-    return user.companyId;
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number) {
+    return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
   async findAll(user: RequestUser, requestedCompanyId?: number) {
@@ -37,7 +32,7 @@ export class OfficesService {
       throw new NotFoundException(`Office with ID ${id} not found`);
     }
 
-    if (!user.isHoldingAdmin && office.companyId !== user.companyId) {
+    if (!isAuthorizedForCompany(user, office.companyId)) {
       throw new ForbiddenException('Access denied to this office');
     }
 
@@ -45,9 +40,8 @@ export class OfficesService {
   }
 
   async create(data: { name: string; address?: string; companyId?: number }, user: RequestUser) {
-    const targetCompanyId = user.isHoldingAdmin && data.companyId
-      ? data.companyId
-      : user.companyId;
+    const filter = this.getCompanyFilter(user, data.companyId);
+    const targetCompanyId = typeof filter === 'number' ? filter : data.companyId;
 
     if (!targetCompanyId) {
       throw new ForbiddenException('Company ID is required');

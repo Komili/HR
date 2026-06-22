@@ -1,19 +1,14 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestUser } from '../auth/jwt.strategy';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 
 @Injectable()
 export class SalaryService {
   constructor(private prisma: PrismaService) {}
 
-  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
-    if (user.isHoldingAdmin) {
-      return requestedCompanyId || undefined;
-    }
-    if (!user.companyId) {
-      throw new ForbiddenException('User is not assigned to any company');
-    }
-    return user.companyId;
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number) {
+    return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
   // Получить зарплатную ведомость за месяц

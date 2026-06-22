@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestUser } from '../auth/jwt.strategy';
+import { isAuthorizedForCompany } from '../common/company-filter';
 
 @Injectable()
 export class PositionHistoryService {
@@ -9,7 +10,7 @@ export class PositionHistoryService {
   async findByEmployee(employeeId: number, user: RequestUser) {
     const employee = await this.prisma.employee.findUnique({ where: { id: employeeId } });
     if (!employee) throw new NotFoundException('Сотрудник не найден');
-    if (!user.isHoldingAdmin && employee.companyId !== user.companyId) {
+    if (!isAuthorizedForCompany(user, employee.companyId)) {
       throw new ForbiddenException();
     }
     return this.prisma.positionHistory.findMany({
@@ -27,7 +28,7 @@ export class PositionHistoryService {
   }, user: RequestUser) {
     const employee = await this.prisma.employee.findUnique({ where: { id: employeeId } });
     if (!employee) throw new NotFoundException('Сотрудник не найден');
-    if (!user.isHoldingAdmin && employee.companyId !== user.companyId) {
+    if (!isAuthorizedForCompany(user, employee.companyId)) {
       throw new ForbiddenException();
     }
     return this.prisma.positionHistory.create({
@@ -52,7 +53,7 @@ export class PositionHistoryService {
   }, user: RequestUser) {
     const entry = await this.prisma.positionHistory.findUnique({ where: { id } });
     if (!entry) throw new NotFoundException('Запись не найдена');
-    if (!user.isHoldingAdmin && entry.companyId !== user.companyId) {
+    if (!isAuthorizedForCompany(user, entry.companyId)) {
       throw new ForbiddenException();
     }
     return this.prisma.positionHistory.update({
@@ -70,7 +71,7 @@ export class PositionHistoryService {
   async remove(id: number, user: RequestUser) {
     const entry = await this.prisma.positionHistory.findUnique({ where: { id } });
     if (!entry) throw new NotFoundException('Запись не найдена');
-    if (!user.isHoldingAdmin && entry.companyId !== user.companyId) {
+    if (!isAuthorizedForCompany(user, entry.companyId)) {
       throw new ForbiddenException();
     }
     await this.prisma.positionHistory.delete({ where: { id } });

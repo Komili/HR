@@ -4,6 +4,7 @@ import { Subject, Observable, filter, map } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { RequestUser } from '../auth/jwt.strategy';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 
 @Injectable()
 export class AttendanceService implements OnModuleInit {
@@ -29,10 +30,8 @@ export class AttendanceService implements OnModuleInit {
 
   // ─────────── helpers ───────────
 
-  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
-    if (user.isHoldingAdmin) return requestedCompanyId || undefined;
-    if (!user.companyId) throw new ForbiddenException('User is not assigned to any company');
-    return user.companyId;
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number) {
+    return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
   /** Строит DateTime из даты посещаемости + строки "HH:mm" в локальном времени (Asia/Dushanbe) */

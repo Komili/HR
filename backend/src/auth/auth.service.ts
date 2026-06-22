@@ -21,6 +21,12 @@ export class AuthService {
   }
 
   async login(user: any) {
+    // Собираем все companyIds: основная + дополнительные (UserCompany)
+    const extraCompanyIds: number[] = (user.extraCompanies || []).map((uc: any) => uc.companyId);
+    const companyIds: number[] = user.companyId
+      ? [...new Set([user.companyId, ...extraCompanyIds])]
+      : extraCompanyIds;
+
     const payload = {
       email: user.email,
       sub: user.id,
@@ -28,6 +34,7 @@ export class AuthService {
       companyId: user.companyId,
       companyName: user.company?.name || null,
       isHoldingAdmin: user.isHoldingAdmin || false,
+      companyIds: companyIds.length > 0 ? companyIds : undefined,
     };
     return {
       access_token: this.jwtService.sign(payload),
@@ -40,6 +47,7 @@ export class AuthService {
         companyId: user.companyId,
         companyName: user.company?.name || null,
         isHoldingAdmin: user.isHoldingAdmin || false,
+        companyIds: companyIds.length > 0 ? companyIds : undefined,
       },
     };
   }

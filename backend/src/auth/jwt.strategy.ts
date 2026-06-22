@@ -10,6 +10,7 @@ export interface JwtPayload {
   companyId: number | null;
   companyName: string | null;
   isHoldingAdmin: boolean;
+  companyIds?: number[]; // Все разрешённые компании (мультидоступ)
 }
 
 export interface RequestUser {
@@ -19,6 +20,7 @@ export interface RequestUser {
   companyId: number | null;
   companyName: string | null;
   isHoldingAdmin: boolean;
+  companyIds?: number[]; // Все разрешённые компании (мультидоступ)
 }
 
 @Injectable()
@@ -39,6 +41,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       companyId: payload.companyId,
       companyName: payload.companyName,
       isHoldingAdmin: payload.isHoldingAdmin,
+      companyIds: payload.companyIds,
     };
   }
 }

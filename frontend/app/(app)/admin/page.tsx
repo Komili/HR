@@ -88,6 +88,7 @@ function UsersTab() {
     lastName: "",
     roleId: 0,
     companyId: undefined as number | undefined,
+    extraCompanyIds: [] as number[],
     isActive: true,
   })
 
@@ -142,6 +143,7 @@ function UsersTab() {
       lastName: "",
       roleId: roles.length > 0 ? roles[0].id : 0,
       companyId: undefined,
+      extraCompanyIds: [],
       isActive: true,
     })
     setIsModalOpen(true)
@@ -156,6 +158,7 @@ function UsersTab() {
       lastName: user.lastName || "",
       roleId: user.roleId,
       companyId: user.companyId || undefined,
+      extraCompanyIds: (user.extraCompanies || []).map((ec) => ec.companyId),
       isActive: user.isActive,
     })
     setIsModalOpen(true)
@@ -194,6 +197,7 @@ function UsersTab() {
           roleId: formData.roleId,
           companyId: formData.companyId || null,
           isActive: formData.isActive,
+          extraCompanyIds: formData.extraCompanyIds,
         })
         showSuccess("Пользователь обновлён")
       } else {
@@ -204,6 +208,7 @@ function UsersTab() {
           lastName: formData.lastName || undefined,
           roleId: formData.roleId,
           companyId: formData.companyId,
+          extraCompanyIds: formData.extraCompanyIds,
         })
         showSuccess("Пользователь создан")
       }
@@ -310,18 +315,32 @@ function UsersTab() {
     {
       accessorKey: "company.name",
       header: "Компания",
-      cell: ({ row }) =>
-        row.original.company ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-100 to-cyan-100 px-3 py-1.5 text-xs font-medium text-blue-700">
-            <Building2 className="h-3 w-3" />
-            {row.original.company.shortName || row.original.company.name}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 px-3 py-1.5 text-xs font-medium text-amber-700">
-            <Crown className="h-3 w-3" />
-            Все компании
-          </span>
-        ),
+      cell: ({ row }) => {
+        const u = row.original
+        const extras = u.extraCompanies || []
+        if (!u.company) {
+          return (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 px-3 py-1.5 text-xs font-medium text-amber-700">
+              <Crown className="h-3 w-3" />
+              Все компании
+            </span>
+          )
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-100 to-cyan-100 px-3 py-1.5 text-xs font-medium text-blue-700">
+              <Building2 className="h-3 w-3" />
+              {u.company.shortName || u.company.name}
+            </span>
+            {extras.map((ec) => (
+              <span key={ec.companyId} className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-100 to-blue-100 px-2 py-1 text-xs font-medium text-indigo-700">
+                <Building2 className="h-3 w-3" />
+                {ec.company.shortName || ec.company.name}
+              </span>
+            ))}
+          </div>
+        )
+      },
     },
     {
       accessorKey: "isActive",
@@ -553,11 +572,19 @@ function UsersTab() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="userCompany">Компания</Label>
+            <Label htmlFor="userCompany">Основная компания</Label>
             <select
               id="userCompany"
               value={formData.companyId || ""}
-              onChange={(e) => setFormData({ ...formData, companyId: e.target.value ? Number(e.target.value) : undefined })}
+              onChange={(e) => {
+                const newId = e.target.value ? Number(e.target.value) : undefined
+                // убираем из доп. компаний если она там была
+                setFormData({
+                  ...formData,
+                  companyId: newId,
+                  extraCompanyIds: formData.extraCompanyIds.filter((id) => id !== newId),
+                })
+              }}
               className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
             >
               <option value="">Без компании (холдинг)</option>
@@ -569,6 +596,40 @@ function UsersTab() {
               Суперадмины без компании видят данные всех компаний
             </p>
           </div>
+
+          {formData.companyId && (
+            <div className="space-y-2">
+              <Label>Дополнительные компании</Label>
+              <div className="rounded-xl border border-input bg-background p-3 space-y-1.5 max-h-40 overflow-y-auto">
+                {companies
+                  .filter((c) => c.id !== formData.companyId)
+                  .map((c) => {
+                    const checked = formData.extraCompanyIds.includes(c.id)
+                    return (
+                      <label key={c.id} className="flex items-center gap-2 cursor-pointer text-sm py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setFormData({
+                              ...formData,
+                              extraCompanyIds: checked
+                                ? formData.extraCompanyIds.filter((id) => id !== c.id)
+                                : [...formData.extraCompanyIds, c.id],
+                            })
+                          }}
+                          className="rounded"
+                        />
+                        {c.shortName || c.name}
+                      </label>
+                    )
+                  })}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Пользователь сможет переключаться между выбранными компаниями
+              </p>
+            </div>
+          )}
 
           {editingUser && (
             <div className="flex items-center gap-3 rounded-xl bg-gray-50 border border-gray-200 px-4 py-3">

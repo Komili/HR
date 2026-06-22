@@ -18,6 +18,7 @@ interface AuthContextType {
   companies: Company[];
   loadCompanies: () => Promise<void>;
   isHoldingAdmin: boolean;
+  isMultiCompany: boolean; // Пользователь с доступом к нескольким компаниям
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -74,8 +75,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setUser(decoded);
 
           // Устанавливаем текущую компанию
-          if (decoded.isHoldingAdmin && storedCompanyId) {
-            // Суперадмин - восстанавливаем выбранную компанию
+          const isMultiCompany = decoded.companyIds && decoded.companyIds.length > 1;
+          if ((decoded.isHoldingAdmin || isMultiCompany) && storedCompanyId) {
+            // Суперадмин или мультидоступ - восстанавливаем выбранную компанию
             setCurrentCompanyId(parseInt(storedCompanyId, 10));
             setCurrentCompanyName(storedCompanyName || null);
           } else if (decoded.companyId) {
@@ -94,12 +96,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, []);
 
-  // Загружаем компании при наличии токена
+  // Загружаем компании при наличии токена (суперадмин или мультидоступ)
   useEffect(() => {
-    if (token && user?.isHoldingAdmin) {
+    if (token && (user?.isHoldingAdmin || (user?.companyIds && user.companyIds.length > 1))) {
       loadCompanies();
     }
-  }, [token, user?.isHoldingAdmin, loadCompanies]);
+  }, [token, user?.isHoldingAdmin, user?.companyIds, loadCompanies]);
 
   const login = (newToken: string, userData: AuthUser) => {
     localStorage.setItem("authToken", newToken);
@@ -107,15 +109,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(userData);
 
     // Устанавливаем текущую компанию
-    if (userData.companyId) {
+    const isMultiCompany = userData.companyIds && userData.companyIds.length > 1;
+    if (userData.isHoldingAdmin || isMultiCompany) {
+      // Суперадмин или мультидоступ - изначально без выбранной компании (видит все свои)
+      setCurrentCompanyId(null);
+      setCurrentCompanyName(null);
+    } else if (userData.companyId) {
       setCurrentCompanyId(userData.companyId);
       setCurrentCompanyName(userData.companyName);
       localStorage.setItem("currentCompanyId", userData.companyId.toString());
       localStorage.setItem("currentCompanyName", userData.companyName || "");
-    } else if (userData.isHoldingAdmin) {
-      // Суперадмин - изначально без выбранной компании (видит все)
-      setCurrentCompanyId(null);
-      setCurrentCompanyName(null);
     }
 
     router.push("/dashboard");
@@ -152,6 +155,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     companies,
     loadCompanies,
     isHoldingAdmin: user?.isHoldingAdmin || false,
+    isMultiCompany: !user?.isHoldingAdmin && (user?.companyIds?.length ?? 0) > 1,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

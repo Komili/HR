@@ -31,6 +31,7 @@ import {
   FileText,
   Building2,
   Briefcase,
+  ArrowRightLeft,
   Calendar,
   Mail,
   Phone,
@@ -103,8 +104,10 @@ import {
   getDepartments,
   getPositions,
   getEmployees,
+  getCompanies,
+  transferEmployee,
 } from "@/lib/hrms-api";
-import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice, Department, Position, Employee, CreateEmployeeInput } from "@/lib/types";
+import type { EmployeeProfile, EmployeeDocument, InventoryItem, AttendanceSummary, Door, HikvisionDevice, Department, Position, Employee, CreateEmployeeInput, Company } from "@/lib/types";
 import { CrudModal } from "@/components/crud-modal";
 import { EmployeeFormFields } from "@/components/employee-form-fields";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -167,6 +170,17 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [deleteEmployeeDialog, setDeleteEmployeeDialog] = useState(false);
   const [deletingEmployee, setDeletingEmployee] = useState(false);
+
+  // Transfer dialog state
+  const [transferDialog, setTransferDialog] = useState(false);
+  const [transferCompanies, setTransferCompanies] = useState<Company[]>([]);
+  const [transferTargetCompanyId, setTransferTargetCompanyId] = useState<number | "">("");
+  const [transferDepartments, setTransferDepartments] = useState<Department[]>([]);
+  const [transferPositions, setTransferPositions] = useState<Position[]>([]);
+  const [transferDepartmentId, setTransferDepartmentId] = useState<number | "">("");
+  const [transferPositionId, setTransferPositionId] = useState<number | "">("");
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
@@ -660,6 +674,60 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     }
   };
 
+  const openTransferDialog = async () => {
+    setTransferError(null);
+    setTransferTargetCompanyId("");
+    setTransferDepartmentId("");
+    setTransferPositionId("");
+    setTransferDepartments([]);
+    setTransferPositions([]);
+    try {
+      const companies = await getCompanies();
+      setTransferCompanies(companies.filter((c) => c.id !== employee?.companyId));
+    } catch {
+      setTransferCompanies([]);
+    }
+    setTransferDialog(true);
+  };
+
+  const handleTransferCompanyChange = async (companyId: number) => {
+    setTransferTargetCompanyId(companyId);
+    setTransferDepartmentId("");
+    setTransferPositionId("");
+    try {
+      const [depts, positions] = await Promise.all([
+        getDepartments(companyId),
+        getPositions(companyId),
+      ]);
+      setTransferDepartments(depts);
+      setTransferPositions(positions);
+    } catch {
+      setTransferDepartments([]);
+      setTransferPositions([]);
+    }
+  };
+
+  const handleTransfer = async () => {
+    if (!transferTargetCompanyId) return;
+    setTransferring(true);
+    setTransferError(null);
+    try {
+      await transferEmployee(employeeId, {
+        targetCompanyId: Number(transferTargetCompanyId),
+        departmentId: transferDepartmentId ? Number(transferDepartmentId) : undefined,
+        positionId: transferPositionId ? Number(transferPositionId) : undefined,
+      });
+      setTransferDialog(false);
+      setSuccessMessage("Сотрудник успешно переведён");
+      setTimeout(() => setSuccessMessage(null), 4000);
+      await loadData();
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : "Ошибка перевода");
+    } finally {
+      setTransferring(false);
+    }
+  };
+
   // Получить загруженный документ по типу
   const getDocumentByType = (typeId: string): EmployeeDocument | undefined => {
     return documents.find((doc) => doc.type === typeId || doc.type === DOCUMENT_TYPES.find(t => t.id === typeId)?.name);
@@ -782,6 +850,19 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
           </div>
 
           <div className="flex items-center gap-2">
+            {user?.isHoldingAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 sm:h-9 rounded-xl bg-amber-500/20 border-amber-400/30 text-amber-200 hover:bg-amber-500/40 text-xs sm:text-sm"
+                onClick={openTransferDialog}
+                title="Перевести в другую компанию"
+              >
+                <ArrowRightLeft className="mr-1 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Трансфер</span>
+                <span className="sm:hidden">Тр.</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -2220,6 +2301,106 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
       )}
 
       {/* Диалог удаления сотрудника */}
+      {/* Transfer Employee Dialog */}
+      <Dialog open={transferDialog} onOpenChange={setTransferDialog}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                <ArrowRightLeft className="h-5 w-5 text-amber-600" />
+              </div>
+              <DialogTitle>Перевод сотрудника</DialogTitle>
+            </div>
+            <DialogDescription className="pl-[52px]">
+              Переведите <span className="font-medium text-foreground">{fullName}</span> в другую компанию холдинга.
+              История посещаемости и документы будут перенесены.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {transferError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">
+                {transferError}
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Компания назначения *</Label>
+              <select
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                value={transferTargetCompanyId}
+                onChange={(e) => handleTransferCompanyChange(Number(e.target.value))}
+                disabled={transferring}
+              >
+                <option value="">— Выберите компанию —</option>
+                {transferCompanies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {transferDepartments.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Отдел (необязательно)</Label>
+                <select
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={transferDepartmentId}
+                  onChange={(e) => setTransferDepartmentId(e.target.value ? Number(e.target.value) : "")}
+                  disabled={transferring}
+                >
+                  <option value="">— Без отдела —</option>
+                  {transferDepartments.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {transferPositions.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Должность (необязательно)</Label>
+                <select
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={transferPositionId}
+                  onChange={(e) => setTransferPositionId(e.target.value ? Number(e.target.value) : "")}
+                  disabled={transferring}
+                >
+                  <option value="">— Без должности —</option>
+                  {transferPositions.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2 mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl"
+              onClick={() => setTransferDialog(false)}
+              disabled={transferring}
+            >
+              Отмена
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white"
+              disabled={transferring || !transferTargetCompanyId}
+              onClick={handleTransfer}
+            >
+              {transferring ? (
+                <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin mr-1" />
+              ) : (
+                <ArrowRightLeft className="h-4 w-4 mr-1" />
+              )}
+              Перевести
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={deleteEmployeeDialog} onOpenChange={setDeleteEmployeeDialog}>
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogHeader>

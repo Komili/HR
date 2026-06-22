@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmployeesService } from '../employees/employees.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { SelfRegisterDto } from './dto/self-register.dto';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany, getAllowedCompanyIds } from '../common/company-filter';
 import { RequestUser } from '../auth/jwt.strategy';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
@@ -147,8 +148,9 @@ export class RegistrationService {
     if (user.isHoldingAdmin) {
       if (requestedCompanyId) where.companyId = requestedCompanyId;
     } else {
-      if (!user.companyId) return [];
-      where.companyId = user.companyId;
+      const allowed = getAllowedCompanyIds(user);
+      if (allowed.length === 0) return [];
+      where.companyId = allowed.length === 1 ? allowed[0] : { in: allowed };
     }
 
     return this.prisma.registrationToken.findMany({
@@ -165,7 +167,7 @@ export class RegistrationService {
 
     if (!token) throw new NotFoundException('Токен не найден');
 
-    if (!user.isHoldingAdmin && token.companyId !== user.companyId) {
+    if (!isAuthorizedForCompany(user, token.companyId)) {
       throw new BadRequestException('Нет доступа к этому токену');
     }
 

@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, BadRequestException, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../auth/jwt.strategy';
+import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 
 type PositionWithCompany = Prisma.PositionGetPayload<{
   include: { company: true };
@@ -11,14 +12,8 @@ type PositionWithCompany = Prisma.PositionGetPayload<{
 export class PositionsService {
   constructor(private prisma: PrismaService) {}
 
-  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number): number | undefined {
-    if (user.isHoldingAdmin) {
-      return requestedCompanyId || undefined;
-    }
-    if (!user.companyId) {
-      throw new ForbiddenException('User is not assigned to any company');
-    }
-    return user.companyId;
+  private getCompanyFilter(user: RequestUser, requestedCompanyId?: number) {
+    return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
   async create(data: Prisma.PositionCreateInput): Promise<PositionWithCompany> {
@@ -51,10 +46,8 @@ export class PositionsService {
       include: { company: true },
     });
 
-    if (position && user && !user.isHoldingAdmin) {
-      if (position.companyId !== user.companyId) {
-        throw new ForbiddenException('Access denied to this position');
-      }
+    if (position && user && !isAuthorizedForCompany(user, position.companyId)) {
+      throw new ForbiddenException('Access denied to this position');
     }
 
     return position;

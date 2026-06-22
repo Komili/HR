@@ -232,6 +232,16 @@ export class EmployeesController {
     return this.employeesService.update(id, data, req.user);
   }
 
+  @Post(':id/transfer')
+  @Roles('Суперадмин')
+  transfer(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { targetCompanyId: number; departmentId?: number; positionId?: number },
+    @Request() req: { user: RequestUser },
+  ) {
+    return this.employeesService.transfer(id, body, req.user);
+  }
+
   @Delete(':id')
   @Roles('Суперадмин', 'Кадровик')
   remove(

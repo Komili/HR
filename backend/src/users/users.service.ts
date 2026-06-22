@@ -4,7 +4,11 @@ import { User, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { RequestUser } from '../auth/jwt.strategy';
 
-type UserWithRelations = User & { role: { name: string }; company: { id: number; name: string; shortName: string | null } | null };
+type UserWithRelations = User & {
+  role: { name: string };
+  company: { id: number; name: string; shortName: string | null } | null;
+  extraCompanies: { companyId: number; company: { id: number; name: string; shortName: string | null } }[];
+};
 
 @Injectable()
 export class UsersService {
@@ -13,6 +17,9 @@ export class UsersService {
   private readonly userInclude = {
     role: { select: { name: true } },
     company: { select: { id: true, name: true, shortName: true } },
+    extraCompanies: {
+      select: { companyId: true, company: { select: { id: true, name: true, shortName: true } } },
+    },
   };
 
   async findOne(email: string): Promise<UserWithRelations | null> {
@@ -51,8 +58,27 @@ export class UsersService {
     });
   }
 
+  async setUserCompanies(userId: number, companyIds: number[], requestUser: RequestUser): Promise<void> {
+    if (!requestUser.isHoldingAdmin) {
+      throw new ForbiddenException('Только суперадмин может управлять доступом к компаниям');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Пользователь не найден');
+
+    // Удаляем все старые записи и создаём новые (не включая основную компанию пользователя)
+    const extraIds = companyIds.filter((id) => id !== user.companyId);
+
+    await this.prisma.$transaction([
+      this.prisma.userCompany.deleteMany({ where: { userId } }),
+      ...extraIds.map((companyId) =>
+        this.prisma.userCompany.create({ data: { userId, companyId } }),
+      ),
+    ]);
+  }
+
   async createUser(
-    userData: { email: string; password: string; firstName?: string; lastName?: string; roleId: number; companyId?: number },
+    userData: { email: string; password: string; firstName?: string; lastName?: string; roleId: number; companyId?: number; extraCompanyIds?: number[] },
     requestUser: RequestUser,
   ): Promise<Omit<UserWithRelations, 'password'>> {
     if (!requestUser.isHoldingAdmin) {
@@ -85,13 +111,27 @@ export class UsersService {
       include: this.userInclude,
     });
 
-    const { password, ...rest } = user;
-    return rest as any;
+    // Дополнительные компании
+    if (userData.extraCompanyIds && userData.extraCompanyIds.length > 0) {
+      const extras = userData.extraCompanyIds.filter((id) => id !== userData.companyId);
+      if (extras.length > 0) {
+        await this.prisma.userCompany.createMany({
+          data: extras.map((companyId) => ({ userId: user.id, companyId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    const { password, ...rest } = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: this.userInclude,
+    }) as any;
+    return rest;
   }
 
   async updateUser(
     id: number,
-    data: { email?: string; firstName?: string; lastName?: string; roleId?: number; companyId?: number | null; isActive?: boolean },
+    data: { email?: string; firstName?: string; lastName?: string; roleId?: number; companyId?: number | null; isActive?: boolean; extraCompanyIds?: number[] },
     requestUser: RequestUser,
   ): Promise<Omit<UserWithRelations, 'password'>> {
     if (!requestUser.isHoldingAdmin) {
@@ -128,14 +168,27 @@ export class UsersService {
       }
     }
 
-    const user = await this.prisma.user.update({
-      where: { id },
-      data: updateData,
-      include: this.userInclude,
-    });
+    await this.prisma.user.update({ where: { id }, data: updateData });
 
-    const { password, ...rest } = user;
-    return rest as any;
+    // Обновляем дополнительные компании
+    if (data.extraCompanyIds !== undefined) {
+      const primaryId = data.companyId !== undefined ? data.companyId : existing.companyId;
+      const extras = data.extraCompanyIds.filter((cid) => cid !== primaryId);
+      await this.prisma.userCompany.deleteMany({ where: { userId: id } });
+      if (extras.length > 0) {
+        await this.prisma.userCompany.createMany({
+          data: extras.map((companyId) => ({ userId: id, companyId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    const updated = await this.prisma.user.findUnique({
+      where: { id },
+      include: this.userInclude,
+    }) as any;
+    const { password, ...rest } = updated;
+    return rest;
   }
 
   async deleteUser(id: number, requestUser: RequestUser): Promise<void> {

@@ -126,10 +126,11 @@ async function main() {
   // Читаем skud.sql
   const possiblePaths = [
     path.join(__dirname, '../../skud.sql'),
-    '/app/skud.sql',
+    '/tmp/skud.sql',
     path.join(process.cwd(), 'skud.sql'),
+    '/app/skud.sql',
   ];
-  const sqlPath = possiblePaths.find(p => fs.existsSync(p));
+  const sqlPath = possiblePaths.find(p => fs.existsSync(p) && fs.statSync(p).isFile());
   if (!sqlPath) { console.error('❌ skud.sql не найден!'); process.exit(1); }
 
   const sql = fs.readFileSync(sqlPath, 'utf8');
