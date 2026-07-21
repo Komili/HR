@@ -82,7 +82,7 @@ export class HikvisionController {
   @Patch('devices/:id/bind')
   bindDevice(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string },
+    @Body() body: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; singleFaceId?: boolean; login?: string; password?: string },
     @Request() req: { user: RequestUser },
   ) {
     return this.hikvisionService.bindDevice(id, body, req.user);

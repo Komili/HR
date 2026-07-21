@@ -17,6 +17,7 @@ import {
   Res,
   StreamableFile,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -30,6 +31,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RequestUser } from '../auth/jwt.strategy';
 import { cyrillicToLatin } from '../common/transliterate';
+import { isAuthorizedForCompany } from '../common/company-filter';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -47,9 +49,15 @@ export class EmployeesController {
   ) {
     const { departmentId, positionId, companyId, managerId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = createEmployeeDto;
 
-    const targetCompanyId = req.user.isHoldingAdmin && companyId
-      ? companyId
-      : req.user.companyId;
+    let targetCompanyId: number | null | undefined;
+    if (companyId) {
+      if (!isAuthorizedForCompany(req.user, companyId)) {
+        throw new ForbiddenException('Нет доступа к этой компании');
+      }
+      targetCompanyId = companyId;
+    } else {
+      targetCompanyId = req.user.companyId;
+    }
 
     if (!targetCompanyId) {
       throw new NotFoundException('Company ID is required');

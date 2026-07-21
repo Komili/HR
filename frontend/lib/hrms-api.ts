@@ -126,9 +126,9 @@ export async function getEmployee(id: number): Promise<EmployeeProfile> {
 }
 
 export async function createEmployee(data: CreateEmployeeInput): Promise<Employee> {
-  const companyId = getCurrentCompanyId();
+  const companyId = data.companyId ?? getCurrentCompanyId();
   if (!companyId) {
-    throw new Error("Пожалуйста, выберите компанию в боковом меню");
+    throw new Error("Пожалуйста, выберите компанию");
   }
   return apiFetch("/employees", { method: "POST", body: { ...data, companyId } });
 }
@@ -633,7 +633,7 @@ export async function checkHikvisionAccess(deviceId: number, employeeId: number)
 
 export async function bindHikvisionDevice(
   id: number,
-  data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; externalIp?: string }
+  data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; singleFaceId?: boolean; login?: string; password?: string; externalIp?: string }
 ): Promise<import("./types").HikvisionDevice> {
   return apiFetch(`/hikvision/devices/${id}/bind`, { method: "PATCH", body: data });
 }

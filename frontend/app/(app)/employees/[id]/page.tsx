@@ -1952,7 +1952,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                       if (!group) { group = { companyId: cId, companyName: cName, devices: [] }; groups.push(group); }
                       group.devices.push(dev);
                     }
-                    const showGroupHeaders = user?.isHoldingAdmin && groups.length > 1;
+                    const showGroupHeaders = groups.length > 1;
                     return groups.map(group => (
                       <div key={group.companyId ?? 'none'}>
                         {showGroupHeaders && (
@@ -2104,7 +2104,9 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Relay-агент (Face ID)</p>
                   )}
                 <div className="space-y-3">
-                  {employeeDoors.map(door => {
+                  {(() => {
+                    const showDoorCompany = new Set(employeeDoors.map(d => d.companyId)).size > 1;
+                    return employeeDoors.map(door => {
                     const isToggling = togglingDoorId === door.id;
                     const result = doorResults[door.id];
                     const check = deviceChecks[door.id];
@@ -2126,7 +2128,14 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                               <DoorOpen className={`h-5 w-5 ${door.hasAccess ? "text-emerald-600" : "text-slate-400"}`} />
                             </div>
                             <div className="min-w-0">
-                              <div className="font-semibold text-sm truncate">{door.name}</div>
+                              <div className="font-semibold text-sm truncate">
+                                {door.name}
+                                {showDoorCompany && door.company && (
+                                  <span className="ml-2 text-xs font-normal text-amber-600">
+                                    {door.company.shortName || door.company.name}
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-xs text-slate-400 truncate">{door.inDeviceIp}</div>
                             </div>
                           </div>
@@ -2234,7 +2243,8 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                         )}
                       </div>
                     );
-                  })}
+                  });
+                  })()}
                 </div>
                 </div>
               ) : null}

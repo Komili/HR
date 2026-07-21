@@ -787,6 +787,28 @@ export class AttendanceService implements OnModuleInit {
     }
   }
 
+  // ─────────── auto-направление (первое событие дня — вход, остальные — выход) ───────────
+
+  /** Начало календарного дня в Душанбе (UTC+5) для заданного момента времени. */
+  getDayStart(date: Date): Date {
+    const tzOffset = 5 * 60 * 60 * 1000;
+    const local = new Date(date.getTime() + tzOffset);
+    return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - tzOffset);
+  }
+
+  /**
+   * Автоматическое направление события: если у сотрудника ещё не было ни одного события
+   * посещаемости сегодня (по любому источнику, устройству, офису или компании) — это вход,
+   * иначе — выход. Используется мобильным чек-ином и Hikvision-устройствами в режиме "Один FaceID".
+   */
+  async resolveAutoDirection(employeeId: number, timestamp: Date): Promise<'IN' | 'OUT'> {
+    const dayStart = this.getDayStart(timestamp);
+    const anyEventToday = await this.prisma.attendanceEvent.findFirst({
+      where: { employeeId, timestamp: { gte: dayStart } },
+    });
+    return anyEventToday ? 'OUT' : 'IN';
+  }
+
   // ─────────── recalculate ───────────
 
   async recalculateDay(employeeId: number, dateTime: Date) {

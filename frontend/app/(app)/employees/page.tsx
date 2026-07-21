@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation"
 import { ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import type { Employee, Department, Position, CreateEmployeeInput, UpdateEmployeeInput } from "@/lib/types"
+import { useAuth } from "@/app/contexts/AuthContext"
 import { DataTable } from "@/components/data-table"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -128,6 +129,7 @@ function EmployeeGallery({ employees }: { employees: Employee[] }) {
 
 export default function EmployeesPage() {
   const searchParams = useSearchParams()
+  const { user, isMultiCompany, currentCompanyId, companies } = useAuth()
   const [data, setData] = React.useState<Employee[]>([])
   const [page, setPage] = React.useState(0)
   const [total, setTotal] = React.useState(0)
@@ -164,6 +166,32 @@ export default function EmployeesPage() {
   const [departments, setDepartments] = React.useState<Department[]>([])
   const [positions, setPositions] = React.useState<Position[]>([])
   const [editingEmployee, setEditingEmployee] = React.useState<Employee | null>(null)
+
+  // Отделы/должности выбранной в форме создания компании (для кадровика с мультидоступом)
+  const [formDepartments, setFormDepartments] = React.useState<Department[]>([])
+  const [formPositions, setFormPositions] = React.useState<Position[]>([])
+
+  const allowedCompanies = React.useMemo(
+    () => (user?.companyIds ? companies.filter(c => user.companyIds!.includes(c.id)) : []),
+    [companies, user?.companyIds]
+  )
+
+  const loadFormCompanyOptions = React.useCallback((companyId: number) => {
+    Promise.all([getDepartments(companyId), getPositions(companyId)])
+      .then(([deps, pos]) => {
+        setFormDepartments(deps)
+        setFormPositions(pos)
+      })
+      .catch(() => {
+        setFormDepartments([])
+        setFormPositions([])
+      })
+  }, [])
+
+  const handleFormCompanyChange = (companyId: number) => {
+    setFormData(prev => ({ ...prev, companyId, departmentId: undefined, positionId: undefined }))
+    loadFormCompanyOptions(companyId)
+  }
 
   // Фильтры
   const [showFilters, setShowFilters] = React.useState(false)
@@ -248,6 +276,9 @@ export default function EmployeesPage() {
 
   const handleOpenCreateModal = () => {
     setEditingEmployee(null)
+    const defaultCompanyId = isMultiCompany
+      ? (currentCompanyId && user?.companyIds?.includes(currentCompanyId) ? currentCompanyId : user?.companyIds?.[0])
+      : undefined
     setFormData({
       firstName: "",
       lastName: "",
@@ -262,7 +293,11 @@ export default function EmployeesPage() {
       positionId: undefined,
       managerId: undefined,
       status: "Активен",
+      companyId: defaultCompanyId,
     })
+    if (isMultiCompany && defaultCompanyId) {
+      loadFormCompanyOptions(defaultCompanyId)
+    }
     setIsModalOpen(true)
   }
 
@@ -785,11 +820,26 @@ export default function EmployeesPage() {
         onSave={handleSave}
         isSaving={isSaving}
       >
+        {isMultiCompany && !editingEmployee && (
+          <div className="space-y-2 mb-4">
+            <Label htmlFor="emp-company">Компания *</Label>
+            <select
+              id="emp-company"
+              value={formData.companyId || ""}
+              onChange={(e) => handleFormCompanyChange(Number(e.target.value))}
+              className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
+            >
+              {allowedCompanies.map((c) => (
+                <option key={c.id} value={c.id}>{c.shortName || c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <EmployeeFormFields
           value={formData}
           onChange={setFormData}
-          departments={departments}
-          positions={positions}
+          departments={isMultiCompany && !editingEmployee ? formDepartments : departments}
+          positions={isMultiCompany && !editingEmployee ? formPositions : positions}
           managers={data}
           excludeManagerId={editingEmployee?.id}
         />

@@ -10,6 +10,7 @@ import { TelegramService } from '../telegram/telegram.service';
 import { HikvisionIsupService } from './hikvision-isup.service';
 import { RequestUser } from '../auth/jwt.strategy';
 import { toFolderName } from '../common/transliterate';
+import { getAllowedCompanyIds, isAuthorizedForCompany } from '../common/company-filter';
 
 // Устройство считается офлайн если нет heartbeat дольше этого времени
 const OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 минут
@@ -400,6 +401,21 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Режим "Один FaceID": направление вычисляется автоматически (первое событие сотрудника
+    // за день по всему холдингу — вход, любое последующее — выход), а не берётся жёстко с устройства.
+    if (device?.singleFaceId) {
+      const cooldownSince = new Date(timestamp.getTime() - 5 * 60 * 1000);
+      const recentEvent = await this.prisma.attendanceEvent.findFirst({
+        where: { employeeId: employee.id, source: 'HIKVISION', timestamp: { gte: cooldownSince } },
+        orderBy: { timestamp: 'desc' },
+      });
+      if (recentEvent) {
+        this.logger.debug(`Один FaceID: повторный скан сотрудника ${employee.id} в течение 5 минут — пропускаем`);
+        return;
+      }
+      direction = await this.attendanceService.resolveAutoDirection(employee.id, timestamp);
+    }
+
     const office = await this.prisma.office.findFirst({
       where: { name: officeName, companyId: employee.companyId },
     });
@@ -550,7 +566,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
   async bindDevice(
     id: number,
-    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; directPort?: number; externalIp?: string },
+    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; singleFaceId?: boolean; login?: string; password?: string; directPort?: number; externalIp?: string },
     user: RequestUser,
   ) {
     if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
@@ -568,6 +584,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
         companyId: data.companyId,
         officeName: data.officeName,
         direction: data.direction,
+        singleFaceId: data.singleFaceId ?? false,
         login: data.login ?? 'admin',
         password: data.password ?? null,
         directPort: data.directPort ?? null,
@@ -585,7 +602,9 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       (device.externalIp ? `🌐 Внешний IP: ${device.externalIp}\n` : '') +
       `🏢 Компания: ${companyName}\n` +
       `🏛 Офис: ${data.officeName}\n` +
-      `🚪 Направление: ${data.direction === 'IN' ? 'Вход (IN)' : 'Выход (OUT)'}\n` +
+      (data.singleFaceId
+        ? `🚪 Направление: 🔁 Один FaceID (авто вход/выход)\n`
+        : `🚪 Направление: ${data.direction === 'IN' ? 'Вход (IN)' : 'Выход (OUT)'}\n`) +
       `👤 Привязал: ${user.email}`,
     ).catch(() => {});
 
@@ -658,13 +677,13 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     const employee = await this.prisma.employee.findUnique({ where: { id: employeeId } });
     if (!employee) throw new NotFoundException('Сотрудник не найден');
 
-    if (!user.isHoldingAdmin && user.companyId !== employee.companyId) {
+    if (!isAuthorizedForCompany(user, employee.companyId)) {
       throw new ForbiddenException('Нет доступа');
     }
 
     const devicesWhere: any = user.isHoldingAdmin
       ? { status: 'active' }
-      : { companyId: employee.companyId, status: 'active' };
+      : { companyId: { in: getAllowedCompanyIds(user) }, status: 'active' };
 
     const devices = await this.prisma.hikvisionDevice.findMany({
       where: devicesWhere,
@@ -745,8 +764,8 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     ]);
     if (!device) throw new NotFoundException('Устройство не найдено');
     if (!employee) throw new NotFoundException('Сотрудник не найден');
-    if (!user.isHoldingAdmin && user.companyId !== device.companyId) {
-      throw new ForbiddenException('Доступ только к устройствам своей компании');
+    if (!isAuthorizedForCompany(user, device.companyId)) {
+      throw new ForbiddenException('Доступ только к устройствам своих компаний');
     }
 
     await this.prisma.hikvisionAccess.upsert({
@@ -802,8 +821,8 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     });
     if (!device) throw new NotFoundException('Устройство не найдено');
     if (device.status !== 'active') throw new ForbiddenException('Устройство не привязано к компании');
-    if (!user.isHoldingAdmin && user.companyId !== device.companyId) {
-      throw new ForbiddenException('Доступ только к устройствам своей компании');
+    if (!isAuthorizedForCompany(user, device.companyId)) {
+      throw new ForbiddenException('Доступ только к устройствам своих компаний');
     }
 
     const companyId = device.companyId!;
@@ -920,8 +939,8 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     ]);
     if (!device) throw new NotFoundException('Устройство не найдено');
     if (!employee) throw new NotFoundException('Сотрудник не найден');
-    if (!user.isHoldingAdmin && user.companyId !== device.companyId) {
-      throw new ForbiddenException('Доступ только к устройствам своей компании');
+    if (!isAuthorizedForCompany(user, device.companyId)) {
+      throw new ForbiddenException('Доступ только к устройствам своих компаний');
     }
 
     await this.prisma.hikvisionAccess.deleteMany({ where: { deviceId, employeeId } });
@@ -1108,8 +1127,8 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
     ]);
     if (!device) throw new NotFoundException('Устройство не найдено');
     if (!employee) throw new NotFoundException('Сотрудник не найден');
-    if (!user.isHoldingAdmin && user.companyId !== device.companyId) {
-      throw new ForbiddenException('Доступ только к устройствам своей компании');
+    if (!isAuthorizedForCompany(user, device.companyId)) {
+      throw new ForbiddenException('Доступ только к устройствам своих компаний');
     }
 
     const lastSeen = (device as any).lastSeenAt as Date | null;

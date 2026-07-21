@@ -356,6 +356,7 @@ export type HikvisionDevice = {
   company?: { id: number; name: string; shortName: string | null } | null;
   officeName: string | null;
   direction: 'IN' | 'OUT' | null;
+  singleFaceId: boolean;
   login: string | null;
   agentId: number | null;
   agent?: { id: number; name: string } | null;
