@@ -60,6 +60,8 @@ model User {
   companyId      Int?     // null для суперадминов холдинга
   isHoldingAdmin    Boolean           @default(false) // Суперадмин холдинга
   isActive          Boolean           @default(true)
+  failedLoginAttempts Int             @default(0) // Сбрасывается при успешном входе
+  lockedUntil       DateTime?         // Временная блокировка после серии неудачных попыток входа
   extraCompanies    UserCompany[]     // Дополнительные компании (мультидоступ)
   initiatedCommands HikvisionCommand[]
   createdAt         DateTime          @default(now())

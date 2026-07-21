@@ -14,15 +14,17 @@ export class AuthController {
   @UseGuards(LocalAuthGuard)
   @Post('login')
   async login(@Request() req, @Body() loginDto: LoginDto) {
-    return this.authService.login(req.user);
+    return this.authService.login(req.user, req.ip);
   }
 
+  // Публичная саморегистрация — всегда создаёт только роль "Сотрудник" (без доступа к данным).
+  // Роль нельзя передать извне: назначение прав выполняется только суперадмином через /users.
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register({
       email: registerDto.email,
       password: registerDto.password,
-      role: { connect: { id: registerDto.roleId || 4 } }, // 4 - Сотрудник
     });
   }
 }

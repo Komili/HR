@@ -539,8 +539,8 @@ export async function setUserCompanies(id: number, companyIds: number[]): Promis
   await apiFetch(`/users/${id}/companies`, { method: "PATCH", body: { companyIds } });
 }
 
-export async function changeUserPassword(id: number, newPassword: string): Promise<void> {
-  await apiFetch(`/users/${id}/password`, { method: "PATCH", body: { newPassword } });
+export async function changeUserPassword(id: number, newPassword: string, currentPassword?: string): Promise<void> {
+  await apiFetch(`/users/${id}/password`, { method: "PATCH", body: { newPassword, currentPassword } });
 }
 
 export async function deleteUser(id: number): Promise<void> {

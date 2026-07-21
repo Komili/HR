@@ -1,6 +1,7 @@
 // Категории Telegram-уведомлений. key — хранится в TelegramChat.categories (CSV),
 // label — отображается в админ-интерфейсе.
 export const TELEGRAM_CATEGORIES = [
+  { key: 'login', label: 'Вход в систему (логин пользователей)' },
   { key: 'attendance', label: 'Посещаемость (вход/выход, опоздания)' },
   { key: 'correction', label: 'Корректировки посещаемости' },
   { key: 'registration', label: 'Регистрация сотрудников' },

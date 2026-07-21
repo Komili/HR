@@ -58,10 +58,10 @@ export class UsersController {
   @Patch(':id/password')
   changePassword(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { newPassword: string },
+    @Body() body: { newPassword: string; currentPassword?: string },
     @Request() req: { user: RequestUser },
   ) {
-    return this.usersService.changePassword(id, body.newPassword, req.user);
+    return this.usersService.changePassword(id, body.newPassword, req.user, body.currentPassword);
   }
 
   @Delete(':id')

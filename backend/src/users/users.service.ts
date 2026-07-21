@@ -36,6 +36,36 @@ export class UsersService {
     });
   }
 
+  // ─────────── защита от подбора пароля ───────────
+
+  private readonly MAX_FAILED_ATTEMPTS = 5;
+  private readonly LOCKOUT_MS = 15 * 60 * 1000; // 15 минут
+
+  /** Увеличивает счётчик неудачных попыток входа; после порога — временно блокирует аккаунт. */
+  async registerFailedLogin(userId: number): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return;
+
+    const attempts = user.failedLoginAttempts + 1;
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        failedLoginAttempts: attempts,
+        ...(attempts >= this.MAX_FAILED_ATTEMPTS
+          ? { lockedUntil: new Date(Date.now() + this.LOCKOUT_MS) }
+          : {}),
+      },
+    });
+  }
+
+  /** Сбрасывает счётчик и блокировку после успешного входа. */
+  async resetFailedLogin(userId: number): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  }
+
   async findAll(requestUser: RequestUser): Promise<Omit<UserWithRelations, 'password'>[]> {
     if (!requestUser.isHoldingAdmin) {
       throw new ForbiddenException('Только суперадмин может управлять пользователями');
@@ -211,14 +241,29 @@ export class UsersService {
     id: number,
     newPassword: string,
     requestUser: RequestUser,
+    currentPassword?: string,
   ): Promise<void> {
     // Суперадмин может менять любой пароль, пользователь — только свой
-    if (!requestUser.isHoldingAdmin && requestUser.userId !== id) {
+    const isSelfChange = requestUser.userId === id;
+    if (!requestUser.isHoldingAdmin && !isSelfChange) {
       throw new ForbiddenException('Нет доступа для смены пароля');
     }
 
     const existing = await this.prisma.user.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Пользователь не найден');
+
+    // Смена собственного пароля требует подтверждения текущего — иначе украденный
+    // токен позволил бы навсегда захватить аккаунт одним запросом. Административный
+    // сброс чужого пароля (суперадмин → другой пользователь) этого не требует.
+    if (isSelfChange) {
+      if (!currentPassword) {
+        throw new BadRequestException('Укажите текущий пароль');
+      }
+      const matches = await bcrypt.compare(currentPassword, existing.password);
+      if (!matches) {
+        throw new BadRequestException('Неверный текущий пароль');
+      }
+    }
 
     if (!newPassword || newPassword.length < 8) {
       throw new BadRequestException('Пароль должен быть не менее 8 символов');

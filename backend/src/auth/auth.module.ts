@@ -7,11 +7,13 @@ import { jwtConstants } from './constants';
 import { LocalStrategy } from './local.strategy';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthController } from './auth.controller';
+import { TelegramModule } from '../telegram/telegram.module';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
+    TelegramModule,
     JwtModule.register({
       secret: jwtConstants.secret,
       signOptions: { expiresIn: '60m' }, // Токен живет 1 час
