@@ -259,11 +259,15 @@ export default function EmployeesPage() {
         setTotal(0)
         setError(err instanceof Error ? err.message : "Ошибка загрузки данных")
       })
-  }, [page, limit, debouncedSearch, hasFilters])
+  }, [page, limit, debouncedSearch, hasFilters, currentCompanyId])
 
   React.useEffect(() => {
     loadEmployees()
   }, [loadEmployees])
+
+  React.useEffect(() => {
+    setPage(0)
+  }, [currentCompanyId])
 
   React.useEffect(() => {
     Promise.all([getDepartments(), getPositions()])
@@ -272,7 +276,7 @@ export default function EmployeesPage() {
         setPositions(pos)
       })
       .catch(() => {})
-  }, [])
+  }, [currentCompanyId])
 
   const handleOpenCreateModal = () => {
     setEditingEmployee(null)

@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { CrudModal } from "@/components/crud-modal"
 import { Label } from "@/components/ui/label"
+import { useAuth } from "@/app/contexts/AuthContext"
 import type { Department, Employee } from "@/lib/types"
 import {
   getDepartments,
@@ -36,6 +37,7 @@ import {
 
 export default function DepartmentsPage() {
   const searchParams = useSearchParams()
+  const { currentCompanyId } = useAuth()
   const [departments, setDepartments] = useState<Department[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -69,7 +71,7 @@ export default function DepartmentsPage() {
 
   useEffect(() => {
     refreshDepartments()
-  }, [])
+  }, [currentCompanyId])
 
   // Count employees per department
   const deptEmployeeCount = useMemo(() => {

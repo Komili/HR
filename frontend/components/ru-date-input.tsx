@@ -58,8 +58,6 @@ export function RuDateInput({
             const dd = m[1].padStart(2, "0")
             const mm = m[2].padStart(2, "0")
             onChange(`${m[3]}-${mm}-${dd}`)
-          } else if (e.target.value.trim() === "") {
-            onChange("")
           }
         }}
         className={`h-10 w-full rounded-xl border bg-background pl-3 pr-10 text-sm focus:outline-none ${
@@ -82,7 +80,7 @@ export function RuDateInput({
         value={value}
         min={min}
         max={max}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { if (e.target.value) onChange(e.target.value) }}
         tabIndex={-1}
         aria-hidden
         className="pointer-events-none absolute bottom-0 right-2 h-0 w-0 opacity-0"

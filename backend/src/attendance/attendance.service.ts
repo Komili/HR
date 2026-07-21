@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { existsSync, readFileSync } from 'fs';
 import { Subject, Observable, filter, map } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
@@ -84,6 +84,9 @@ export class AttendanceService implements OnModuleInit {
   async getDailyAttendance(date: string, user: RequestUser, requestedCompanyId?: number) {
     const companyFilter = this.getCompanyFilter(user, requestedCompanyId);
     const targetDate = new Date(date + 'T00:00:00.000Z');
+    if (isNaN(targetDate.getTime())) {
+      throw new BadRequestException('Некорректная дата');
+    }
 
     // 1. Полный список сотрудников (тот же набор и порядок, что и в списке сотрудников):
     //    исключаем заявки (Ожидает/Отклонён) и уволенных.

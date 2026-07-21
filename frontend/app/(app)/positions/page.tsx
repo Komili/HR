@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { CrudModal } from "@/components/crud-modal"
 import { Label } from "@/components/ui/label"
+import { useAuth } from "@/app/contexts/AuthContext"
 import type { Position, Employee } from "@/lib/types"
 import {
   getPositions,
@@ -36,6 +37,7 @@ import {
 
 export default function PositionsPage() {
   const searchParams = useSearchParams()
+  const { currentCompanyId } = useAuth()
   const [positions, setPositions] = useState<Position[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -69,7 +71,7 @@ export default function PositionsPage() {
 
   useEffect(() => {
     refreshPositions()
-  }, [])
+  }, [currentCompanyId])
 
   const posEmployeeCount = useMemo(() => {
     const counts: Record<number, number> = {}
