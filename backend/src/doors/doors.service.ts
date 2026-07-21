@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { RequestUser } from '../auth/jwt.strategy';
 import { CreateDoorDto, UpdateDoorDto } from './dto/door.dto';
+import { getAllowedCompanyIds, isAuthorizedForCompany } from '../common/company-filter';
 
 @Injectable()
 export class DoorsService {
@@ -32,8 +33,8 @@ export class DoorsService {
   }
 
   private guardCompany(user: RequestUser, companyId: number) {
-    if (!user.isHoldingAdmin && user.companyId !== companyId) {
-      throw new ForbiddenException('Доступ только к дверям своей компании');
+    if (!isAuthorizedForCompany(user, companyId)) {
+      throw new ForbiddenException('Доступ только к дверям своих компаний');
     }
   }
 
@@ -43,8 +44,11 @@ export class DoorsService {
     const where: any = {};
     if (user.isHoldingAdmin) {
       if (companyId) where.companyId = companyId;
+    } else if (companyId) {
+      this.guardCompany(user, companyId);
+      where.companyId = companyId;
     } else {
-      where.companyId = user.companyId;
+      where.companyId = { in: getAllowedCompanyIds(user) };
     }
     return this.prisma.door.findMany({
       where,
@@ -131,8 +135,8 @@ export class DoorsService {
     if (!employee) throw new NotFoundException('Сотрудник не найден');
     this.guardCompany(user, employee.companyId);
 
-    // Все двери компании (суперадмин видит все)
-    const doorsWhere: any = user.isHoldingAdmin ? {} : { companyId: employee.companyId };
+    // Все двери компаний, доступных кадровику (суперадмин видит все компании)
+    const doorsWhere: any = user.isHoldingAdmin ? {} : { companyId: { in: getAllowedCompanyIds(user) } };
     const allDoors = await this.prisma.door.findMany({
       where: doorsWhere,
       include: { company: { select: { id: true, name: true, shortName: true } } },
@@ -163,9 +167,7 @@ export class DoorsService {
     if (!door) throw new NotFoundException('Дверь не найдена');
     if (!employee) throw new NotFoundException('Сотрудник не найден');
 
-    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
-      throw new ForbiddenException('Доступ только к дверям своей компании');
-    }
+    this.guardCompany(user, door.companyId);
 
     const existing = await this.prisma.doorAccess.findUnique({
       where: { doorId_employeeId: { doorId, employeeId } },
@@ -203,9 +205,7 @@ export class DoorsService {
     if (!door) throw new NotFoundException('Дверь не найдена');
     if (!employee) throw new NotFoundException('Сотрудник не найден');
 
-    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
-      throw new ForbiddenException('Доступ только к дверям своей компании');
-    }
+    this.guardCompany(user, door.companyId);
 
     // Создаём команду для агента + удаляем доступ из БД
     await Promise.all([
@@ -238,9 +238,7 @@ export class DoorsService {
     if (!door) throw new NotFoundException('Дверь не найдена');
     if (!employee) throw new NotFoundException('Сотрудник не найден');
 
-    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
-      throw new ForbiddenException('Доступ только к дверям своей компании');
-    }
+    this.guardCompany(user, door.companyId);
 
     const { faceWarning } = await this.pushEmployeeToDevice(door, employee, action);
 
@@ -266,9 +264,7 @@ export class DoorsService {
     const door = await this.prisma.door.findUnique({ where: { id: doorId } });
     if (!door) throw new NotFoundException('Дверь не найдена');
 
-    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
-      throw new ForbiddenException('Доступ только к дверям своей компании');
-    }
+    this.guardCompany(user, door.companyId);
 
     const employees = await this.prisma.employee.findMany({
       where: { companyId: door.companyId, status: { not: 'Уволен' } },
@@ -318,9 +314,7 @@ export class DoorsService {
     if (!door) throw new NotFoundException('Дверь не найдена');
     if (!employee) throw new NotFoundException('Сотрудник не найден');
 
-    if (!user.isHoldingAdmin && user.companyId !== door.companyId) {
-      throw new ForbiddenException('Доступ только к дверям своей компании');
-    }
+    this.guardCompany(user, door.companyId);
 
     const employeeNo = String(employee.id);
     const searchBody = JSON.stringify({

@@ -38,7 +38,7 @@ export function getCompanyFilter(
 }
 
 /** Проверяет, имеет ли пользователь доступ к указанной компании. */
-export function isAuthorizedForCompany(user: UserLike, companyId: number): boolean {
+export function isAuthorizedForCompany(user: UserLike, companyId: number | null): boolean {
   if (user.isHoldingAdmin) return true;
-  return getAllowedCompanyIds(user).includes(companyId);
+  return companyId !== null && getAllowedCompanyIds(user).includes(companyId);
 }

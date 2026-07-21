@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, BadRequestException, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service';
 import { Company, Prisma } from '@prisma/client';
 import { RequestUser } from '../auth/jwt.strategy';
+import { isAuthorizedForCompany } from '../common/company-filter';
 
 type CompanyWithStats = Company & {
   _count?: {
@@ -78,10 +79,8 @@ export class CompaniesService {
     });
 
     // Проверка доступа
-    if (company && user && !user.isHoldingAdmin) {
-      if (company.id !== user.companyId) {
-        throw new ForbiddenException('Access denied to this company');
-      }
+    if (company && user && !isAuthorizedForCompany(user, company.id)) {
+      throw new ForbiddenException('Access denied to this company');
     }
 
     return company;

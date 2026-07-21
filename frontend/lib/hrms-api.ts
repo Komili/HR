@@ -126,9 +126,9 @@ export async function getEmployee(id: number): Promise<EmployeeProfile> {
 }
 
 export async function createEmployee(data: CreateEmployeeInput): Promise<Employee> {
-  const companyId = getCurrentCompanyId();
+  const companyId = data.companyId ?? getCurrentCompanyId();
   if (!companyId) {
-    throw new Error("Пожалуйста, выберите компанию в боковом меню");
+    throw new Error("Пожалуйста, выберите компанию");
   }
   return apiFetch("/employees", { method: "POST", body: { ...data, companyId } });
 }
