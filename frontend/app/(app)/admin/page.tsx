@@ -15,7 +15,23 @@ import {
   createCompany,
   updateCompany,
   deleteCompany,
+  reorderCompanies,
 } from "@/lib/hrms-api"
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { DataTable } from "@/components/data-table"
 import { CrudModal } from "@/components/crud-modal"
 import { Input } from "@/components/ui/input"
@@ -40,6 +56,8 @@ import {
   Mail,
   User,
   Crown,
+  GripVertical,
+  Save,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -692,6 +710,81 @@ function UsersTab() {
   )
 }
 
+// ===================== SORTABLE COMPANY ROW =====================
+
+function SortableCompanyRow({
+  company,
+  onEdit,
+  onDelete,
+}: {
+  company: Company
+  onEdit: (c: Company) => void
+  onDelete: (c: Company) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: company.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 rounded-xl border border-white/80 bg-white/60 px-3 sm:px-4 py-3 shadow-sm hover:bg-white/90 transition-colors"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab touch-none text-muted-foreground hover:text-foreground shrink-0"
+        tabIndex={-1}
+      >
+        <GripVertical className="h-5 w-5" />
+      </button>
+
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-bold text-white shadow-sm">
+        {company.shortName ? company.shortName.charAt(0).toUpperCase() : company.name.charAt(0).toUpperCase()}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-foreground truncate">{company.name}</div>
+        {company.shortName && (
+          <div className="text-xs text-muted-foreground truncate">{company.shortName}</div>
+        )}
+      </div>
+
+      <div className="hidden sm:flex items-center gap-3 shrink-0">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+          <Users className="h-3 w-3" />
+          {company._count?.employees ?? 0}
+        </span>
+        {company.isActive ? (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Активна</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-red-500">
+            <XCircle className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Отключена</span>
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1 shrink-0">
+        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50" onClick={() => onEdit(company)}>
+          <Edit className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 hover:bg-red-50 text-red-500 hover:text-red-600"
+          onClick={() => onDelete(company)}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 // ===================== COMPANIES TAB =====================
 
 function CompaniesTab() {
@@ -699,6 +792,10 @@ function CompaniesTab() {
   const [error, setError] = React.useState<string | null>(null)
   const [success, setSuccess] = React.useState<string | null>(null)
   const [search, setSearch] = React.useState("")
+  const [isReordering, setIsReordering] = React.useState(false)
+  const [hasReordered, setHasReordered] = React.useState(false)
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const showSuccess = (msg: string) => {
     setSuccess(msg)
@@ -719,6 +816,7 @@ function CompaniesTab() {
 
   const loadData = React.useCallback(() => {
     setError(null)
+    setHasReordered(false)
     getCompanies()
       .then(setCompanies)
       .catch((err) => setError(err instanceof Error ? err.message : "Ошибка загрузки"))
@@ -738,6 +836,31 @@ function CompaniesTab() {
         (c.inn && c.inn.toLowerCase().includes(s))
     )
   }, [companies, search])
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    if (search) return // don't reorder when searching
+    setCompanies((prev) => {
+      const oldIndex = prev.findIndex((c) => c.id === active.id)
+      const newIndex = prev.findIndex((c) => c.id === over.id)
+      return arrayMove(prev, oldIndex, newIndex)
+    })
+    setHasReordered(true)
+  }
+
+  const handleSaveOrder = async () => {
+    setIsReordering(true)
+    try {
+      await reorderCompanies(companies.map((c, i) => ({ id: c.id, sortOrder: i })))
+      setHasReordered(false)
+      showSuccess("Порядок компаний сохранён")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка сохранения порядка")
+    } finally {
+      setIsReordering(false)
+    }
+  }
 
   const handleOpenCreate = () => {
     setEditingCompany(null)
@@ -804,104 +927,6 @@ function CompaniesTab() {
     }
   }
 
-  const columns: ColumnDef<Company>[] = [
-    {
-      accessorKey: "name",
-      header: "Компания",
-      cell: ({ row }) => {
-        const c = row.original
-        return (
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-bold text-white shadow-sm">
-              {c.shortName ? c.shortName.charAt(0).toUpperCase() : c.name.charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div className="font-medium text-foreground">{c.name}</div>
-              {c.shortName && (
-                <div className="text-xs text-muted-foreground">{c.shortName}</div>
-              )}
-            </div>
-          </div>
-        )
-      },
-    },
-    {
-      accessorKey: "inn",
-      header: "ИНН",
-      cell: ({ row }) => row.original.inn || <span className="text-muted-foreground">—</span>,
-    },
-    {
-      accessorKey: "_count.employees",
-      header: "Сотрудники",
-      cell: ({ row }) => (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-3 py-1.5 text-xs font-medium text-emerald-700">
-          <Users className="h-3 w-3" />
-          {row.original._count?.employees ?? 0}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "_count.users",
-      header: "Пользователи",
-      cell: ({ row }) => (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1.5 text-xs font-medium text-purple-700">
-          <User className="h-3 w-3" />
-          {row.original._count?.users ?? 0}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "isActive",
-      header: "Статус",
-      cell: ({ row }) =>
-        row.original.isActive ? (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-            <CheckCircle2 className="h-4 w-4" />
-            Активна
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-500">
-            <XCircle className="h-4 w-4" />
-            Отключена
-          </span>
-        ),
-    },
-    {
-      id: "actions",
-      header: "",
-      cell: ({ row }) => {
-        const c = row.original
-        return (
-          <div className="flex justify-end">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-emerald-50">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Действия</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleOpenEdit(c)} className="cursor-pointer">
-                  <Edit className="mr-2 h-4 w-4" />
-                  Редактировать
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-red-600 cursor-pointer focus:text-red-600"
-                  onClick={() => handleDelete(c)}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Удалить
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )
-      },
-    },
-  ]
-
   const totalEmployees = companies.reduce((sum, c) => sum + (c._count?.employees ?? 0), 0)
 
   return (
@@ -938,7 +963,7 @@ function CompaniesTab() {
 
       <div className="rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur-sm border border-white/50 shadow-lg overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:p-5 border-b border-emerald-100/50">
-          <div className="relative flex-1 min-w-[200px] max-w-md">
+          <div className="relative flex-1 min-w-[160px] max-w-md">
             <Search className="absolute left-3 sm:left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Поиск по названию, ИНН..."
@@ -947,14 +972,27 @@ function CompaniesTab() {
               className="pl-10 sm:pl-11 h-10 sm:h-11 rounded-xl bg-white/80 border-emerald-100 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20"
             />
           </div>
-          <Button
-            onClick={handleOpenCreate}
-            className="h-9 sm:h-10 px-3 sm:px-5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg shadow-blue-500/25 transition-all hover:shadow-blue-500/40 hover:scale-105 text-xs sm:text-sm"
-          >
-            <Plus className="mr-1 sm:mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Добавить компанию</span>
-            <span className="sm:hidden">Добавить</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {hasReordered && (
+              <Button
+                onClick={handleSaveOrder}
+                disabled={isReordering}
+                className="h-9 sm:h-10 px-3 sm:px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/25 transition-all hover:scale-105 text-xs sm:text-sm"
+              >
+                <Save className="mr-1 sm:mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">{isReordering ? "Сохранение..." : "Сохранить порядок"}</span>
+                <span className="sm:hidden">{isReordering ? "..." : "Сохранить"}</span>
+              </Button>
+            )}
+            <Button
+              onClick={handleOpenCreate}
+              className="h-9 sm:h-10 px-3 sm:px-5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 shadow-lg shadow-blue-500/25 transition-all hover:shadow-blue-500/40 hover:scale-105 text-xs sm:text-sm"
+            >
+              <Plus className="mr-1 sm:mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Добавить компанию</span>
+              <span className="sm:hidden">Добавить</span>
+            </Button>
+          </div>
         </div>
 
         {success && (
@@ -970,8 +1008,24 @@ function CompaniesTab() {
           </div>
         )}
 
-        <div className="p-3 sm:p-5">
-          <DataTable columns={columns} data={filteredCompanies} />
+        <div className="p-3 sm:p-5 space-y-2">
+          {search ? (
+            filteredCompanies.length === 0 ? (
+              <div className="py-12 text-center text-muted-foreground text-sm">Ничего не найдено</div>
+            ) : (
+              filteredCompanies.map((c) => (
+                <SortableCompanyRow key={c.id} company={c} onEdit={handleOpenEdit} onDelete={handleDelete} />
+              ))
+            )
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={companies.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                {companies.map((c) => (
+                  <SortableCompanyRow key={c.id} company={c} onEdit={handleOpenEdit} onDelete={handleDelete} />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
         </div>
       </div>
 

@@ -54,6 +54,12 @@ export class CompaniesController {
     return company;
   }
 
+  @Patch('reorder')
+  @Roles('Суперадмин')
+  reorder(@Body() body: { items: { id: number; sortOrder: number }[] }) {
+    return this.companiesService.reorder(body.items);
+  }
+
   @Patch(':id/schedule')
   @Roles('Суперадмин')
   updateSchedule(

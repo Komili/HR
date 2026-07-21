@@ -263,6 +263,13 @@ export async function viewDocument(documentId: number): Promise<Blob> {
   return response.blob();
 }
 
+export async function reorderCompanies(items: { id: number; sortOrder: number }[]): Promise<void> {
+  await apiFetch<void>("/companies/reorder", {
+    method: "PATCH",
+    body: { items },
+  });
+}
+
 export async function reorderDepartments(items: { id: number; sortOrder: number }[]): Promise<void> {
   await apiFetch<void>("/departments/reorder", {
     method: "PATCH",

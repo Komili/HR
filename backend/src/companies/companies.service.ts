@@ -32,7 +32,7 @@ export class CompaniesService {
       }
       return this.prisma.company.findMany({
         where: { id: { in: allowedIds } },
-        orderBy: { name: 'asc' },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
         include: {
           _count: {
             select: {
@@ -48,7 +48,7 @@ export class CompaniesService {
 
     // Суперадмин видит все компании
     return this.prisma.company.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: {
         _count: {
           select: {
@@ -60,6 +60,14 @@ export class CompaniesService {
         },
       },
     });
+  }
+
+  async reorder(items: { id: number; sortOrder: number }[]): Promise<void> {
+    await this.prisma.$transaction(
+      items.map(({ id, sortOrder }) =>
+        this.prisma.company.update({ where: { id }, data: { sortOrder } }),
+      ),
+    );
   }
 
   async findOne(id: number, user?: RequestUser): Promise<CompanyWithStats | null> {
@@ -174,7 +182,7 @@ export class CompaniesService {
             },
           },
         },
-        orderBy: { name: 'asc' },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       }),
     ]);
 

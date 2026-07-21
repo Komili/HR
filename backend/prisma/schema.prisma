@@ -27,6 +27,7 @@ model Company {
   workDayStart    String?    @default("09:00") // Начало рабочего дня (HH:mm)
   workDayEnd      String?    @default("18:00") // Конец рабочего дня (HH:mm)
   workDays        String?    @default("1,2,3,4,5") // Рабочие дни недели (ISO: 1=Пн..7=Вс), через запятую
+  sortOrder       Int        @default(0)
   users       User[]
   userAccesses UserCompany[]
   employees      Employee[]

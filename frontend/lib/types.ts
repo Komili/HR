@@ -44,6 +44,7 @@ export type Company = {
   workDayStart?: string | null;
   workDayEnd?: string | null;
   workDays?: string | null;
+  sortOrder?: number;
   _count?: {
     employees: number;
     departments: number;
