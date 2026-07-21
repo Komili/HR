@@ -24,7 +24,7 @@ import {
 import type { Company, HikvisionDevice, AgentRecord } from "@/lib/types"
 import { AgentStatusBanner } from "@/components/agent-status-banner"
 
-const EMPTY_BIND = { companyId: 0, officeName: "", direction: "IN" as "IN" | "OUT", login: "admin", password: "", externalIp: "" }
+const EMPTY_BIND = { companyId: 0, officeName: "", direction: "IN" as "IN" | "OUT", singleFaceId: false, login: "admin", password: "", externalIp: "" }
 
 type PingResult = {
   online: boolean; message: string;
@@ -124,6 +124,7 @@ export default function DoorsPage() {
       companyId: device.companyId ?? 0,
       officeName: device.officeName || "",
       direction: device.direction || "IN",
+      singleFaceId: device.singleFaceId || false,
       login: device.login || "admin",
       password: "",
       externalIp: device.externalIp || "",
@@ -143,6 +144,7 @@ export default function DoorsPage() {
         companyId: bindForm.companyId,
         officeName: bindForm.officeName,
         direction: bindForm.direction,
+        singleFaceId: bindForm.singleFaceId,
         login: bindForm.login || "admin",
         password: bindForm.password,
         externalIp: bindForm.externalIp || undefined,
@@ -524,7 +526,7 @@ export default function DoorsPage() {
                             <span className="opacity-75">· {timeAgo} назад</span>
                           </div>
                           <div className="flex items-center gap-1 opacity-90">
-                            <span>{device.direction === "IN" ? "↑ Вход" : "↓ Выход"}</span>
+                            <span>{device.singleFaceId ? "🔁 Один FaceID" : device.direction === "IN" ? "↑ Вход" : "↓ Выход"}</span>
                           </div>
                         </div>
 
@@ -743,12 +745,26 @@ export default function DoorsPage() {
                 <Label>Направление</Label>
                 <div className="flex gap-3">
                   {(["IN", "OUT"] as const).map(d => (
-                    <label key={d} className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md border cursor-pointer text-sm font-medium transition-colors ${bindForm.direction === d ? (d === "IN" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-red-400 bg-red-50 text-red-700") : "border-input hover:bg-slate-50"}`}>
-                      <input type="radio" className="sr-only" value={d} checked={bindForm.direction === d} onChange={() => setBindForm(f => ({ ...f, direction: d }))} />
+                    <label key={d} className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md border text-sm font-medium transition-colors ${bindForm.singleFaceId ? "opacity-40 cursor-not-allowed" : "cursor-pointer"} ${bindForm.direction === d ? (d === "IN" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-red-400 bg-red-50 text-red-700") : "border-input hover:bg-slate-50"}`}>
+                      <input type="radio" className="sr-only" value={d} checked={bindForm.direction === d} disabled={bindForm.singleFaceId} onChange={() => setBindForm(f => ({ ...f, direction: d }))} />
                       {d === "IN" ? "🟢 Вход (IN)" : "🔴 Выход (OUT)"}
                     </label>
                   ))}
                 </div>
+                <label className="flex items-start gap-2 mt-2 p-2.5 rounded-md border border-input hover:bg-slate-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={bindForm.singleFaceId}
+                    onChange={(e) => setBindForm(f => ({ ...f, singleFaceId: e.target.checked }))}
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">🔁 Один FaceID</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      Вход/выход определяется автоматически: первая отметка сотрудника за день (на любой двери, в любой компании холдинга) — вход, все последующие — выход.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               <div className="grid grid-cols-3 gap-2">

@@ -401,6 +401,21 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Режим "Один FaceID": направление вычисляется автоматически (первое событие сотрудника
+    // за день по всему холдингу — вход, любое последующее — выход), а не берётся жёстко с устройства.
+    if (device?.singleFaceId) {
+      const cooldownSince = new Date(timestamp.getTime() - 5 * 60 * 1000);
+      const recentEvent = await this.prisma.attendanceEvent.findFirst({
+        where: { employeeId: employee.id, source: 'HIKVISION', timestamp: { gte: cooldownSince } },
+        orderBy: { timestamp: 'desc' },
+      });
+      if (recentEvent) {
+        this.logger.debug(`Один FaceID: повторный скан сотрудника ${employee.id} в течение 5 минут — пропускаем`);
+        return;
+      }
+      direction = await this.attendanceService.resolveAutoDirection(employee.id, timestamp);
+    }
+
     const office = await this.prisma.office.findFirst({
       where: { name: officeName, companyId: employee.companyId },
     });
@@ -551,7 +566,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
 
   async bindDevice(
     id: number,
-    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; directPort?: number; externalIp?: string },
+    data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; singleFaceId?: boolean; login?: string; password?: string; directPort?: number; externalIp?: string },
     user: RequestUser,
   ) {
     if (!user.isHoldingAdmin) throw new ForbiddenException('Только суперадмин');
@@ -569,6 +584,7 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
         companyId: data.companyId,
         officeName: data.officeName,
         direction: data.direction,
+        singleFaceId: data.singleFaceId ?? false,
         login: data.login ?? 'admin',
         password: data.password ?? null,
         directPort: data.directPort ?? null,
@@ -586,7 +602,9 @@ export class HikvisionService implements OnModuleInit, OnModuleDestroy {
       (device.externalIp ? `🌐 Внешний IP: ${device.externalIp}\n` : '') +
       `🏢 Компания: ${companyName}\n` +
       `🏛 Офис: ${data.officeName}\n` +
-      `🚪 Направление: ${data.direction === 'IN' ? 'Вход (IN)' : 'Выход (OUT)'}\n` +
+      (data.singleFaceId
+        ? `🚪 Направление: 🔁 Один FaceID (авто вход/выход)\n`
+        : `🚪 Направление: ${data.direction === 'IN' ? 'Вход (IN)' : 'Выход (OUT)'}\n`) +
       `👤 Привязал: ${user.email}`,
     ).catch(() => {});
 

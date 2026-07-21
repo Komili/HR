@@ -415,6 +415,7 @@ model HikvisionDevice {
   companyId   Int?
   officeName  String?
   direction   String?                    // "IN" | "OUT"
+  singleFaceId Boolean @default(false)   // одно устройство на дверь: направление вычисляется автоматически (первое событие сотрудника за день — вход, остальные — выход)
   login       String?  @default("admin")
   password    String?
   directPort  Int?                       // порт проброски роутера → устройство:80

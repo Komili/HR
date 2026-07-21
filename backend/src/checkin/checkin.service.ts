@@ -214,20 +214,10 @@ export class CheckinService {
     // Today in Dushanbe timezone (UTC+5)
     const tzOffset = 5 * 60 * 60 * 1000;
     const localNow = new Date(now.getTime() + tzOffset);
-    const todayStart = new Date(
-      Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate()) - tzOffset,
-    );
+    const todayStart = this.attendanceService.getDayStart(now);
 
-    // Any event today?
-    const anyEventToday = await this.prisma.attendanceEvent.findFirst({
-      where: {
-        employeeId: employee.id,
-        timestamp: { gte: todayStart },
-      },
-    });
-
-    // First event of the day → IN, any subsequent → OUT
-    const direction: 'IN' | 'OUT' = anyEventToday ? 'OUT' : 'IN';
+    // First event of the day (по любому источнику/устройству/компании) → IN, любое последующее → OUT
+    const direction = await this.attendanceService.resolveAutoDirection(employee.id, now);
 
     // Save selfie photo
     let selfiePath: string | null = null;

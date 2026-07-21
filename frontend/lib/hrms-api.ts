@@ -626,7 +626,7 @@ export async function checkHikvisionAccess(deviceId: number, employeeId: number)
 
 export async function bindHikvisionDevice(
   id: number,
-  data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; login?: string; password?: string; externalIp?: string }
+  data: { companyId: number; officeName: string; direction: 'IN' | 'OUT'; singleFaceId?: boolean; login?: string; password?: string; externalIp?: string }
 ): Promise<import("./types").HikvisionDevice> {
   return apiFetch(`/hikvision/devices/${id}/bind`, { method: "PATCH", body: data });
 }
