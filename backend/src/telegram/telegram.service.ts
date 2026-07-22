@@ -96,7 +96,9 @@ export class TelegramService implements OnModuleInit, OnApplicationBootstrap, On
       if (!chat.categories.includes(category)) continue;
       // Компании: пустой список = глобальный чат (получает всё);
       // иначе — только события из выбранных компаний.
-      if (chat.companyIds.length > 0) {
+      // "login" — холдинг-вайд категория безопасности (кто угодно мог войти
+      // из любой компании или без неё как суперадмин) — фильтр по компаниям не применяется.
+      if (category !== 'login' && chat.companyIds.length > 0) {
         if (companyId == null) continue;
         if (!chat.companyIds.includes(companyId)) continue;
       }

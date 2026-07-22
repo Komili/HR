@@ -2,6 +2,7 @@ import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './local-auth.guard';
+import { IpLockoutGuard } from './ip-lockout.guard';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -9,9 +10,9 @@ import { LoginDto } from './dto/login.dto';
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  // Жёсткое ограничение на вход: 10 попыток в 5 минут
+  // Жёсткое ограничение на вход: 10 попыток в 5 минут + блокировка IP после серии неудач
   @Throttle({ default: { limit: 10, ttl: 300000 } })
-  @UseGuards(LocalAuthGuard)
+  @UseGuards(IpLockoutGuard, LocalAuthGuard)
   @Post('login')
   async login(@Request() req, @Body() loginDto: LoginDto) {
     return this.authService.login(req.user, req.ip);

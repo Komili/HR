@@ -8,6 +8,8 @@ import { LocalStrategy } from './local.strategy';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthController } from './auth.controller';
 import { TelegramModule } from '../telegram/telegram.module';
+import { IpLockoutService } from './ip-lockout.service';
+import { IpLockoutGuard } from './ip-lockout.guard';
 
 @Module({
   imports: [
@@ -19,7 +21,7 @@ import { TelegramModule } from '../telegram/telegram.module';
       signOptions: { expiresIn: '60m' }, // Токен живет 1 час
     }),
   ],
-  providers: [AuthService, LocalStrategy, JwtStrategy],
+  providers: [AuthService, LocalStrategy, JwtStrategy, IpLockoutService, IpLockoutGuard],
   controllers: [AuthController],
 })
 export class AuthModule {}

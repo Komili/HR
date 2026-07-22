@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { TelegramService } from '../telegram/telegram.service';
+import { IpLockoutService } from './ip-lockout.service';
 import * as bcrypt from 'bcrypt';
 
 // Фиксированный валидный bcrypt-хэш несуществующего пароля — используется, когда
@@ -15,18 +16,25 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private telegramService: TelegramService,
+    private ipLockoutService: IpLockoutService,
   ) {}
 
-  async validateUser(email: string, pass: string): Promise<any> {
+  async validateUser(email: string, pass: string, ip?: string): Promise<any> {
     const user = await this.usersService.findOne(email);
 
     // bcrypt.compare выполняется всегда (даже без пользователя) — константное время ответа.
     const isPasswordValid = await bcrypt.compare(pass, user?.password ?? DUMMY_HASH);
 
-    if (!user) return null;
+    if (!user) {
+      if (ip) this.ipLockoutService.registerFailure(ip);
+      this.notifyFailedLogin(email, ip, 'Аккаунт не найден');
+      return null;
+    }
 
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
       const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      if (ip) this.ipLockoutService.registerFailure(ip);
+      this.notifyFailedLogin(email, ip, `Аккаунт заблокирован (ещё ${minutesLeft} мин.)`, user);
       throw new UnauthorizedException(
         `Аккаунт временно заблокирован из-за неудачных попыток входа. Повторите через ${minutesLeft} мин.`,
       );
@@ -34,10 +42,13 @@ export class AuthService {
 
     if (!isPasswordValid) {
       await this.usersService.registerFailedLogin(user.id);
+      if (ip) this.ipLockoutService.registerFailure(ip);
+      this.notifyFailedLogin(email, ip, 'Неверный пароль', user);
       return null;
     }
 
     await this.usersService.resetFailedLogin(user.id);
+    if (ip) this.ipLockoutService.registerSuccess(ip);
     const { password, ...result } = user;
     return result;
   }
@@ -77,14 +88,17 @@ export class AuthService {
     };
   }
 
-  private notifyLogin(user: any, ip?: string): void {
-    const fullName = [user.lastName, user.firstName].filter(Boolean).join(' ') || user.email;
-    const companyName = user.isHoldingAdmin ? 'Холдинг (все компании)' : user.company?.name || '—';
-    const time = new Date().toLocaleString('ru-RU', {
+  private formatMoscowTime(): string {
+    return new Date().toLocaleString('ru-RU', {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
       timeZone: 'Asia/Dushanbe',
     });
+  }
+
+  private notifyLogin(user: any, ip?: string): void {
+    const fullName = [user.lastName, user.firstName].filter(Boolean).join(' ') || user.email;
+    const companyName = user.isHoldingAdmin ? 'Холдинг (все компании)' : user.company?.name || '—';
     const text = [
       `🔐 <b>Вход в систему</b>`,
       ``,
@@ -92,11 +106,27 @@ export class AuthService {
       `🎭 Роль: ${user.role.name}`,
       `🏢 ${companyName}`,
       ip ? `🌐 IP: <code>${ip}</code>` : null,
-      `⏰ ${time}`,
+      `⏰ ${this.formatMoscowTime()}`,
     ].filter(Boolean).join('\n');
 
     this.telegramService
       .notify('login', text, { companyId: user.companyId })
+      .catch(() => { /* уведомление не должно ронять логин */ });
+  }
+
+  private notifyFailedLogin(email: string, ip: string | undefined, reason: string, user?: any): void {
+    const fullName = user ? ([user.lastName, user.firstName].filter(Boolean).join(' ') || email) : email;
+    const text = [
+      `⚠️ <b>Неудачная попытка входа</b>`,
+      ``,
+      `👤 ${fullName}`,
+      `❗ ${reason}`,
+      ip ? `🌐 IP: <code>${ip}</code>` : null,
+      `⏰ ${this.formatMoscowTime()}`,
+    ].filter(Boolean).join('\n');
+
+    this.telegramService
+      .notify('login', text, { companyId: user?.companyId })
       .catch(() => { /* уведомление не должно ронять логин */ });
   }
 
