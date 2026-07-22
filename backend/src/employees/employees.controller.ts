@@ -244,7 +244,7 @@ export class EmployeesController {
   @Roles('Суперадмин')
   transfer(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { targetCompanyId: number; departmentId?: number; positionId?: number },
+    @Body() body: { targetCompanyId: number; departmentId?: number; positionId?: number; effectiveDate?: string },
     @Request() req: { user: RequestUser },
   ) {
     return this.employeesService.transfer(id, body, req.user);

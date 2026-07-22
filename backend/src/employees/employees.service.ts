@@ -268,40 +268,67 @@ export class EmployeesService {
     employee: { id: number; firstName: string; lastName: string },
     newStatus: string,
   ): Promise<void> {
-    // Находим все активные доступы сотрудника
+    // 1. Явные доступы, выданные через приложение (GRANT)
     const accesses = await this.prisma.hikvisionAccess.findMany({
       where: { employeeId: employee.id },
       include: { device: { select: { id: true, officeName: true, direction: true, companyId: true } } },
     });
+    const knownDeviceIds = new Set(accesses.map(a => a.device.id));
 
-    if (accesses.length === 0) return;
+    // 2. Устройства, где лицо сотрудника реально распознавалось (Face ID),
+    // даже если в приложении никогда не оформлялся явный доступ — иначе
+    // такие устройства "молча" остаются открытыми после увольнения
+    const eventDevices = await this.prisma.attendanceEvent.findMany({
+      where: { employeeId: employee.id, source: 'HIKVISION', deviceName: { not: null } },
+      distinct: ['deviceName'],
+      select: { deviceName: true },
+    });
+    const deviceNames = eventDevices.map(e => e.deviceName!).filter(Boolean);
+
+    const extraDevices = deviceNames.length
+      ? await this.prisma.hikvisionDevice.findMany({
+          where: {
+            status: 'active',
+            id: { notIn: [...knownDeviceIds] },
+            OR: [{ officeName: { in: deviceNames } }, { deviceName: { in: deviceNames } }],
+          },
+          select: { id: true, officeName: true, direction: true, companyId: true },
+        })
+      : [];
+
+    const totalCount = accesses.length + extraDevices.length;
+    if (totalCount === 0) return;
 
     const fullName = `${employee.lastName} ${employee.firstName}`;
-    this.logger.log(`Автоотзыв Face ID: ${fullName} → "${newStatus}" (${accesses.length} устройств)`);
+    this.logger.log(`Автоотзыв Face ID: ${fullName} → "${newStatus}" (${totalCount} устройств)`);
 
-    // Удаляем записи доступа и ставим команды на отзыв
-    await this.prisma.hikvisionAccess.deleteMany({ where: { employeeId: employee.id } });
+    // Удаляем явные записи доступа и ставим команды на отзыв для всех найденных устройств
+    if (accesses.length > 0) {
+      await this.prisma.hikvisionAccess.deleteMany({ where: { employeeId: employee.id } });
+    }
 
     await this.prisma.hikvisionCommand.createMany({
-      data: accesses.map(a => ({
-        deviceId: a.device.id,
-        employeeId: employee.id,
-        action: 'revoke',
-      })),
+      data: [
+        ...accesses.map(a => ({ deviceId: a.device.id, employeeId: employee.id, action: 'revoke' })),
+        ...extraDevices.map(d => ({ deviceId: d.id, employeeId: employee.id, action: 'revoke' })),
+      ],
     });
 
-    const deviceList = accesses
-      .map(a => `• ${a.device.officeName || `Устройство #${a.device.id}`} (${a.device.direction === 'IN' ? 'Вход' : 'Выход'})`)
-      .join('\n');
+    const deviceList = [
+      ...accesses.map(a => `• ${a.device.officeName || `Устройство #${a.device.id}`} (${a.device.direction === 'IN' ? 'Вход' : 'Выход'})`),
+      ...extraDevices.map(d => `• ${d.officeName || `Устройство #${d.id}`} (${d.direction === 'IN' ? 'Вход' : 'Выход'}, по журналу событий)`),
+    ].join('\n');
+
+    const notifyCompanyId = accesses[0]?.device.companyId ?? extraDevices[0]?.companyId ?? null;
 
     await this.telegram.notify(
       'access',
       `🔒 <b>Face ID автоматически отозван</b>\n\n` +
       `👤 <b>${fullName}</b>\n` +
       `📋 Новый статус: <b>${newStatus}</b>\n\n` +
-      `🚪 Устройства (${accesses.length}):\n${deviceList}\n\n` +
+      `🚪 Устройства (${totalCount}):\n${deviceList}\n\n` +
       `🤖 Relay-агент выполнит отзыв при следующем подключении`,
-      { companyId: accesses[0]?.device.companyId },
+      { companyId: notifyCompanyId },
     );
   }
 
@@ -470,7 +497,7 @@ export class EmployeesService {
 
   async transfer(
     id: number,
-    dto: { targetCompanyId: number; departmentId?: number; positionId?: number },
+    dto: { targetCompanyId: number; departmentId?: number; positionId?: number; effectiveDate?: string },
     user: RequestUser,
   ) {
     if (!user.isHoldingAdmin) {
@@ -537,6 +564,14 @@ export class EmployeesService {
       this.logger.warn(`Не удалось переместить файлы сотрудника ${id}: ${e}`);
     }
 
+    // Дата трансфера: посещаемость ДО этой даты остаётся числиться за прежней компанией,
+    // с этой даты (включительно) — переходит к новой. По умолчанию — сегодня.
+    const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
+    effectiveDate.setHours(0, 0, 0, 0);
+    const effectiveDateOnly = new Date(Date.UTC(
+      effectiveDate.getFullYear(), effectiveDate.getMonth(), effectiveDate.getDate(),
+    ));
+
     // Обновляем всё в транзакции
     const updated = await this.prisma.$transaction(async (tx) => {
       // Сам сотрудник
@@ -552,20 +587,21 @@ export class EmployeesService {
         include: { department: true, position: true, company: true, documents: { select: { type: true } } },
       });
 
-      // Переносим документы
+      // Переносим документы — не привязаны к периоду, следуют за сотрудником целиком
       await tx.employeeDocument.updateMany({
         where: { employeeId: id },
         data: { companyId: dto.targetCompanyId },
       });
 
-      // Переносим записи посещаемости
+      // Переносим записи посещаемости — только с даты трансфера, история до неё
+      // остаётся числиться за прежней компанией
       await tx.attendance.updateMany({
-        where: { employeeId: id },
+        where: { employeeId: id, date: { gte: effectiveDateOnly } },
         data: { companyId: dto.targetCompanyId },
       });
 
       await tx.attendanceEvent.updateMany({
-        where: { employeeId: id },
+        where: { employeeId: id, timestamp: { gte: effectiveDateOnly } },
         data: { companyId: dto.targetCompanyId },
       });
 

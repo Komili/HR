@@ -182,6 +182,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
   const [transferPositions, setTransferPositions] = useState<Position[]>([]);
   const [transferDepartmentId, setTransferDepartmentId] = useState<number | "">("");
   const [transferPositionId, setTransferPositionId] = useState<number | "">("");
+  const [transferEffectiveDate, setTransferEffectiveDate] = useState<string>("");
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
 
@@ -684,6 +685,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
     setTransferPositionId("");
     setTransferDepartments([]);
     setTransferPositions([]);
+    setTransferEffectiveDate(new Date().toISOString().slice(0, 10));
     try {
       const companies = await getCompanies();
       setTransferCompanies(companies.filter((c) => c.id !== employee?.companyId));
@@ -719,6 +721,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
         targetCompanyId: Number(transferTargetCompanyId),
         departmentId: transferDepartmentId ? Number(transferDepartmentId) : undefined,
         positionId: transferPositionId ? Number(transferPositionId) : undefined,
+        effectiveDate: transferEffectiveDate || undefined,
       });
       setTransferDialog(false);
       setSuccessMessage("Сотрудник успешно переведён");
@@ -2458,7 +2461,7 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
             </div>
             <DialogDescription className="pl-[52px]">
               Переведите <span className="font-medium text-foreground">{fullName}</span> в другую компанию холдинга.
-              История посещаемости и документы будут перенесены.
+              Документы будут перенесены полностью, посещаемость — с даты трансфера.
             </DialogDescription>
           </DialogHeader>
 
@@ -2517,6 +2520,20 @@ export default function EmployeeProfilePage({ params }: { params: Promise<{ id: 
                 </select>
               </div>
             )}
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Дата трансфера</Label>
+              <input
+                type="date"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                value={transferEffectiveDate}
+                onChange={(e) => setTransferEffectiveDate(e.target.value)}
+                disabled={transferring}
+              />
+              <p className="text-xs text-muted-foreground">
+                Посещаемость до этой даты останется числиться за прежней компанией, с этой даты — за новой.
+              </p>
+            </div>
           </div>
 
           <DialogFooter className="gap-2 sm:gap-2 mt-2">

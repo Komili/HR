@@ -145,7 +145,7 @@ export async function deleteEmployee(id: number): Promise<void> {
 
 export async function transferEmployee(
   id: number,
-  data: { targetCompanyId: number; departmentId?: number; positionId?: number },
+  data: { targetCompanyId: number; departmentId?: number; positionId?: number; effectiveDate?: string },
 ): Promise<Employee> {
   return apiFetch(`/employees/${id}/transfer`, { method: "POST", body: data });
 }
