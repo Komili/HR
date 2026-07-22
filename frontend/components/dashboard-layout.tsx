@@ -30,6 +30,7 @@ import {
   QrCode,
   ClipboardList,
   Send,
+  UserSearch,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -56,6 +57,7 @@ const menuItems = [
   { name: "Сотрудники", path: "/employees", icon: Users, description: "Команда" },
   { name: "Отделы", path: "/departments", icon: Building2, description: "Структура" },
   { name: "Должности", path: "/positions", icon: Briefcase, description: "Роли" },
+  { name: "Вакансии", path: "/vacancies", icon: UserSearch, description: "Подбор, шорт-лист" },
   // { name: "Инвентарь", path: "/inventory", icon: Package, description: "Имущество" },  // скрыто по решению руководства
   // { name: "Посещаемость", path: "/attendance", ... }  // объединено с Главной
   // { name: "Зарплата", path: "/salary", icon: Banknote, description: "Ведомости" },  // скрыто по решению руководства

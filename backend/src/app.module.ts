@@ -22,6 +22,7 @@ import { PositionHistoryModule } from './position-history/position-history.modul
 import { DoorsModule } from './doors/doors.module';
 import { CheckinModule } from './checkin/checkin.module';
 import { RegistrationModule } from './registration/registration.module';
+import { VacanciesModule } from './vacancies/vacancies.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { RegistrationModule } from './registration/registration.module';
     DoorsModule,
     CheckinModule,
     RegistrationModule,
+    VacanciesModule,
   ],
   controllers: [AppController],
   providers: [

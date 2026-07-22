@@ -418,3 +418,43 @@ export type HoldingStats = {
     departmentsCount: number;
   }>;
 };
+
+export type VacancyStatus = "OPEN" | "ON_HOLD" | "CLOSED";
+
+export type Vacancy = {
+  id: number;
+  title: string;
+  companyId: number;
+  departmentId: number | null;
+  positionId: number | null;
+  department?: { name: string } | null;
+  position?: { name: string } | null;
+  company?: { name: string; shortName?: string | null };
+  description: string | null;
+  status: VacancyStatus;
+  createdBy: string | null;
+  candidateCount?: number;
+  shortlistCount?: number;
+  _count?: { candidates: number };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CandidateStatus = "NEW" | "REVIEWING" | "SHORTLIST" | "INTERVIEW" | "HIRED" | "REJECTED";
+
+export type Candidate = {
+  id: number;
+  vacancyId: number;
+  companyId: number;
+  fullName: string;
+  phone: string | null;
+  email: string | null;
+  source: string | null;
+  note: string | null;
+  status: CandidateStatus;
+  resumePath: string | null;
+  resumeName: string | null;
+  addedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};

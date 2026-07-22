@@ -21,6 +21,8 @@ import type {
   HikvisionDevice,
   RegistrationToken,
   PendingEmployee,
+  Vacancy,
+  Candidate,
 } from "./types";
 
 // Helper to get current company ID from localStorage
@@ -798,4 +800,84 @@ export async function createRegistrationToken(companyId: number): Promise<Regist
 
 export async function deleteRegistrationToken(id: number): Promise<void> {
   await apiFetch(`/registration/tokens/${id}`, { method: "DELETE" });
+}
+
+// ============ VACANCIES (вакансии + кандидаты) ============
+
+export async function getVacancies(companyId?: number): Promise<Vacancy[]> {
+  const params = companyId
+    ? new URLSearchParams({ companyId: String(companyId) })
+    : withCompanyId(new URLSearchParams());
+  const query = params.toString();
+  return apiFetch(`/vacancies${query ? `?${query}` : ""}`);
+}
+
+export async function getVacancy(id: number): Promise<Vacancy> {
+  return apiFetch(`/vacancies/${id}`);
+}
+
+export async function createVacancy(data: {
+  title: string;
+  companyId?: number;
+  departmentId?: number;
+  positionId?: number;
+  description?: string;
+  status?: string;
+}): Promise<Vacancy> {
+  const companyId = data.companyId || getCurrentCompanyId();
+  if (!companyId) {
+    throw new Error("Пожалуйста, выберите компанию в боковом меню");
+  }
+  return apiFetch("/vacancies", { method: "POST", body: { ...data, companyId } });
+}
+
+export async function updateVacancy(
+  id: number,
+  data: { title?: string; departmentId?: number | null; positionId?: number | null; description?: string; status?: string },
+): Promise<Vacancy> {
+  return apiFetch(`/vacancies/${id}`, { method: "PATCH", body: data });
+}
+
+export async function deleteVacancy(id: number): Promise<void> {
+  await apiFetch(`/vacancies/${id}`, { method: "DELETE" });
+}
+
+export async function getCandidates(vacancyId: number): Promise<Candidate[]> {
+  return apiFetch(`/vacancies/${vacancyId}/candidates`);
+}
+
+export async function createCandidate(
+  vacancyId: number,
+  data: { fullName: string; phone?: string; email?: string; source?: string; note?: string },
+  resumeFile?: File,
+): Promise<Candidate> {
+  const formData = new FormData();
+  formData.append("fullName", data.fullName);
+  if (data.phone) formData.append("phone", data.phone);
+  if (data.email) formData.append("email", data.email);
+  if (data.source) formData.append("source", data.source);
+  if (data.note) formData.append("note", data.note);
+  if (resumeFile) formData.append("resume", resumeFile);
+
+  return apiFetch(`/vacancies/${vacancyId}/candidates`, { method: "POST", body: formData });
+}
+
+export async function updateCandidate(
+  id: number,
+  data: Partial<{ fullName: string; phone: string; email: string; source: string; note: string; status: string }>,
+): Promise<Candidate> {
+  return apiFetch(`/vacancies/candidates/${id}`, { method: "PATCH", body: data });
+}
+
+export async function deleteCandidate(id: number): Promise<void> {
+  await apiFetch(`/vacancies/candidates/${id}`, { method: "DELETE" });
+}
+
+export async function getCandidateResume(id: number): Promise<Blob> {
+  const response = await apiFetchRaw(`/vacancies/candidates/${id}/resume`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Не удалось загрузить резюме");
+  }
+  return response.blob();
 }

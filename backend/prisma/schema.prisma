@@ -44,6 +44,8 @@ model Company {
   agents               Agent[]
   registrationTokens   RegistrationToken[]
   unknownFaces         UnknownFace[]
+  vacancies            Vacancy[]
+  candidates           Candidate[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 }
@@ -146,6 +148,7 @@ model Department {
   companyId Int
   sortOrder Int        @default(0)
   employees Employee[]
+  vacancies Vacancy[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -159,10 +162,57 @@ model Position {
   company   Company    @relation(fields: [companyId], references: [id])
   companyId Int
   employees Employee[]
+  vacancies Vacancy[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
   @@unique([name, companyId]) // Уникальное название в рамках компании
+  @@index([companyId])
+}
+
+// Вакансия — открытая позиция, на которую собираются кандидаты (шорт-лист/резерв)
+model Vacancy {
+  id           Int         @id @default(autoincrement())
+  title        String
+  company      Company     @relation(fields: [companyId], references: [id])
+  companyId    Int
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  departmentId Int?
+  position     Position?   @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  positionId   Int?
+  description  String?     @db.Text
+  status       String      @default("OPEN") // OPEN | ON_HOLD | CLOSED
+  createdBy    String?
+  candidates   Candidate[]
+  sortOrder    Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([companyId])
+  @@index([departmentId])
+  @@index([positionId])
+}
+
+// Кандидат, откликнувшийся на вакансию (шорт-лист/кадровый резерв)
+model Candidate {
+  id         Int      @id @default(autoincrement())
+  vacancy    Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  vacancyId  Int
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  Int
+  fullName   String
+  phone      String?
+  email      String?
+  source     String?  // Откуда узнал о вакансии (сайт, знакомые, HH.tj и т.п.)
+  note       String?  @db.Text
+  status     String   @default("NEW") // NEW | REVIEWING | SHORTLIST | INTERVIEW | HIRED | REJECTED
+  resumePath String?  // Путь к файлу резюме на диске
+  resumeName String?  // Оригинальное имя файла резюме
+  addedBy    String?  // Email кадровика, добавившего кандидата
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([vacancyId])
   @@index([companyId])
 }
 
