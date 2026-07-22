@@ -4,6 +4,7 @@ import { EmployeesService } from '../employees/employees.service';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class DocumentsService {
@@ -76,9 +77,8 @@ export class DocumentsService {
     await fsp.mkdir(targetDir, { recursive: true });
 
     const fileExtension = path.extname(file.originalname);
-    const newFileName = `${this.sanitize(
-      documentType,
-    )}_${new Date().toISOString().split('T')[0]}${fileExtension}`;
+    const uniqueSuffix = `${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const newFileName = `${this.sanitize(documentType)}_${uniqueSuffix}${fileExtension}`;
     const newFilePath = path.join(targetDir, newFileName);
 
     await fsp.rename(file.path, newFilePath);
@@ -89,7 +89,7 @@ export class DocumentsService {
         companyId: employee.companyId,
         type: documentType,
         filePath: newFilePath,
-        fileName: newFileName,
+        fileName: file.originalname,
         uploadedBy,
       },
     });
