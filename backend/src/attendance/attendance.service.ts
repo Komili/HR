@@ -598,28 +598,32 @@ export class AttendanceService implements OnModuleInit {
         { companyId: attendance.companyId },
       );
     } else {
-      // Тип 'minutes': и +30 и -30 прибавляют время (знак = смысл, не направление)
-      const minutes = data.correctionMinutes || 0;
-      const addedMinutes = Math.abs(minutes);
-      const newTotal = attendance.totalMinutes + addedMinutes;
+      // 'minutes_offsite' (работал вне офиса до прихода) и 'minutes_excused' (отлучался по делам)
+      // — оба физически добавляют отработанное время, разница только в причине.
+      // Причина сохраняется как знак correctionMinutes (для наглядного индикатора в таблице),
+      // но на totalMinutes всегда влияет только модуль — минус НЕ вычитает время.
+      const isOffsite = type === 'minutes_offsite';
+      const magnitude = Math.abs(data.correctionMinutes || 0);
+      const signedDelta = isOffsite ? -magnitude : magnitude;
+      const newTotal = attendance.totalMinutes + magnitude;
 
       updated = await this.prisma.attendance.update({
         where: { id },
         data: {
-          correctionMinutes: attendance.correctionMinutes + addedMinutes,
+          correctionMinutes: attendance.correctionMinutes + signedDelta,
           totalMinutes: Math.max(0, newTotal),
           correctedBy: user.email,
           correctionNote: data.note,
-          correctionType: 'minutes',
-          correctionDeadline: deadlineDate,
+          correctionType: isOffsite ? 'minutes_offsite' : 'minutes_excused',
+          correctionDeadline: null,
           correctionDeadlineNotified: false,
         },
       });
 
-      const sign = minutes >= 0 ? '+' : '';
+      const reasonLabel = isOffsite ? '🏗 Работал вне офиса' : '🚶 Отлучался по делам';
       await this.telegram.notify(
         'correction',
-        `✏️ Корректировка времени\n👤 ${empName}\n📅 ${dateStr}  ${sign}${minutes} мин.\n💬 ${data.note}${data.deadline ? `\n⏳ Срок: до ${data.deadline}` : ''}\n👮 Кадровик: ${user.email}`,
+        `✏️ Корректировка времени\n${reasonLabel}\n👤 ${empName}\n📅 ${dateStr}  +${magnitude} мин.\n💬 ${data.note}\n👮 Кадровик: ${user.email}`,
         { companyId: attendance.companyId },
       );
     }

@@ -1,12 +1,12 @@
 import { IsInt, IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class CorrectAttendanceDto {
-  // Тип корректировки: 'minutes' | 'manual_in' | 'manual_out' | 'remote'
+  // Тип корректировки: 'minutes_offsite' | 'minutes_excused' | 'manual_in' | 'manual_out' | 'remote'
   @IsString()
   @IsOptional()
   type?: string;
 
-  // Для type='minutes': количество минут (положительное или отрицательное)
+  // Для type='minutes_offsite' | 'minutes_excused': количество минут (всегда положительное, знак не имеет значения)
   @IsInt()
   @IsOptional()
   correctionMinutes?: number;

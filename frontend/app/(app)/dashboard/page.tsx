@@ -53,6 +53,9 @@ import {
   ScanFace,
   CheckCircle2,
   RefreshCw,
+  Building2,
+  Briefcase,
+  Home,
 } from "lucide-react"
 
 function formatTime(iso: string | null) {
@@ -65,6 +68,65 @@ function formatMinutesToHours(minutes: number) {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   return `${h}ч ${m}м`
+}
+
+type CorrectionActionType =
+  | "minutes_offsite"
+  | "minutes_excused"
+  | "manual_in"
+  | "manual_out"
+  | "remote"
+  | "excused_left"
+  | "excused_absent"
+
+const CORRECTION_ACTIONS: Record<CorrectionActionType, {
+  icon: React.ElementType
+  label: string
+  hint: string
+  color: "blue" | "emerald" | "red" | "amber" | "slate"
+}> = {
+  minutes_offsite: { icon: Building2, label: "Работал вне офиса", hint: "Был на объекте до прихода — время добавится к отработанному", color: "blue" },
+  minutes_excused: { icon: Briefcase, label: "Выходил по делам", hint: "Выходил в течение дня — время всё равно засчитается", color: "amber" },
+  manual_in: { icon: LogIn, label: "Отметить приход", hint: "Зафиксировать время прихода вручную", color: "emerald" },
+  manual_out: { icon: LogOut, label: "Отметить уход", hint: "Зафиксировать время ухода вручную", color: "red" },
+  remote: { icon: Home, label: "Вне офиса", hint: "Личные дела, другой офис, встреча — время не меняется, только пометка", color: "slate" },
+  excused_left: { icon: ShieldCheck, label: "Отпросился, ушёл", hint: "Уважительная причина, известно время ухода", color: "amber" },
+  excused_absent: { icon: ShieldCheck, label: "Отпросился, не пришёл", hint: "Весь день считается уважительным, без прогула", color: "amber" },
+}
+
+const NOTE_PLACEHOLDER: Record<CorrectionActionType, string> = {
+  minutes_offsite: "Например: был на объекте в Файзабаде с 7:00...",
+  minutes_excused: "Например: ездил в банк, вернулся в 11:30...",
+  manual_in: "Например: задерживается, позвонил в 9:00...",
+  manual_out: "Например: ушёл раньше по договорённости с руководителем...",
+  remote: "Например: ушёл на 2 часа по личным делам, вернулся в 14:00 / встреча в офисе Бунёд Интернешнл...",
+  excused_left: "Укажите причину...",
+  excused_absent: "Укажите причину...",
+}
+
+const ACTION_COLOR_CLASSES: Record<string, string> = {
+  blue: "border-blue-200 hover:bg-blue-50 text-blue-700",
+  emerald: "border-emerald-200 hover:bg-emerald-50 text-emerald-700",
+  red: "border-red-200 hover:bg-red-50 text-red-700",
+  amber: "border-amber-200 hover:bg-amber-50 text-amber-700",
+  slate: "border-slate-200 hover:bg-slate-50 text-slate-700",
+}
+
+function CorrectionActionCard({ type, onSelect }: { type: CorrectionActionType; onSelect: (t: CorrectionActionType) => void }) {
+  const meta = CORRECTION_ACTIONS[type]
+  const Icon = meta.icon
+  return (
+    <button
+      onClick={() => onSelect(type)}
+      className={`w-full flex items-start gap-3 rounded-xl border bg-white px-3 py-2.5 text-left transition-colors ${ACTION_COLOR_CLASSES[meta.color]}`}
+    >
+      <Icon className="h-5 w-5 shrink-0 mt-0.5" />
+      <div>
+        <div className="text-sm font-semibold">{meta.label}</div>
+        <div className="text-xs text-muted-foreground">{meta.hint}</div>
+      </div>
+    </button>
+  )
 }
 
 function timeToMins(t: string): number {
@@ -314,7 +376,8 @@ export default function DashboardPage() {
 
   // Correction dialog
   const [correcting, setCorrecting] = React.useState<AttendanceSummary | null>(null)
-  const [corrType, setCorrType] = React.useState<"minutes" | "manual_in" | "manual_out" | "remote" | "excused_left" | "excused_absent">("minutes")
+  // null = шаг 1 (выбор действия), иначе шаг 2 (поля выбранного действия)
+  const [corrType, setCorrType] = React.useState<CorrectionActionType | null>(null)
   const [corrMinutes, setCorrMinutes] = React.useState(0)
   const [corrTime, setCorrTime] = React.useState("09:00")
   const [corrDeadline, setCorrDeadline] = React.useState("")
@@ -436,8 +499,7 @@ export default function DashboardPage() {
     const hh = String(now.getHours()).padStart(2, "0")
     const mm = String(now.getMinutes()).padStart(2, "0")
     setCorrecting(row)
-    // Для отсутствующих (нет записи, id ≤ 0) сразу предлагаем отметить приход
-    setCorrType(row.id > 0 ? "minutes" : "manual_in")
+    setCorrType(null) // всегда начинаем с шага выбора действия
     setCorrMinutes(0)
     setCorrTime(`${hh}:${mm}`)
     setCorrDeadline("")
@@ -445,12 +507,14 @@ export default function DashboardPage() {
   }
 
   const handleCorrect = async () => {
-    if (!correcting) return
+    if (!correcting || !corrType) return
     const isCheck = corrType === "manual_in" || corrType === "manual_out"
     const isExcused = corrType === "excused_left" || corrType === "excused_absent"
+    const isMinutes = corrType === "minutes_offsite" || corrType === "minutes_excused"
+    const isRemote = corrType === "remote"
     if (isCheck && !corrTime) return
     if (!isCheck && !corrNote.trim()) return
-    if (corrType === "minutes" && corrMinutes === 0) return
+    if (isMinutes && corrMinutes === 0) return
     setCorrSaving(true)
     try {
       if (isExcused) {
@@ -473,12 +537,18 @@ export default function DashboardPage() {
           correcting.date,
           corrTime,
         )
-      } else {
+      } else if (isRemote) {
         await correctAttendance(correcting.id, {
-          type: corrType,
-          correctionMinutes: corrType === "minutes" ? corrMinutes : undefined,
+          type: "remote",
           note: corrNote,
           deadline: corrDeadline || undefined,
+        })
+      } else {
+        // minutes_offsite / minutes_excused — оба добавляют время, знак хранит только причину
+        await correctAttendance(correcting.id, {
+          type: corrType,
+          correctionMinutes: corrMinutes,
+          note: corrNote,
         })
       }
       setCorrecting(null)
@@ -1367,185 +1437,170 @@ export default function DashboardPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-5 w-5 text-blue-600" />
-              Корректировка / отметка
+              {corrType ? (
+                <button
+                  onClick={() => setCorrType(null)}
+                  className="flex items-center gap-0.5 text-sm font-normal text-muted-foreground hover:text-foreground -ml-1"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Назад
+                </button>
+              ) : (
+                <Pencil className="h-5 w-5 text-blue-600" />
+              )}
+              {corrType ? CORRECTION_ACTIONS[corrType].label : "Что нужно сделать?"}
             </DialogTitle>
             <DialogDescription>
               {correcting?.employeeName} — {correcting && toRuDate(correcting.date)}
-              {correcting && correcting.id <= 0 && (
+              {correcting && correcting.id <= 0 && !corrType && (
                 <span className="block mt-1 text-amber-600">
-                  Сотрудник ещё не отмечался — отметьте за него приход или уход.
+                  Сотрудник ещё не отмечался — отметьте за него приход, уход или уважительную причину.
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Тип */}
-            <div className="flex flex-wrap gap-2">
-              {([
-                // ±Минуты и «отпросился и ушёл» — только для существующей записи
-                ...(correcting && correcting.id > 0
-                  ? [
-                      { key: "minutes", label: "±Минуты", icon: Pencil, color: "blue" },
-                    ] as const
-                  : []),
-                { key: "manual_in", label: "Check-In", icon: LogIn, color: "emerald" },
-                { key: "manual_out", label: "Check-Out", icon: LogOut, color: "red" },
-                ...(correcting && correcting.id > 0
-                  ? [{ key: "excused_left", label: "Отпросился, ушёл", icon: ShieldCheck, color: "amber" }] as const
-                  : [{ key: "excused_absent", label: "Отпросился, не пришёл", icon: ShieldCheck, color: "amber" }] as const),
-              ] as const).map(({ key, label, icon: Icon, color }) => (
-                <button
-                  key={key}
-                  onClick={() => setCorrType(key)}
-                  className={`flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs sm:text-sm font-medium transition-colors ${
-                    corrType === key
-                      ? color === "blue" ? "bg-blue-500 border-blue-500 text-white"
-                        : color === "emerald" ? "bg-emerald-500 border-emerald-500 text-white"
-                        : color === "red" ? "bg-red-500 border-red-500 text-white"
-                        : color === "amber" ? "bg-amber-500 border-amber-500 text-white"
-                        : "bg-purple-500 border-purple-500 text-white"
-                      : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Поля по типу */}
-            {corrType === "minutes" && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-red-700">
-                    <span className="font-semibold">−минуты</span> — уже работал до прихода в офис (был на объекте)
-                  </div>
-                  <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 text-yellow-700">
-                    <span className="font-semibold">+минуты</span> — вышел по делам / отпросился (строка станет жёлтой)
-                  </div>
+          {!corrType ? (
+            /* ШАГ 1 — выбор действия на понятном русском */
+            <div className="space-y-4">
+              {correcting && correcting.id > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Скорректировать время</p>
+                  <CorrectionActionCard type="minutes_offsite" onSelect={setCorrType} />
+                  <CorrectionActionCard type="minutes_excused" onSelect={setCorrType} />
                 </div>
-                <div className="flex items-center justify-center gap-3">
-                  <Button variant="outline" size="icon"
-                    className="h-12 w-12 rounded-xl border-red-200 text-red-600 hover:bg-red-50 text-lg font-bold"
-                    onClick={() => setCorrMinutes((v) => v - 30)}>−</Button>
-                  <div className={`flex items-center justify-center h-12 min-w-[100px] rounded-xl border-2 px-4 text-xl font-bold tabular-nums ${
-                    corrMinutes > 0 ? "border-yellow-300 bg-yellow-50 text-yellow-700"
-                      : corrMinutes < 0 ? "border-red-300 bg-red-50 text-red-700"
-                      : "border-gray-200 bg-gray-50 text-gray-500"
-                  }`}>
-                    {corrMinutes > 0 ? "+" : ""}{corrMinutes}
-                  </div>
-                  <Button variant="outline" size="icon"
-                    className="h-12 w-12 rounded-xl border-emerald-200 text-emerald-600 hover:bg-emerald-50 text-lg font-bold"
-                    onClick={() => setCorrMinutes((v) => v + 30)}>+</Button>
-                </div>
-                <div className="text-center text-sm text-muted-foreground">
-                  Итого: <span className="font-semibold text-foreground">
-                    {correcting ? formatMinutesToHours(correcting.totalMinutes + Math.abs(corrMinutes)) : ""}
-                  </span>
-                  {corrMinutes !== 0 && (
-                    <span className="ml-1 text-xs text-emerald-600">(+{Math.abs(corrMinutes)} мин.)</span>
-                  )}
-                </div>
+              )}
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Отметить событие</p>
+                <CorrectionActionCard type="manual_in" onSelect={setCorrType} />
+                <CorrectionActionCard type="manual_out" onSelect={setCorrType} />
               </div>
-            )}
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Особый случай</p>
+                {correcting && correcting.id > 0 && <CorrectionActionCard type="remote" onSelect={setCorrType} />}
+                <CorrectionActionCard type={correcting && correcting.id > 0 ? "excused_left" : "excused_absent"} onSelect={setCorrType} />
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setCorrecting(null)} className="rounded-xl">Отмена</Button>
+              </div>
+            </div>
+          ) : (
+            /* ШАГ 2 — только поля, релевантные выбранному действию */
+            <div className="space-y-4">
+              {(corrType === "minutes_offsite" || corrType === "minutes_excused") && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <Button variant="outline" size="icon"
+                      className="h-12 w-12 rounded-xl text-lg font-bold"
+                      onClick={() => setCorrMinutes((v) => Math.max(0, v - 30))}>−</Button>
+                    <div className="flex items-center justify-center h-12 min-w-[100px] rounded-xl border-2 px-4 text-xl font-bold tabular-nums border-blue-200 bg-blue-50 text-blue-700">
+                      +{corrMinutes}
+                    </div>
+                    <Button variant="outline" size="icon"
+                      className="h-12 w-12 rounded-xl text-lg font-bold"
+                      onClick={() => setCorrMinutes((v) => v + 30)}>+</Button>
+                  </div>
+                  <div className="text-center text-sm text-muted-foreground">
+                    Минут будет добавлено к отработанному времени.<br />
+                    Итого: <span className="font-semibold text-foreground">
+                      {correcting ? formatMinutesToHours(correcting.totalMinutes + corrMinutes) : ""}
+                    </span>
+                  </div>
+                </div>
+              )}
 
-            {(corrType === "manual_in" || corrType === "manual_out" || corrType === "excused_left") && (
+              {(corrType === "manual_in" || corrType === "manual_out" || corrType === "excused_left") && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    {corrType === "manual_out" || corrType === "excused_left" ? "Время ухода" : "Время прихода"}
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min={0} max={23}
+                      value={corrTime.split(":")[0]}
+                      onChange={(e) => {
+                        const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                        setCorrTime(`${h}:${corrTime.split(":")[1]}`)
+                      }}
+                      className="w-16 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <span className="text-lg font-bold">:</span>
+                    <input
+                      type="number" min={0} max={59}
+                      value={corrTime.split(":")[1]}
+                      onChange={(e) => {
+                        const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                        setCorrTime(`${corrTime.split(":")[0]}:${m}`)
+                      }}
+                      className="w-16 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Срок — только для «Вне офиса» (когда ждём сотрудника обратно) */}
+              {corrType === "remote" && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Срок — ожидается в офисе до (необязательно)</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min={0} max={23}
+                      value={corrDeadline ? corrDeadline.split(":")[0] : ""}
+                      placeholder="ЧЧ"
+                      onChange={(e) => {
+                        const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                        setCorrDeadline(`${h}:${corrDeadline ? corrDeadline.split(":")[1] : "00"}`)
+                      }}
+                      className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                    <span className="text-lg font-bold">:</span>
+                    <input
+                      type="number" min={0} max={59}
+                      value={corrDeadline ? corrDeadline.split(":")[1] : ""}
+                      placeholder="ММ"
+                      onChange={(e) => {
+                        const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
+                        setCorrDeadline(`${corrDeadline ? corrDeadline.split(":")[0] : "00"}:${m}`)
+                      }}
+                      className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                    {corrDeadline && (
+                      <button onClick={() => setCorrDeadline("")} className="text-xs text-muted-foreground hover:text-red-500 ml-1">✕ убрать</button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Комментарий */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">
-                  {corrType === "manual_in" ? "Время прихода" : "Время ухода"}
+                  {corrType === "excused_left" || corrType === "excused_absent" ? "Причина" : "Комментарий"}
+                  {corrType === "manual_in" || corrType === "manual_out" ? " (необязательно)" : " *"}
                 </Label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number" min={0} max={23}
-                    value={corrTime.split(":")[0]}
-                    onChange={(e) => {
-                      const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
-                      setCorrTime(`${h}:${corrTime.split(":")[1]}`)
-                    }}
-                    className="w-16 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                  <span className="text-lg font-bold">:</span>
-                  <input
-                    type="number" min={0} max={59}
-                    value={corrTime.split(":")[1]}
-                    onChange={(e) => {
-                      const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
-                      setCorrTime(`${corrTime.split(":")[0]}:${m}`)
-                    }}
-                    className="w-16 h-10 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
+                <textarea
+                  value={corrNote}
+                  onChange={(e) => setCorrNote(e.target.value)}
+                  placeholder={NOTE_PLACEHOLDER[corrType]}
+                  rows={2}
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300"
+                />
               </div>
-            )}
 
-            {/* Срок (не для «отпросился») */}
-            {corrType !== "excused_left" && corrType !== "excused_absent" && (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Срок — ожидается в офисе до (необязательно)</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number" min={0} max={23}
-                  value={corrDeadline ? corrDeadline.split(":")[0] : ""}
-                  placeholder="ЧЧ"
-                  onChange={(e) => {
-                    const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
-                    setCorrDeadline(`${h}:${corrDeadline ? corrDeadline.split(":")[1] : "00"}`)
-                  }}
-                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                />
-                <span className="text-lg font-bold">:</span>
-                <input
-                  type="number" min={0} max={59}
-                  value={corrDeadline ? corrDeadline.split(":")[1] : ""}
-                  placeholder="ММ"
-                  onChange={(e) => {
-                    const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, "0")
-                    setCorrDeadline(`${corrDeadline ? corrDeadline.split(":")[0] : "00"}:${m}`)
-                  }}
-                  className="w-16 h-10 rounded-xl border border-amber-200 bg-white px-2 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                />
-                {corrDeadline && (
-                  <button onClick={() => setCorrDeadline("")} className="text-xs text-muted-foreground hover:text-red-500 ml-1">✕ убрать</button>
-                )}
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setCorrecting(null)} className="rounded-xl">Отмена</Button>
+                <Button
+                  onClick={handleCorrect}
+                  disabled={corrSaving
+                    || ((corrType === "minutes_offsite" || corrType === "minutes_excused") && corrMinutes === 0)
+                    || (corrType !== "manual_in" && corrType !== "manual_out" && !corrNote.trim())}
+                  className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+                >
+                  {corrSaving
+                    ? <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    : "Сохранить"}
+                </Button>
               </div>
             </div>
-            )}
-
-            {/* Комментарий */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                {corrType === "excused_left" || corrType === "excused_absent" ? "Причина" : "Комментарий"}
-                {corrType === "manual_in" || corrType === "manual_out" ? " (необязательно)" : " *"}
-              </Label>
-              <textarea
-                value={corrNote}
-                onChange={(e) => setCorrNote(e.target.value)}
-                placeholder={corrType === "manual_in" || corrType === "manual_out"
-                  ? "Например: задерживается, позвонил в 9:00..."
-                  : "Укажите причину корректировки..."}
-                rows={2}
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setCorrecting(null)} className="rounded-xl">Отмена</Button>
-              <Button
-                onClick={handleCorrect}
-                disabled={corrSaving
-                  || (corrType === "minutes" && corrMinutes === 0)
-                  || (corrType !== "manual_in" && corrType !== "manual_out" && !corrNote.trim())}
-                className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
-              >
-                {corrSaving
-                  ? <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  : "Сохранить"}
-              </Button>
-            </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
 
