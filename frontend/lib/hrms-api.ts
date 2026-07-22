@@ -778,8 +778,9 @@ export async function getPendingRegistrations(companyId?: number): Promise<Pendi
 export async function approveRegistration(
   id: number,
   updates?: { departmentId?: number; positionId?: number },
+  force?: boolean,
 ): Promise<Employee> {
-  return apiFetch(`/employees/${id}/approve`, { method: "PATCH", body: updates || {} });
+  return apiFetch(`/employees/${id}/approve`, { method: "PATCH", body: { ...updates, force } });
 }
 
 export async function rejectRegistration(id: number): Promise<Employee> {

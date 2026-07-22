@@ -5,7 +5,8 @@ import { useDebounce } from "use-debounce"
 import { useSearchParams } from "next/navigation"
 import { ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
-import type { Employee, Department, Position, CreateEmployeeInput, UpdateEmployeeInput } from "@/lib/types"
+import type { Employee, Department, Position, CreateEmployeeInput, UpdateEmployeeInput, DuplicateEmployeeMatch } from "@/lib/types"
+import { ApiError } from "@/lib/api"
 import { useAuth } from "@/app/contexts/AuthContext"
 import { DataTable } from "@/components/data-table"
 import { Input } from "@/components/ui/input"
@@ -56,6 +57,7 @@ import {
   X,
   LayoutList,
   LayoutGrid,
+  AlertTriangle,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -229,6 +231,7 @@ export default function EmployeesPage() {
   // Диалог подтверждения удаления
   const [deleteDialog, setDeleteDialog] = React.useState<{ id: number; name: string; inventoryCount: number } | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [duplicateWarning, setDuplicateWarning] = React.useState<DuplicateEmployeeMatch[] | null>(null)
   const [formData, setFormData] = React.useState<CreateEmployeeInput>({
     firstName: "",
     lastName: "",
@@ -380,7 +383,7 @@ export default function EmployeesPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleSave = async () => {
+  const handleSave = async (force = false) => {
     if (!formData.firstName || !formData.lastName) {
       setError("Заполните обязательные поля: Имя и Фамилия")
       return
@@ -391,12 +394,18 @@ export default function EmployeesPage() {
       if (editingEmployee) {
         await updateEmployee(editingEmployee.id, formData as UpdateEmployeeInput)
       } else {
-        await createEmployee(formData)
+        await createEmployee(force ? { ...formData, force: true } : formData)
       }
       setIsModalOpen(false)
+      setDuplicateWarning(null)
       loadEmployees()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка сохранения")
+      const data = err instanceof ApiError ? (err.data as { code?: string; duplicates?: DuplicateEmployeeMatch[] } | undefined) : undefined
+      if (data?.code === "POSSIBLE_DUPLICATE" && data.duplicates) {
+        setDuplicateWarning(data.duplicates)
+      } else {
+        setError(err instanceof Error ? err.message : "Ошибка сохранения")
+      }
     } finally {
       setIsSaving(false)
     }
@@ -818,10 +827,10 @@ export default function EmployeesPage() {
 
       <CrudModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => { setIsModalOpen(false); setDuplicateWarning(null) }}
         title={editingEmployee ? "Редактировать сотрудника" : "Добавить сотрудника"}
         description={editingEmployee ? "Измените данные сотрудника" : "Заполните данные нового сотрудника"}
-        onSave={handleSave}
+        onSave={() => handleSave(false)}
         isSaving={isSaving}
       >
         {isMultiCompany && !editingEmployee && (
@@ -880,6 +889,48 @@ export default function EmployeesPage() {
             </Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
               {isDeleting ? "Удаление..." : "Удалить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Предупреждение о возможном дубликате сотрудника */}
+      <Dialog open={!!duplicateWarning} onOpenChange={(open) => !open && setDuplicateWarning(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              Похоже, такой сотрудник уже есть
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-2">
+              <span className="block">Найдены похожие профили в системе:</span>
+              <span className="block space-y-2">
+                {duplicateWarning?.map((d) => (
+                  <span key={d.id} className="block rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm">
+                    <span className="block font-medium text-foreground">
+                      {d.lastName} {d.firstName} {d.patronymic || ""}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {d.company?.name}
+                      {d.department?.name ? ` · ${d.department.name}` : ""}
+                      {d.position?.name ? ` · ${d.position.name}` : ""}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">Статус: {d.status}</span>
+                  </span>
+                ))}
+              </span>
+              <span className="block text-sm">
+                Если это тот же человек, переведённый из другой компании — закройте это окно и используйте
+                кнопку «Перевести» в профиле существующего сотрудника вместо создания нового.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDuplicateWarning(null)} disabled={isSaving}>
+              Отмена
+            </Button>
+            <Button onClick={() => handleSave(true)} disabled={isSaving}>
+              {isSaving ? "Создание..." : "Всё равно создать"}
             </Button>
           </DialogFooter>
         </DialogContent>

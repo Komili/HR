@@ -8,5 +8,6 @@ import { TelegramModule } from '../telegram/telegram.module';
   imports: [PrismaModule, TelegramModule],
   controllers: [EmployeesController],
   providers: [EmployeesService],
+  exports: [EmployeesService],
 })
 export class EmployeesModule {}

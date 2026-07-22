@@ -21,6 +21,7 @@ import {
   Briefcase,
   Info,
   User,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -51,7 +53,8 @@ import {
   getPositions,
   getEmployeePhotoUrl,
 } from "@/lib/hrms-api";
-import type { PendingEmployee, RegistrationToken, Department, Position } from "@/lib/types";
+import type { PendingEmployee, RegistrationToken, Department, Position, DuplicateEmployeeMatch } from "@/lib/types";
+import { ApiError } from "@/lib/api";
 import { EmployeeAvatar } from "@/components/employee-avatar";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -69,6 +72,11 @@ export default function RegistrationsPage() {
   const [approveData, setApproveData] = useState<{ departmentId?: number; positionId?: number }>({});
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [creatingToken, setCreatingToken] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    id: number;
+    updates?: { departmentId?: number; positionId?: number };
+    duplicates: DuplicateEmployeeMatch[];
+  } | null>(null);
 
   const loadData = useCallback(async (companyId: number | null) => {
     setLoading(true);
@@ -102,13 +110,22 @@ export default function RegistrationsPage() {
     loadData(currentCompanyId);
   }, [loadData, currentCompanyId]);
 
-  const handleApprove = async (id: number, updates?: { departmentId?: number; positionId?: number }) => {
+  const handleApprove = async (
+    id: number,
+    updates?: { departmentId?: number; positionId?: number },
+    force = false,
+  ) => {
     setActionLoading(id);
     try {
-      await approveRegistration(id, updates);
+      await approveRegistration(id, updates, force);
       setPending((prev) => prev.filter((e) => e.id !== id));
       setDetailEmployee(null);
-    } catch {
+      setDuplicateWarning(null);
+    } catch (err) {
+      const data = err instanceof ApiError ? (err.data as { code?: string; duplicates?: DuplicateEmployeeMatch[] } | undefined) : undefined;
+      if (data?.code === "POSSIBLE_DUPLICATE" && data.duplicates) {
+        setDuplicateWarning({ id, updates, duplicates: data.duplicates });
+      }
     } finally {
       setActionLoading(null);
     }
@@ -250,6 +267,51 @@ export default function RegistrationsPage() {
           actionLoading={actionLoading === detailEmployee.id}
         />
       )}
+
+      {/* Предупреждение о возможном дубликате при одобрении заявки */}
+      <Dialog open={!!duplicateWarning} onOpenChange={(open) => !open && setDuplicateWarning(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              Похоже, такой сотрудник уже есть
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-2">
+              <span className="block">Найдены похожие профили в системе:</span>
+              <span className="block space-y-2">
+                {duplicateWarning?.duplicates.map((d) => (
+                  <span key={d.id} className="block rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm">
+                    <span className="block font-medium text-foreground">
+                      {d.lastName} {d.firstName} {d.patronymic || ""}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {d.company?.name}
+                      {d.department?.name ? ` · ${d.department.name}` : ""}
+                      {d.position?.name ? ` · ${d.position.name}` : ""}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">Статус: {d.status}</span>
+                  </span>
+                ))}
+              </span>
+              <span className="block text-sm">
+                Если это тот же человек, переведённый из другой компании — закройте это окно и используйте
+                кнопку «Перевести» в профиле существующего сотрудника вместо одобрения новой заявки.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDuplicateWarning(null)} disabled={actionLoading !== null}>
+              Отмена
+            </Button>
+            <Button
+              onClick={() => duplicateWarning && handleApprove(duplicateWarning.id, duplicateWarning.updates, true)}
+              disabled={actionLoading !== null}
+            >
+              {actionLoading !== null ? "Одобрение..." : "Всё равно одобрить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

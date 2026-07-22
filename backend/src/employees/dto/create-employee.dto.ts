@@ -7,6 +7,7 @@ import {
   IsNumber,
   Min,
   IsInt,
+  IsBoolean,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -111,4 +112,9 @@ export class CreateEmployeeDto {
   @IsInt()
   @IsOptional()
   managerId?: number;
+
+  /** Пропустить проверку на дубликат (после подтверждения пользователем) */
+  @IsBoolean()
+  @IsOptional()
+  force?: boolean;
 }

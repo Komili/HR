@@ -178,9 +178,24 @@ export type CreateEmployeeInput = {
   hireDate?: string;
   status?: string;
   notes?: string;
+  /** Пропустить проверку на дубликат (после подтверждения пользователем) */
+  force?: boolean;
 };
 
 export type UpdateEmployeeInput = Partial<CreateEmployeeInput>;
+
+export type DuplicateEmployeeMatch = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  patronymic: string | null;
+  status: string;
+  phone: string | null;
+  email: string | null;
+  company: { id: number; name: string } | null;
+  department: { name: string } | null;
+  position: { name: string } | null;
+};
 
 export type InventoryItem = {
   id: number;

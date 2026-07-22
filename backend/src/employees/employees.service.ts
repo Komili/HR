@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { getCompanyFilter as sharedGetCompanyFilter, isAuthorizedForCompany } from '../common/company-filter';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
@@ -30,12 +30,78 @@ export class EmployeesService {
     return sharedGetCompanyFilter(user, requestedCompanyId);
   }
 
-  async create(data: Prisma.EmployeeCreateInput, user: RequestUser): Promise<EmployeeWithRelations> {
+  /**
+   * Ищет по всему холдингу сотрудников, похожих на переданные данные —
+   * по телефону (сильный признак) или по совпадению ФИ (слабый признак).
+   * На создании сотрудника паспорт/ИНН ещё не заполняются, поэтому опираемся
+   * на то, что реально вводится в форме.
+   */
+  async findDuplicates(input: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    email?: string;
+  }, excludeId?: number) {
+    const orConditions: Prisma.EmployeeWhereInput[] = [];
+
+    if (input.phone) {
+      const digits = input.phone.replace(/\D/g, '');
+      if (digits.length >= 9) {
+        orConditions.push({ phone: { contains: digits.slice(-9) } });
+      }
+    }
+    if (input.email) {
+      orConditions.push({ email: input.email });
+    }
+    if (input.firstName && input.lastName) {
+      orConditions.push({ firstName: input.firstName, lastName: input.lastName });
+    }
+
+    if (orConditions.length === 0) return [];
+
+    return this.prisma.employee.findMany({
+      where: {
+        OR: orConditions,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        patronymic: true,
+        status: true,
+        phone: true,
+        email: true,
+        company: { select: { id: true, name: true } },
+        department: { select: { name: true } },
+        position: { select: { name: true } },
+      },
+      take: 10,
+    });
+  }
+
+  async create(data: Prisma.EmployeeCreateInput, user: RequestUser, force = false): Promise<EmployeeWithRelations> {
     // Проверяем, что пользователь имеет право создавать сотрудников
     const companyId = this.getCompanyFilter(user);
 
     if (!companyId && !user.isHoldingAdmin) {
       throw new ForbiddenException('Cannot create employee without company context');
+    }
+
+    if (!force) {
+      const duplicates = await this.findDuplicates({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.phone as string | undefined,
+        email: data.email as string | undefined,
+      });
+      if (duplicates.length > 0) {
+        throw new ConflictException({
+          message: 'Похоже, такой сотрудник уже есть в системе',
+          code: 'POSSIBLE_DUPLICATE',
+          duplicates,
+        });
+      }
     }
 
     const employee = await this.prisma.employee.create({
@@ -174,10 +240,30 @@ export class EmployeesService {
     id: number,
     updates: { departmentId?: number; positionId?: number },
     user: RequestUser,
+    force = false,
   ): Promise<EmployeeWithRelations> {
     const employee = await this.findOne(id, user);
     if (!employee) throw new NotFoundException(`Employee ${id} not found`);
     if (employee.status !== 'Ожидает') throw new BadRequestException('Заявка уже обработана');
+
+    if (!force) {
+      const duplicates = await this.findDuplicates(
+        {
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          phone: employee.phone ?? undefined,
+          email: employee.email ?? undefined,
+        },
+        id,
+      );
+      if (duplicates.length > 0) {
+        throw new ConflictException({
+          message: 'Похоже, такой сотрудник уже есть в системе',
+          code: 'POSSIBLE_DUPLICATE',
+          duplicates,
+        });
+      }
+    }
 
     return this.update(
       id,

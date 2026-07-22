@@ -1,5 +1,15 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
+/** Ошибка API, несущая разобранное тело ответа (для структурированных ошибок вроде дублей) */
+export class ApiError extends Error {
+  data?: unknown;
+  constructor(message: string, data?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.data = data;
+  }
+}
+
 type ApiFetchOptions = Omit<RequestInit, "body" | "headers"> & {
   body?: unknown;
   headers?: HeadersInit;
@@ -41,14 +51,15 @@ export async function apiFetch<T>(
   if (!response.ok) {
     const text = await response.text();
     let message = response.statusText;
+    let data: unknown;
     try {
-      const data = JSON.parse(text) as { message?: string | string[] };
-      const msg = data.message;
+      data = JSON.parse(text) as { message?: string | string[] };
+      const msg = (data as { message?: string | string[] }).message;
       message = Array.isArray(msg) ? msg.join(", ") : (msg || message);
     } catch {
       message = text || message;
     }
-    throw new Error(message);
+    throw new ApiError(message, data);
   }
 
   // 204 No Content — пустое тело

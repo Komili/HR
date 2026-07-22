@@ -47,7 +47,7 @@ export class EmployeesController {
     @Body() createEmployeeDto: CreateEmployeeDto,
     @Request() req: { user: RequestUser },
   ) {
-    const { departmentId, positionId, companyId, managerId, birthDate, passportIssueDate, contractDate, hireDate, ...employeeData } = createEmployeeDto;
+    const { departmentId, positionId, companyId, managerId, birthDate, passportIssueDate, contractDate, hireDate, force, ...employeeData } = createEmployeeDto;
 
     let targetCompanyId: number | null | undefined;
     if (companyId) {
@@ -81,7 +81,7 @@ export class EmployeesController {
       position: positionId ? { connect: { id: positionId } } : undefined,
       manager: managerId ? { connect: { id: managerId } } : undefined,
     };
-    return this.employeesService.create(data, req.user);
+    return this.employeesService.create(data, req.user, force);
   }
 
   @Get()
@@ -111,10 +111,11 @@ export class EmployeesController {
   @Roles('Суперадмин', 'Кадровик')
   approveRegistration(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { departmentId?: number; positionId?: number },
+    @Body() body: { departmentId?: number; positionId?: number; force?: boolean },
     @Request() req: { user: RequestUser },
   ) {
-    return this.employeesService.approveRegistration(id, body, req.user);
+    const { force, ...updates } = body;
+    return this.employeesService.approveRegistration(id, updates, req.user, force);
   }
 
   @Patch(':id/reject')

@@ -15,6 +15,7 @@ export class RegistrationService {
   constructor(
     private prisma: PrismaService,
     private telegram: TelegramService,
+    private employeesService: EmployeesService,
   ) {}
 
   async validateToken(token: string) {
@@ -71,10 +72,23 @@ export class RegistrationService {
       data: { usageCount: { increment: 1 } },
     });
 
+    // Проверяем на возможный дубликат — не блокируем публичную заявку,
+    // а лишь предупреждаем кадровика в уведомлении, окончательное решение
+    // (с подтверждением) он примет при одобрении заявки в системе
+    const duplicates = await this.employeesService.findDuplicates(
+      { firstName: dto.firstName, lastName: dto.lastName, phone: dto.phone, email: dto.email },
+      employee.id,
+    ).catch(() => []);
+
     // Telegram уведомление кадровику
     const companyName = regToken.company.shortName || regToken.company.name;
     this.telegram.notify(
       'registration',
+      (duplicates.length > 0
+        ? `⚠️ <b>Возможно дубликат!</b> Похожий сотрудник уже есть: ` +
+          duplicates.map(d => `${d.lastName} ${d.firstName} (${d.company?.name || '—'}, ${d.status})`).join('; ') +
+          `\n\n`
+        : '') +
       `📋 <b>Новая заявка на регистрацию</b>\n\n` +
       `👤 ${dto.lastName} ${dto.firstName}${dto.patronymic ? ' ' + dto.patronymic : ''}\n` +
       `🏢 Компания: ${companyName}\n` +
